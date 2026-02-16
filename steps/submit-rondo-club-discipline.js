@@ -173,7 +173,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     'sanction_description': caseData.sanction_description || '',
     'processing_date': toAcfDateFormat(caseData.processing_date),
     'administrative_fee': caseData.administrative_fee ? parseFloat(caseData.administrative_fee) : null,
-    'is_charged': caseData.is_charged === 1
+    'is_charged': caseData.is_charged === 1 ? 'sportlink' : ''
   };
 
   const title = buildCaseTitle(personName, match_description || 'Unknown Match', match_date || 'Unknown Date');
