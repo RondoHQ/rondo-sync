@@ -13,7 +13,7 @@ See: .planning/PROJECT.md (updated 2026-02-12)
 Phase: 46 of 46 (all complete)
 Plan: N/A — between milestones
 Status: v3.3 FreeScout Integration shipped
-Last activity: 2026-02-12 — v3.3 milestone archived
+Last activity: 2026-02-19 - Completed quick task 26: Fetch HomeTeam.PublicTeamId and AwayTeam.PublicTeamId from Sportlink DisciplineClubCasesPlayer and sync to Rondo Club
 
 Progress: [██████████████████████████████████████████████████] 100% (46/46 phases)
 
