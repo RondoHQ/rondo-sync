@@ -8,7 +8,7 @@ const {
   getSeasonFromDate,
   getAllCases
 } = require('../lib/discipline-db');
-const { openDb: openRondoClubDb } = require('../lib/rondo-club-db');
+const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-club-db');
 
 /**
  * Convert date string to ACF Ymd format (e.g., "2026-01-15" -> "20260115")
@@ -146,9 +146,11 @@ function buildCaseTitle(personName, matchDescription, matchDate) {
  * @param {string} personName - Person name for title
  * @param {Object} db - Discipline database connection
  * @param {Object} options - Logger and verbose options
+ * @param {number|null} homeTeamRondoClubId - WordPress team post ID for home team (or null)
+ * @param {number|null} awayTeamRondoClubId - WordPress team post ID for away team (or null)
  * @returns {Promise<{action: string, id: number}>}
  */
-async function syncCase(caseData, personRondoClubId, seasonTermId, personName, db, options) {
+async function syncCase(caseData, personRondoClubId, seasonTermId, personName, db, options, homeTeamRondoClubId = null, awayTeamRondoClubId = null) {
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
 
   let { rondo_club_id } = caseData;
@@ -173,7 +175,9 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     'sanction_description': caseData.sanction_description || '',
     'processing_date': toAcfDateFormat(caseData.processing_date),
     'administrative_fee': caseData.administrative_fee ? parseFloat(caseData.administrative_fee) : null,
-    'is_charged': caseData.is_charged === 1 ? 'sportlink' : ''
+    'is_charged': caseData.is_charged === 1 ? 'sportlink' : '',
+    'home_team': homeTeamRondoClubId || '',
+    'away_team': awayTeamRondoClubId || ''
   };
 
   const title = buildCaseTitle(personName, match_description || 'Unknown Match', match_date || 'Unknown Date');
@@ -273,6 +277,9 @@ async function runSync(options = {}) {
   // Open discipline database
   const db = openDisciplineDb();
 
+  // Open rondo-club database for team lookups
+  const rondoClubDb = openRondoClubDb();
+
   // Get cases needing sync
   const cases = getCasesNeedingSync(db, force);
   log(`Found ${cases.length} cases needing sync${force ? ' (force mode)' : ''}`);
@@ -314,8 +321,30 @@ async function runSync(options = {}) {
       // Get or create season term (cached)
       const seasonTermId = await getOrCreateSeasonTermId(season, options, seasonTermCache);
 
+      // Resolve home team
+      let homeTeamRondoClubId = null;
+      if (caseData.home_team_id) {
+        const homeTeam = getTeamBySportlinkId(rondoClubDb, caseData.home_team_id);
+        if (homeTeam?.rondo_club_id) {
+          homeTeamRondoClubId = homeTeam.rondo_club_id;
+        } else {
+          logVerbose(`  Home team ${caseData.home_team_id} not found in Rondo Club`);
+        }
+      }
+
+      // Resolve away team
+      let awayTeamRondoClubId = null;
+      if (caseData.away_team_id) {
+        const awayTeam = getTeamBySportlinkId(rondoClubDb, caseData.away_team_id);
+        if (awayTeam?.rondo_club_id) {
+          awayTeamRondoClubId = awayTeam.rondo_club_id;
+        } else {
+          logVerbose(`  Away team ${caseData.away_team_id} not found in Rondo Club`);
+        }
+      }
+
       // Sync the case
-      const result = await syncCase(caseData, personRondoClubId, seasonTermId, personName, db, options);
+      const result = await syncCase(caseData, personRondoClubId, seasonTermId, personName, db, options, homeTeamRondoClubId, awayTeamRondoClubId);
 
       if (result.action === 'created') {
         results.created++;
@@ -335,6 +364,7 @@ async function runSync(options = {}) {
     }
   }
 
+  rondoClubDb.close();
   db.close();
 
   log('Discipline case sync complete.');
