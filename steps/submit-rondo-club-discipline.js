@@ -164,6 +164,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
 
   // Build ACF fields payload
   // Note: Date fields use ACF date_picker with Ymd return format (e.g., "20260115")
+  const sportlinkIsCharged = caseData.is_charged === 1;
   const acfFields = {
     'dossier_id': dossier_id,
     'person': personRondoClubId,
@@ -175,7 +176,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     'sanction_description': caseData.sanction_description || '',
     'processing_date': toAcfDateFormat(caseData.processing_date),
     'administrative_fee': caseData.administrative_fee ? parseFloat(caseData.administrative_fee) : null,
-    'is_charged': caseData.is_charged === 1 ? 'sportlink' : '',
+    'is_charged': sportlinkIsCharged ? 'sportlink' : '',
     'home_team': homeTeamRondoClubId || '',
     'away_team': awayTeamRondoClubId || ''
   };
@@ -192,6 +193,12 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
 
   if (rondo_club_id) {
     // UPDATE existing case
+    // Do not overwrite is_charged with '' when Sportlink doesn't charge this case.
+    // Rondo Club may have set is_charged to 'rondo' when an invoice was sent.
+    // Only send is_charged in the update payload when Sportlink explicitly charges it.
+    if (!sportlinkIsCharged) {
+      delete payload.acf['is_charged'];
+    }
     const endpoint = `wp/v2/discipline-cases/${rondo_club_id}`;
     logVerbose(`Updating discipline case: ${rondo_club_id} - ${dossier_id}`);
     logVerbose(`  PUT ${endpoint}`);
