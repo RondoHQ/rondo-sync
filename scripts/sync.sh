@@ -17,7 +17,7 @@
 #
 # Configuration via environment variables in .env:
 #   - All Sportlink/Laposta/Rondo Club credentials
-#   - POSTMARK_* for email reports
+#   - LETTERMINT_* for email reports
 #   - OPERATOR_EMAIL for report recipient
 #
 # Crontab example (single-line entries):
@@ -190,7 +190,7 @@ EXIT_CODE=${PIPESTATUS[0]}
 
 # Send failure alert if pipeline failed
 if [ $EXIT_CODE -ne 0 ]; then
-    if [ -n "$POSTMARK_API_KEY" ] && [ -n "$POSTMARK_FROM_EMAIL" ] && [ -n "$OPERATOR_EMAIL" ]; then
+    if [ -n "$LETTERMINT_API_TOKEN" ] && [ -n "$LETTERMINT_FROM_EMAIL" ] && [ -n "$OPERATOR_EMAIL" ]; then
         node "$PROJECT_DIR/lib/alert-email.js" send-failure-alert --pipeline "$SYNC_TYPE" || \
             echo "Warning: Failed to send failure alert" >&2
     fi

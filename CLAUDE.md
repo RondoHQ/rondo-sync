@@ -58,8 +58,8 @@ RONDO_USERNAME=              # WordPress username
 RONDO_APP_PASSWORD=          # WordPress application password
 RONDO_PERSON_TYPE=person     # Custom post type
 OPERATOR_EMAIL=              # Receives sync reports
-POSTMARK_API_KEY=            # Postmark server API token
-POSTMARK_FROM_EMAIL=         # Verified sender email
+LETTERMINT_API_TOKEN=        # Lettermint API token
+LETTERMINT_FROM_EMAIL=       # Verified sender email
 FREESCOUT_API_KEY=           # FreeScout API key (optional)
 FREESCOUT_URL=               # FreeScout URL (optional)
 NIKKI_API_KEY=               # Nikki API key (optional)
@@ -122,4 +122,4 @@ After functional changes, update:
 
 ## Tech Stack
 
-Node.js 18+, Playwright (Chromium), better-sqlite3, otplib (TOTP), postmark, dotenv (env loading).
+Node.js 18+, Playwright (Chromium), better-sqlite3, otplib (TOTP), lettermint, dotenv (env loading).

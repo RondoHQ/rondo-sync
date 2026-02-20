@@ -20,17 +20,17 @@ echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
 echo "  - Reverse sync:           hourly (Rondo Club -> Sportlink)"
 echo ""
 
-# Check if .env exists and has Postmark config
+# Check if .env exists and has Lettermint config
 ENV_FILE="$PROJECT_DIR/.env"
-NEED_POSTMARK=false
+NEED_LETTERMINT=false
 
 if [ ! -f "$ENV_FILE" ]; then
-    NEED_POSTMARK=true
-elif ! grep -q "^POSTMARK_API_KEY=" "$ENV_FILE" || ! grep -q "^OPERATOR_EMAIL=" "$ENV_FILE"; then
-    NEED_POSTMARK=true
+    NEED_LETTERMINT=true
+elif ! grep -q "^LETTERMINT_API_TOKEN=" "$ENV_FILE" || ! grep -q "^OPERATOR_EMAIL=" "$ENV_FILE"; then
+    NEED_LETTERMINT=true
 fi
 
-if [ "$NEED_POSTMARK" = true ]; then
+if [ "$NEED_LETTERMINT" = true ]; then
     echo "Email notification setup"
     echo "------------------------"
 
@@ -42,25 +42,25 @@ if [ "$NEED_POSTMARK" = true ]; then
         exit 1
     fi
 
-    # Prompt for Postmark API key
+    # Prompt for Lettermint API token
     echo ""
-    echo "Postmark configuration (for email delivery):"
-    echo "  Get your Server API Token from: Postmark Dashboard -> Servers -> API Tokens"
+    echo "Lettermint configuration (for email delivery):"
+    echo "  Get your API token from: Lettermint Dashboard -> API Tokens"
     echo ""
-    read -p "Enter Postmark API Key: " POSTMARK_API_KEY
+    read -p "Enter Lettermint API Token: " LETTERMINT_API_TOKEN
 
-    if [ -z "$POSTMARK_API_KEY" ]; then
-        echo "Error: Postmark API Key cannot be empty" >&2
+    if [ -z "$LETTERMINT_API_TOKEN" ]; then
+        echo "Error: Lettermint API Token cannot be empty" >&2
         exit 1
     fi
 
     # Prompt for sender email
     echo ""
-    echo "  Sender email must be verified in Postmark Dashboard -> Sender Signatures"
+    echo "  Sender email must be verified in your Lettermint account"
     echo ""
-    read -p "Enter verified sender email address: " POSTMARK_FROM_EMAIL
+    read -p "Enter verified sender email address: " LETTERMINT_FROM_EMAIL
 
-    if [ -z "$POSTMARK_FROM_EMAIL" ]; then
+    if [ -z "$LETTERMINT_FROM_EMAIL" ]; then
         echo "Error: Sender email cannot be empty" >&2
         exit 1
     fi
@@ -80,24 +80,24 @@ if [ "$NEED_POSTMARK" = true ]; then
         echo "OPERATOR_EMAIL=$OPERATOR_EMAIL" >> "$ENV_FILE"
     fi
 
-    # Update or add POSTMARK_API_KEY
-    if grep -q "^POSTMARK_API_KEY=" "$ENV_FILE"; then
-        sed -i.bak "s/^POSTMARK_API_KEY=.*/POSTMARK_API_KEY=$POSTMARK_API_KEY/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
+    # Update or add LETTERMINT_API_TOKEN
+    if grep -q "^LETTERMINT_API_TOKEN=" "$ENV_FILE"; then
+        sed -i.bak "s/^LETTERMINT_API_TOKEN=.*/LETTERMINT_API_TOKEN=$LETTERMINT_API_TOKEN/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
     else
-        echo "POSTMARK_API_KEY=$POSTMARK_API_KEY" >> "$ENV_FILE"
+        echo "LETTERMINT_API_TOKEN=$LETTERMINT_API_TOKEN" >> "$ENV_FILE"
     fi
 
-    # Update or add POSTMARK_FROM_EMAIL
-    if grep -q "^POSTMARK_FROM_EMAIL=" "$ENV_FILE"; then
-        sed -i.bak "s/^POSTMARK_FROM_EMAIL=.*/POSTMARK_FROM_EMAIL=$POSTMARK_FROM_EMAIL/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
+    # Update or add LETTERMINT_FROM_EMAIL
+    if grep -q "^LETTERMINT_FROM_EMAIL=" "$ENV_FILE"; then
+        sed -i.bak "s/^LETTERMINT_FROM_EMAIL=.*/LETTERMINT_FROM_EMAIL=$LETTERMINT_FROM_EMAIL/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
     else
-        echo "POSTMARK_FROM_EMAIL=$POSTMARK_FROM_EMAIL" >> "$ENV_FILE"
+        echo "LETTERMINT_FROM_EMAIL=$LETTERMINT_FROM_EMAIL" >> "$ENV_FILE"
     fi
 
     echo ""
-    echo "Postmark configuration saved to .env"
+    echo "Lettermint configuration saved to .env"
 else
-    echo "Using existing Postmark configuration from .env"
+    echo "Using existing Lettermint configuration from .env"
     OPERATOR_EMAIL=$(grep "^OPERATOR_EMAIL=" "$ENV_FILE" | cut -d= -f2)
 fi
 
