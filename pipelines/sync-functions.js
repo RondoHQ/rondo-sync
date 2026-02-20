@@ -7,6 +7,7 @@ const { runFunctionsDownload } = require('../steps/download-functions-from-sport
 const { runSync: runCommissiesSync } = require('../steps/submit-rondo-club-commissies');
 const { runSync: runCommissieWorkHistorySync } = require('../steps/submit-rondo-club-commissie-work-history');
 const { runSyncFreeFieldsToRondoClub } = require('../steps/sync-free-fields-to-rondo-club');
+const { runCapabilitySync } = require('../steps/submit-capability-sync');
 
 /**
  * Print summary report for functions sync
@@ -83,11 +84,25 @@ function printSummary(logger, stats) {
   }
   logger.log('');
 
+  logger.log('CAPABILITY SYNC');
+  logger.log(minorDivider);
+  if (stats.capabilitySync.total > 0) {
+    logger.log(`Members processed: ${stats.capabilitySync.total}`);
+    logger.log(`  Synced: ${stats.capabilitySync.synced}`);
+    if (stats.capabilitySync.skipped > 0) {
+      logger.log(`  Skipped: ${stats.capabilitySync.skipped} (no WP user)`);
+    }
+  } else {
+    logger.log('Capability sync: 0 changes');
+  }
+  logger.log('');
+
   const allErrors = [
     ...stats.download.errors,
     ...stats.commissies.errors,
     ...stats.workHistory.errors,
-    ...stats.freeFields.errors
+    ...stats.freeFields.errors,
+    ...stats.capabilitySync.errors
   ];
   if (allErrors.length > 0) {
     logger.log(`ERRORS (${allErrors.length})`);
@@ -148,6 +163,12 @@ async function runFunctionsSync(options = {}) {
       errors: []
     },
     freeFields: {
+      total: 0,
+      synced: 0,
+      skipped: 0,
+      errors: []
+    },
+    capabilitySync: {
       total: 0,
       synced: 0,
       skipped: 0,
@@ -319,11 +340,48 @@ async function runFunctionsSync(options = {}) {
       });
     }
 
+    // Step 5: Sync capabilities (Functies -> WP roles) for all tracked members
+    logger.verbose('Syncing capabilities for tracked members...');
+    const capabilitySyncStepId = tracker.startStep('capability-sync');
+    try {
+      const capabilityResult = await runCapabilitySync({ logger, verbose });
+      stats.capabilitySync.total = capabilityResult.total;
+      stats.capabilitySync.synced = capabilityResult.synced;
+      stats.capabilitySync.skipped = capabilityResult.skipped;
+      if (capabilityResult.errors?.length > 0) {
+        stats.capabilitySync.errors = capabilityResult.errors.map(e => ({
+          knvb_id: e.knvb_id,
+          message: e.message,
+          system: 'capability-sync'
+        }));
+      }
+      tracker.endStep(capabilitySyncStepId, {
+        outcome: capabilityResult.success ? 'success' : 'partial',
+        updated: stats.capabilitySync.synced,
+        skipped: stats.capabilitySync.skipped,
+        failed: stats.capabilitySync.errors.length
+      });
+      tracker.recordErrors('capability-sync', capabilitySyncStepId, stats.capabilitySync.errors);
+    } catch (err) {
+      logger.error(`Capability sync failed: ${err.message}`);
+      stats.capabilitySync.errors.push({
+        message: `Capability sync failed: ${err.message}`,
+        system: 'capability-sync'
+      });
+      tracker.endStep(capabilitySyncStepId, { outcome: 'failure' });
+      tracker.recordError({
+        stepName: 'capability-sync',
+        stepId: capabilitySyncStepId,
+        errorMessage: err.message,
+        errorStack: err.stack
+      });
+    }
+
     // Complete
     stats.completedAt = formatTimestamp();
     stats.duration = formatDuration(Date.now() - startTime);
 
-    const totalErrors = stats.download.errors.length + stats.commissies.errors.length + stats.workHistory.errors.length + stats.freeFields.errors.length;
+    const totalErrors = stats.download.errors.length + stats.commissies.errors.length + stats.workHistory.errors.length + stats.freeFields.errors.length + stats.capabilitySync.errors.length;
     const success = totalErrors === 0;
     const outcome = totalErrors === 0 ? 'success' : 'partial';
 
