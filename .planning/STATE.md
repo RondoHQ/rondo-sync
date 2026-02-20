@@ -43,12 +43,13 @@ Full decision log in PROJECT.md Key Decisions table.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 27 | Replace Postmark with Lettermint for email alerts (npm swap + env var rename) | 2026-02-20 | d30f301, a5a5851 | [27-replace-postmark-with-lettermint-for-ema](./quick/27-replace-postmark-with-lettermint-for-ema/) |
 | 26 | Fetch HomeTeam.PublicTeamId and AwayTeam.PublicTeamId, store in DB, sync as team ACF fields | 2026-02-19 | 988e248, 2319068 | [26-fetch-hometeam-publicteamid-and-awayteam](./quick/26-fetch-hometeam-publicteamid-and-awayteam/) |
 | 25 | Replace varlock with dotenv for .env loading | 2026-02-12 | 662fa98, 2d90a60 | [25-replace-varlock-with-dotenv-for-env-load](./quick/25-replace-varlock-with-dotenv-for-env-load/) |
 | 24 | Update FreeScout sync to set website fields (Sportlink + Rondo Club URLs) | 2026-02-11 | 73adc3e | [24-update-freescout-sync-to-set-website-fie](./quick/24-update-freescout-sync-to-set-website-fie/) |
 
 ## Session Continuity
 
-Last session: 2026-02-19
-Stopped at: Completed quick task 26 — discipline home/away team IDs
+Last session: 2026-02-20
+Stopped at: Completed quick task 27 — Postmark to Lettermint migration (code done, server deploy pending)
 Resume file: None — between milestones
