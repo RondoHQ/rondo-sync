@@ -10,6 +10,13 @@ require('dotenv/config');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb } = require('../lib/rondo-club-db');
 
+// Relationship type term IDs in the WordPress relationship_type taxonomy.
+const RELATIONSHIP_TYPE = {
+  PARENT: 2,  // "Parent" - the related person is a parent
+  CHILD: 3,   // "Child" - the related person is a child
+  SIBLING: 4  // "Sibling" - the related person is a sibling
+};
+
 async function mergePerson(parentId, memberId) {
   console.log(`Merging parent ${parentId} into member ${memberId}...`);
 
@@ -44,7 +51,7 @@ async function mergePerson(parentId, memberId) {
   // Step 4: Update children to reference member instead of parent
   const parentRelationships = parent.acf.relationships || [];
   const childIds = parentRelationships
-    .filter(r => r.relationship_type === 9) // Children
+    .filter(r => r.relationship_type === RELATIONSHIP_TYPE.CHILD) // Children
     .map(r => r.related_person)
     .filter(id => id !== memberId); // Don't update member itself
 
@@ -57,7 +64,7 @@ async function mergePerson(parentId, memberId) {
 
       // Replace parent relationship: parentId -> memberId
       const childRelationships = (child.acf.relationships || []).map(r => {
-        if (r.related_person === parentId && r.relationship_type === 8) {
+        if (r.related_person === parentId && r.relationship_type === RELATIONSHIP_TYPE.PARENT) {
           return { ...r, related_person: memberId };
         }
         return r;

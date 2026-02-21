@@ -111,6 +111,13 @@ logger.error('Error messages');
 
 **Required fields on ACF updates:** When updating a person via PUT, `first_name` and `last_name` are always required, even for single-field updates. Partial ACF updates require a GET first.
 
+**Relationship type term IDs:** The `relationship_type` taxonomy in WordPress has these term IDs (verified in production):
+- `2` = Parent (the related person is a parent of this person)
+- `3` = Child (the related person is a child of this person)
+- `4` = Sibling
+
+These are defined as `RELATIONSHIP_TYPE` constants in `steps/submit-rondo-club-sync.js`. Do NOT use hardcoded integers. Rondo Club's `class-inverse-relationships.php` automatically creates bidirectional and sibling relations server-side when valid type IDs are used.
+
 **Rondo Club API docs** are in the developer docs site at `~/Code/rondo/developer/src/content/docs/api/`.
 
 ## Documentation Maintenance

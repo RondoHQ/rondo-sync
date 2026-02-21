@@ -279,10 +279,20 @@ async function syncPerson(member, db, options) {
 }
 
 /**
+ * Relationship type term IDs in the WordPress relationship_type taxonomy.
+ * These must match the actual term IDs in the database.
+ */
+const RELATIONSHIP_TYPE = {
+  PARENT: 2,  // "Parent" - the related person is a parent
+  CHILD: 3,   // "Child" - the related person is a child
+  SIBLING: 4  // "Sibling" - the related person is a sibling
+};
+
+/**
  * Check if a relationship has a specific type.
- * Handles both array format (what we write: [9]) and integer format (what API returns: 9).
+ * Handles both array format (what we write: [3]) and integer format (what API returns: 3).
  * @param {Object} relationship - Relationship object with relationship_type
- * @param {number} typeId - Relationship type ID to check for (8=parent, 9=child, 10=sibling)
+ * @param {number} typeId - Relationship type ID to check for
  * @returns {boolean}
  */
 function hasRelationshipType(relationship, typeId) {
@@ -318,13 +328,13 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
 
       const existingRelationships = childResponse.body.acf?.relationships || [];
       const hasParentLink = existingRelationships.some(r =>
-        r.related_person === parentId && hasRelationshipType(r, 8) // 8 = parent type
+        r.related_person === parentId && hasRelationshipType(r, RELATIONSHIP_TYPE.PARENT)
       );
 
       if (!hasParentLink) {
         const newRelationship = {
           related_person: parentId,
-          relationship_type: [8], // Parent relationship type term ID
+          relationship_type: [RELATIONSHIP_TYPE.PARENT],
           relationship_label: ''
         };
         const mergedRelationships = [...existingRelationships, newRelationship];
@@ -397,7 +407,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
   // Build relationships array for children
   const childRelationships = childRondoClubIds.map(childId => ({
     related_person: childId,
-    relationship_type: [9], // Child relationship type term ID
+    relationship_type: [RELATIONSHIP_TYPE.CHILD],
     relationship_label: ''
   }));
 
@@ -460,15 +470,15 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
 
     // Only proceed with update if person still exists (rondo_club_id not cleared by 404)
     if (rondo_club_id) {
-      // Merge: keep all existing relationships, add new child relationships (avoid duplicates and self-references)
-      const existingChildIds = existingRelationships
-        .filter(r => hasRelationshipType(r, 9)) // 9 = child type
-        .map(r => r.related_person);
-      const newChildRelationships = childRelationships.filter(r =>
-        r.related_person !== rondo_club_id && // Prevent self-referential relationships
-        !existingChildIds.includes(r.related_person)
+      // Merge: keep all existing non-child relationships, replace child relationships with fresh correct ones.
+      // This replaces any old wrong-typed child relations (e.g. old type 9 instead of correct type 3).
+      const nonChildRelationships = existingRelationships.filter(r =>
+        !hasRelationshipType(r, RELATIONSHIP_TYPE.CHILD) && !hasRelationshipType(r, 9) // 9 = old wrong type
       );
-      const mergedRelationships = [...existingRelationships, ...newChildRelationships];
+      const newChildRelationships = childRelationships.filter(r =>
+        r.related_person !== rondo_club_id // Prevent self-referential relationships
+      );
+      const mergedRelationships = [...nonChildRelationships, ...newChildRelationships];
 
       // Determine name to use:
       // - If person has KNVB ID, they're a member - preserve their properly-split name

@@ -2,6 +2,13 @@ require('dotenv/config');
 
 const { openDb } = require('../lib/rondo-club-db');
 
+// Relationship type term IDs in the WordPress relationship_type taxonomy.
+const RELATIONSHIP_TYPE = {
+  PARENT: 2,  // "Parent" - the related person is a parent
+  CHILD: 3,   // "Child" - the related person is a child
+  SIBLING: 4  // "Sibling" - the related person is a sibling
+};
+
 const RONDO_URL = process.env.RONDO_URL;
 const RONDO_USERNAME = process.env.RONDO_USERNAME;
 const RONDO_APP_PASSWORD = process.env.RONDO_APP_PASSWORD;
@@ -132,8 +139,8 @@ async function runMerge(options = {}) {
         // This handles children that have "parent" relationship pointing to the duplicate
         const childRelationships = parentRelationships.filter(r => {
           const type = r.relationship_type;
-          // Child type = 9 (array or integer)
-          return Array.isArray(type) ? type.includes(9) : type === 9;
+          // Child type (array or integer)
+          return Array.isArray(type) ? type.includes(RELATIONSHIP_TYPE.CHILD) : type === RELATIONSHIP_TYPE.CHILD;
         });
 
         for (const childRel of childRelationships) {
