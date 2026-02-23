@@ -47,30 +47,20 @@ async function runDownload(options = {}) {
       // Small delay to let the page settle
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      function isDisciplineCasesResponse(resp) {
-        const url = resp.url();
-        const isGet = resp.request().method() === 'GET';
-        const isMatch = url.includes('/DisciplineClubCasesPlayer');
-        if (isDebugEnabled() && isMatch) {
-          logDebug('Matched response URL:', url, 'Method:', resp.request().method());
-        }
-        return isMatch && isGet;
-      }
-
-      // Collect matching responses for a short settling period in case the UI fires
-      // multiple requests (e.g. first partial load and then full dataset).
+      // Set up response listener BEFORE clicking the tab
+      // Match specific API endpoint for discipline cases (GET request)
       logDebug('Setting up response listener for discipline cases API...');
-      const matchingResponses = [];
-      const responseListener = (resp) => {
-        if (isDisciplineCasesResponse(resp)) {
-          matchingResponses.push(resp);
-          logDebug(`Captured discipline API response #${matchingResponses.length}:`, resp.url());
-        }
-      };
-      page.on('response', responseListener);
-
-      const firstResponsePromise = page.waitForResponse(
-        resp => isDisciplineCasesResponse(resp),
+      const responsePromise = page.waitForResponse(
+        resp => {
+          const url = resp.url();
+          const isGet = resp.request().method() === 'GET';
+          // Match the specific API endpoint, not broad patterns that catch analytics
+          const isMatch = url.includes('/DisciplineClubCasesPlayer');
+          if (isDebugEnabled() && isMatch) {
+            logDebug('Matched response URL:', url, 'Method:', resp.request().method());
+          }
+          return isMatch && isGet;
+        },
         { timeout: 60000 }
       );
 
@@ -127,11 +117,10 @@ async function runDownload(options = {}) {
 
       logVerbose('Clicked "Individuele tuchtzaken" tab, waiting for API response...');
 
-      // Wait for first matching response, then allow additional responses to arrive.
+      // Wait for response
       let response;
       try {
-        response = await firstResponsePromise;
-        await new Promise(resolve => setTimeout(resolve, 4000));
+        response = await responsePromise;
       } catch (e) {
         // If no response intercepted, maybe data is already loaded or different API pattern
         logDebug('Response wait timed out, checking for existing data...');
@@ -147,40 +136,8 @@ async function runDownload(options = {}) {
         return { success: false, caseCount: 0, error: errorMsg };
       }
 
-      // Prefer the response with the largest cases array if multiple were captured.
-      const responseCandidates = matchingResponses.length > 0 ? matchingResponses : [response];
-      let bestResponse = response;
-      let bestCaseCount = -1;
-      let bestJsonData = null;
-
-      for (const candidate of responseCandidates) {
-        if (!candidate.ok()) {
-          continue;
-        }
-        try {
-          const data = await candidate.json();
-          const candidateCases = Array.isArray(data)
-            ? data
-            : (Array.isArray(data.Cases) ? data.Cases
-              : (Array.isArray(data.Results) ? data.Results
-                : (Array.isArray(data.Items) ? data.Items
-                  : (Array.isArray(data.Data) ? data.Data : []))));
-          if (candidateCases.length > bestCaseCount) {
-            bestCaseCount = candidateCases.length;
-            bestResponse = candidate;
-            bestJsonData = data;
-          }
-        } catch (e) {
-          logDebug('Failed to parse candidate response:', e.message);
-        }
-      }
-
-      response = bestResponse;
-      logDebug('Selected response status:', response.status(), response.statusText());
-      logDebug('Selected response URL:', response.url());
-      if (bestCaseCount >= 0) {
-        logVerbose(`Best captured response contains ${bestCaseCount} discipline cases`);
-      }
+      logDebug('Response received. Status:', response.status(), response.statusText());
+      logDebug('Response URL:', response.url());
 
       if (!response.ok()) {
         let errorBody = '';
@@ -195,8 +152,8 @@ async function runDownload(options = {}) {
         return { success: false, caseCount: 0, error: errorMsg };
       }
 
-      // Parse selected response
-      const jsonData = bestJsonData || await response.json();
+      // Parse response
+      const jsonData = await response.json();
       logDebug('Response JSON keys:', Object.keys(jsonData));
 
       // Try common response structures
@@ -235,7 +192,6 @@ async function runDownload(options = {}) {
       log(`Downloaded ${cases.length} discipline cases (${caseCount} total in database)`);
       return { success: true, caseCount };
     } finally {
-      page.off('response', responseListener);
       await browser.close();
     }
   } catch (err) {
