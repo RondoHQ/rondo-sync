@@ -4,16 +4,29 @@
   const intervalMs = 100;
   const degreesPerSecond = 18; // 20s per full rotation
   const stepDegrees = (degreesPerSecond * intervalMs) / 1000;
+  const iconId = 'rotating-favicon';
 
-  function ensureFaviconLink() {
-    let link = document.querySelector('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
+  function removeStaticIconLinks() {
+    const links = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    links.forEach((link) => {
+      if (link.id !== iconId) {
+        link.remove();
+      }
+    });
+  }
+
+  function setFavicon(href) {
+    const existing = document.getElementById(iconId);
+    if (existing) {
+      existing.remove();
     }
+
+    const link = document.createElement('link');
+    link.id = iconId;
+    link.rel = 'icon';
     link.type = 'image/png';
-    return link;
+    link.href = href;
+    document.head.appendChild(link);
   }
 
   const canvas = document.createElement('canvas');
@@ -22,7 +35,6 @@
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const iconLink = ensureFaviconLink();
   const image = new Image();
   let angle = 0;
 
@@ -36,11 +48,12 @@
     ctx.drawImage(image, -size / 2, -size / 2, size, size);
     ctx.restore();
 
-    iconLink.href = canvas.toDataURL('image/png');
+    setFavicon(canvas.toDataURL('image/png'));
     angle = (angle + stepDegrees) % 360;
   }
 
   image.onload = function () {
+    removeStaticIconLinks();
     draw();
     setInterval(draw, intervalMs);
   };
