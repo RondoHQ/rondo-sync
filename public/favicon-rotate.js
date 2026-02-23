@@ -5,6 +5,7 @@
   const degreesPerSecond = 18; // 20s per full rotation
   const stepDegrees = (degreesPerSecond * intervalMs) / 1000;
   const iconId = 'rotating-favicon';
+  let mode = 'none';
 
   function removeStaticIconLinks() {
     const links = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
@@ -29,6 +30,12 @@
     document.head.appendChild(link);
   }
 
+  function setStaticFavicon() {
+    if (mode === 'static') return;
+    setFavicon(source);
+    mode = 'static';
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -39,7 +46,10 @@
   let angle = 0;
 
   function draw() {
-    if (document.hidden) return;
+    if (document.hidden) {
+      setStaticFavicon();
+      return;
+    }
 
     ctx.clearRect(0, 0, size, size);
     ctx.save();
@@ -49,14 +59,20 @@
     ctx.restore();
 
     setFavicon(canvas.toDataURL('image/png'));
+    mode = 'animated';
     angle = (angle + stepDegrees) % 360;
   }
 
   image.onload = function () {
     removeStaticIconLinks();
+    setStaticFavicon();
     draw();
     setInterval(draw, intervalMs);
   };
 
+  document.addEventListener('visibilitychange', draw);
+
+  // Fallback icon while the SVG is loading.
+  setStaticFavicon();
   image.src = source;
 })();
