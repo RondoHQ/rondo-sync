@@ -157,8 +157,18 @@ body > form button:active {
 }
 
 .dashboard header h1 a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   text-decoration: none;
   color: inherit;
+}
+
+.dashboard header .header-logo {
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .btn-logout {

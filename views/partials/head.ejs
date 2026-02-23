@@ -11,7 +11,12 @@
 <body>
   <div class="dashboard">
     <header>
-      <h1><a href="/">Rondo Sync</a></h1>
+      <h1>
+        <a href="/">
+          <img src="/public/rondo_logo.svg" alt="Rondo logo" class="header-logo">
+          <span>Rondo Sync</span>
+        </a>
+      </h1>
       <nav>
         <a href="/" class="<%= page === 'overview' ? 'active' : '' %>">Overview</a>
         <a href="/errors" class="<%= page === 'errors' ? 'active' : '' %>">Errors</a>
