@@ -38,6 +38,25 @@ function extractBirthdate(dateOfBirth) {
 }
 
 /**
+ * Normalize comma-separated team names for stable storage.
+ * Uses UnionTeams as primary source, with ClubTeams fallback.
+ * @param {Object} member - Sportlink member record
+ * @returns {string|null} - Comma-separated team names or null
+ */
+function extractTeams(member) {
+  const rawValue = (member.UnionTeams || member.ClubTeams || '').trim();
+  if (!rawValue) return null;
+
+  const teams = rawValue
+    .split(',')
+    .map((team) => team.trim())
+    .filter(Boolean);
+
+  if (teams.length === 0) return null;
+  return teams.join(', ');
+}
+
+/**
  * Build name fields, separating Dutch tussenvoegsel (infix) as its own field
  * @param {Object} member - Sportlink member record
  * @returns {{first_name: string, infix: string, last_name: string}}
@@ -149,6 +168,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null) {
   const gender = mapGender(sportlinkMember.GenderCode);
   const birthYear = extractBirthYear(sportlinkMember.DateOfBirth);
   const birthdate = extractBirthdate(sportlinkMember.DateOfBirth);
+  const teams = extractTeams(sportlinkMember);
 
   const acf = {
     first_name: name.first_name,
@@ -223,7 +243,10 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null) {
     person_image_date: personImageDate,
     data: {
       status: 'publish',
-      acf: acf
+      acf: acf,
+      meta: {
+        team: teams || ''
+      }
     }
   };
 }

@@ -176,6 +176,7 @@ See `config/field-mapping.json` for the complete mapping. Key fields:
 | `lid-sinds` | `MemberSince` |
 | `leeftijdsgroep` | `AgeClassDescription` |
 | `type-lid` | `TypeOfMemberDescription` |
+| `meta.team` | `UnionTeams` (fallback: `ClubTeams`) |
 | `freescout-id` | From `sportlink_member_free_fields.freescout_id` |
 | `datum-vog` | From `sportlink_member_free_fields.vog_datum` |
 | `financiele-blokkade` | From `sportlink_member_free_fields.has_financial_block` |
