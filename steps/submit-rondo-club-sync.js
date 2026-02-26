@@ -189,6 +189,7 @@ async function syncPerson(member, db, options) {
     // Get existing person to compare financial block status and resolve conflicts
     let previousBlockStatus = false;
     let existingData = null;
+    let fetchExistingError = null;
     let conflicts = [];
 
     try {
@@ -204,7 +205,14 @@ async function syncPerson(member, db, options) {
         rondo_club_id = null; // Clear local variable to trigger CREATE path
       } else {
         logVerbose(`  Could not fetch existing person for activity comparison: ${fetchError.message}`);
+        fetchExistingError = fetchError;
       }
+    }
+
+    // Never fall back to create when the tracked person exists but lookup failed for non-404 reasons.
+    // That would trigger duplicate-create attempts and mask the real error.
+    if (rondo_club_id && !existingData && fetchExistingError) {
+      throw fetchExistingError;
     }
 
     // Only proceed with update if person still exists (not 404 above)
