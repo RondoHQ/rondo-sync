@@ -4,17 +4,44 @@ const { openDb } = require('../lib/rondo-club-db');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { createSyncLogger } = require('../lib/logger');
 
+function normalizeDate(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+    const [day, month, year] = trimmed.split('-');
+    return `${year}-${month}-${day}`;
+  }
+  return trimmed;
+}
+
+function convertMappedValue(value, valueType) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (valueType === 'number') {
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (valueType === 'date') {
+    return normalizeDate(raw);
+  }
+  if (valueType === 'boolean') {
+    const normalized = raw.toLowerCase();
+    if (['1', 'true', 'yes', 'ja', 'y'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'nee', 'n'].includes(normalized)) return false;
+    return null;
+  }
+  return raw;
+}
+
 /**
- * Sync free fields (VOG datum, FreeScout ID, financial block) from Sportlink to Rondo Club.
+ * Sync configurable free fields (Remarks1..Remarks8) plus financial block from Sportlink to Rondo Club.
  *
- * This step syncs free field data that was downloaded by download-functions-from-sportlink.js
- * to individual person records in Rondo Club WordPress. It tracks sync state to avoid
- * redundant updates.
- *
- * Free fields synced:
- * - datum-vog (VOG certificate date from Sportlink Remarks8)
- * - freescout-id (FreeScout customer ID from Remarks3)
- * - financiele-blokkade (Financial block status from MemberHeader)
+ * Mappings are configured in free_field_mappings (source_field -> target_field + value_type).
+ * This step applies mapped fields to person ACF payloads and always syncs financiele-blokkade.
  */
 async function runSyncFreeFieldsToRondoClub(options = {}) {
   const { logger, verbose = false, force = false } = options;
@@ -37,6 +64,14 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
         smff.knvb_id,
         smff.freescout_id,
         smff.vog_datum,
+        smff.remark1,
+        smff.remark2,
+        smff.remark3,
+        smff.remark4,
+        smff.remark5,
+        smff.remark6,
+        smff.remark7,
+        smff.remark8,
         smff.has_financial_block,
         rcm.rondo_club_id,
         rcm.data_json,
@@ -47,6 +82,12 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       INNER JOIN rondo_club_members rcm ON smff.knvb_id = rcm.knvb_id
       WHERE rcm.rondo_club_id IS NOT NULL
     `);
+    const mappingRows = db.prepare(`
+      SELECT source_field, target_field, value_type
+      FROM free_field_mappings
+      WHERE target_field IS NOT NULL AND TRIM(target_field) != ''
+      ORDER BY source_field ASC
+    `).all();
 
     const members = freeFieldsStmt.all();
     result.total = members.length;
@@ -59,7 +100,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
     log(`Processing ${members.length} members with free field data`);
 
     for (const member of members) {
-      const { knvb_id, freescout_id, vog_datum, has_financial_block, rondo_club_id } = member;
+      const { knvb_id, has_financial_block, rondo_club_id } = member;
 
       // Parse stored data to get current field values and required fields
       let data;
@@ -81,22 +122,25 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
         continue;
       }
 
-      // Build update payload with current values from WordPress
-      const currentVogDatum = acf['datum-vog'] || null;
-      const currentFreescoutId = acf['freescout-id'] || null;
-      const currentFinancialBlock = acf['financiele-blokkade'] || false;
-
-      // New values from Sportlink
-      const newVogDatum = vog_datum || null;
-      const newFreescoutId = freescout_id || null;
       const newFinancialBlock = has_financial_block === 1;
-
-      // Check if any field needs update (unless force mode)
-      const vogChanged = newVogDatum !== currentVogDatum;
-      const freescoutChanged = newFreescoutId !== currentFreescoutId;
+      const currentFinancialBlock = acf['financiele-blokkade'] || false;
       const financialBlockChanged = newFinancialBlock !== currentFinancialBlock;
 
-      if (!force && !vogChanged && !freescoutChanged && !financialBlockChanged) {
+      const mappedChanges = [];
+      for (const mapping of mappingRows) {
+        const sourceKey = String(mapping.source_field).toLowerCase().replace('remarks', 'remark');
+        const targetField = String(mapping.target_field || '').trim();
+        if (!targetField) continue;
+
+        const newValue = convertMappedValue(member[sourceKey], mapping.value_type || 'string');
+        const currentValue = (acf[targetField] === undefined || acf[targetField] === '') ? null : acf[targetField];
+
+        if (force || newValue !== currentValue) {
+          mappedChanges.push({ targetField, currentValue, newValue });
+        }
+      }
+
+      if (!force && mappedChanges.length === 0 && !financialBlockChanged) {
         logVerbose(`Skipping ${knvb_id}: no changes`);
         result.skipped++;
         continue;
@@ -110,20 +154,17 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
         }
       };
 
-      // Only include changed fields in payload
-      if (vogChanged || force) {
-        updatePayload.acf['datum-vog'] = newVogDatum;
-      }
-      if (freescoutChanged || force) {
-        updatePayload.acf['freescout-id'] = newFreescoutId;
+      for (const change of mappedChanges) {
+        updatePayload.acf[change.targetField] = change.newValue;
       }
       if (financialBlockChanged || force) {
         updatePayload.acf['financiele-blokkade'] = newFinancialBlock;
       }
 
       logVerbose(`Syncing free fields for ${knvb_id} → person ${rondo_club_id}`);
-      if (vogChanged) logVerbose(`  VOG: ${currentVogDatum} → ${newVogDatum}`);
-      if (freescoutChanged) logVerbose(`  FreeScout ID: ${currentFreescoutId} → ${newFreescoutId}`);
+      for (const change of mappedChanges) {
+        logVerbose(`  ${change.targetField}: ${change.currentValue} → ${change.newValue}`);
+      }
       if (financialBlockChanged) logVerbose(`  Financial block: ${currentFinancialBlock} → ${newFinancialBlock}`);
 
       try {
@@ -136,11 +177,11 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
 
         // Update tracking timestamps for modified fields
         const now = new Date().toISOString();
-        if (vogChanged || force) {
+        if ((force || mappedChanges.some(c => c.targetField === 'datum-vog'))) {
           db.prepare('UPDATE rondo_club_members SET datum_vog_sportlink_modified = ? WHERE knvb_id = ?')
             .run(now, knvb_id);
         }
-        if (freescoutChanged || force) {
+        if ((force || mappedChanges.some(c => c.targetField === 'freescout-id'))) {
           db.prepare('UPDATE rondo_club_members SET freescout_id_sportlink_modified = ? WHERE knvb_id = ?')
             .run(now, knvb_id);
         }

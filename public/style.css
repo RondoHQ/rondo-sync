@@ -318,6 +318,60 @@ body > form button:active {
   margin-bottom: 0.5rem;
 }
 
+/* Settings / Beheer */
+.settings-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.settings-card h2 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.settings-help {
+  color: #666;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.settings-success {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settings-table th,
+.settings-table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.settings-table input,
+.settings-table select {
+  width: 100%;
+  max-width: 320px;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.settings-actions {
+  margin-top: 1rem;
+}
+
 .pipeline-card .counts .count-failed {
   color: #dc3545;
   font-weight: 600;

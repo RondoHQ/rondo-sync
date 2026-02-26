@@ -75,20 +75,40 @@ function parseFunctionsResponse(data, knvbId) {
 
 /**
  * Parse MemberFreeFields API response
- * Extracts Remarks3 (FreeScout ID) and Remarks8 (VOG datum)
+ * Extracts Remarks1..Remarks8 plus legacy typed fields:
+ * - Remarks3 -> freescout_id
+ * - Remarks8 -> vog_datum
  * @param {Object} data - MemberFreeFields API response
  * @param {string} knvbId - Member KNVB ID
- * @returns {{freescout_id: number|null, vog_datum: string|null}}
+ * @returns {{freescout_id: number|null, vog_datum: string|null, remark1: string|null, remark2: string|null, remark3: string|null, remark4: string|null, remark5: string|null, remark6: string|null, remark7: string|null, remark8: string|null}}
  */
 function parseFreeFieldsResponse(data, knvbId) {
   const freeFields = data?.FreeFields || {};
 
+  const getRemarkValue = (key) => {
+    const value = freeFields?.[key]?.Value;
+    if (value === null || value === undefined) return null;
+    const trimmed = String(value).trim();
+    return trimmed || null;
+  };
+
+  const remarkValues = {
+    remark1: getRemarkValue('Remarks1'),
+    remark2: getRemarkValue('Remarks2'),
+    remark3: getRemarkValue('Remarks3'),
+    remark4: getRemarkValue('Remarks4'),
+    remark5: getRemarkValue('Remarks5'),
+    remark6: getRemarkValue('Remarks6'),
+    remark7: getRemarkValue('Remarks7'),
+    remark8: getRemarkValue('Remarks8')
+  };
+
   // Remarks3 = FreeScout ID (number)
-  const remarks3 = freeFields.Remarks3?.Value;
+  const remarks3 = remarkValues.remark3;
   const freescoutId = remarks3 ? parseInt(remarks3, 10) : null;
 
   // Remarks8 = VOG datum (date string, format may vary)
-  const remarks8 = freeFields.Remarks8?.Value;
+  const remarks8 = remarkValues.remark8;
   // Normalize date to YYYY-MM-DD if present
   let vogDatum = null;
   if (remarks8) {
@@ -109,7 +129,8 @@ function parseFreeFieldsResponse(data, knvbId) {
   return {
     knvb_id: knvbId,
     freescout_id: isNaN(freescoutId) ? null : freescoutId,
-    vog_datum: vogDatum
+    vog_datum: vogDatum,
+    ...remarkValues
   };
 }
 
@@ -170,7 +191,19 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger) {
     return null;
   }
 
-  const freeFieldsResult = freeFieldsData ? parseFreeFieldsResponse(freeFieldsData, knvbId) : { knvb_id: knvbId, freescout_id: null, vog_datum: null };
+  const freeFieldsResult = freeFieldsData ? parseFreeFieldsResponse(freeFieldsData, knvbId) : {
+    knvb_id: knvbId,
+    freescout_id: null,
+    vog_datum: null,
+    remark1: null,
+    remark2: null,
+    remark3: null,
+    remark4: null,
+    remark5: null,
+    remark6: null,
+    remark7: null,
+    remark8: null
+  };
   const memberHeaderResult = memberHeaderData ? parseMemberHeaderResponse(memberHeaderData, knvbId) : { has_financial_block: 0, photo_url: null, photo_date: null };
 
   logger.verbose(`  Financial block: ${memberHeaderResult.has_financial_block}, Photo: ${memberHeaderResult.photo_url ? 'yes' : 'no'}`);
@@ -179,6 +212,14 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger) {
     knvb_id: knvbId,
     freescout_id: freeFieldsResult.freescout_id,
     vog_datum: freeFieldsResult.vog_datum,
+    remark1: freeFieldsResult.remark1,
+    remark2: freeFieldsResult.remark2,
+    remark3: freeFieldsResult.remark3,
+    remark4: freeFieldsResult.remark4,
+    remark5: freeFieldsResult.remark5,
+    remark6: freeFieldsResult.remark6,
+    remark7: freeFieldsResult.remark7,
+    remark8: freeFieldsResult.remark8,
     has_financial_block: memberHeaderResult.has_financial_block,
     photo_url: memberHeaderResult.photo_url,
     photo_date: memberHeaderResult.photo_date
@@ -687,7 +728,11 @@ async function runFunctionsDownload(options = {}) {
           // regardless of whether the member has functions/committees
           logger.verbose(`  Fetching member data from /other page...`);
           const memberData = await fetchMemberDataFromOtherPage(page, member.knvb_id, logger);
-          if (memberData && (memberData.freescout_id || memberData.vog_datum || memberData.has_financial_block || memberData.photo_url)) {
+          const hasAnyRemark = memberData && [
+            memberData.remark1, memberData.remark2, memberData.remark3, memberData.remark4,
+            memberData.remark5, memberData.remark6, memberData.remark7, memberData.remark8
+          ].some(Boolean);
+          if (memberData && (memberData.freescout_id || memberData.vog_datum || memberData.has_financial_block || memberData.photo_url || hasAnyRemark)) {
             allFreeFields.push(memberData);
             logger.verbose(`  Found FreeScout ID: ${memberData.freescout_id || 'none'}, VOG datum: ${memberData.vog_datum || 'none'}, Financial block: ${memberData.has_financial_block}`);
           }

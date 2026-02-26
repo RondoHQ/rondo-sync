@@ -1,7 +1,12 @@
 require('dotenv/config');
 
 const { openDb, getLatestSportlinkResults } = require('../lib/laposta-db');
-const { openDb: openRondoClubDb, getMemberFreeFieldsByKnvbId, getMemberInvoiceDataByKnvbId } = require('../lib/rondo-club-db');
+const {
+  openDb: openRondoClubDb,
+  getMemberFreeFieldsByKnvbId,
+  getMemberInvoiceDataByKnvbId,
+  getFreeFieldMappings
+} = require('../lib/rondo-club-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
 
 /**
@@ -35,6 +40,71 @@ function extractBirthdate(dateOfBirth) {
   const trimmed = dateOfBirth.trim();
   if (!trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) return null;
   return trimmed;
+}
+
+function normalizeDate(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+    const [day, month, year] = trimmed.split('-');
+    return `${year}-${month}-${day}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Convert raw free-field value based on mapping type.
+ * @param {string|null|undefined} value
+ * @param {'string'|'number'|'date'|'boolean'} valueType
+ * @returns {string|number|boolean|null}
+ */
+function convertMappedValue(value, valueType) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (valueType === 'number') {
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  if (valueType === 'date') {
+    return normalizeDate(raw);
+  }
+
+  if (valueType === 'boolean') {
+    const normalized = raw.toLowerCase();
+    if (['1', 'true', 'yes', 'ja', 'y'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'nee', 'n'].includes(normalized)) return false;
+    return null;
+  }
+
+  return raw;
+}
+
+/**
+ * Apply configurable free-field mappings (Remarks1..Remarks8 -> ACF field).
+ * @param {Object} acf - ACF payload object
+ * @param {Object} freeFields - Free fields row from DB
+ * @param {Array<{source_field: string, target_field: string|null, value_type: string}>} freeFieldMappings
+ */
+function applyMappedFreeFields(acf, freeFields, freeFieldMappings) {
+  if (!freeFields || !Array.isArray(freeFieldMappings)) return;
+
+  for (const mapping of freeFieldMappings) {
+    const targetField = (mapping.target_field || '').trim();
+    if (!targetField) continue;
+
+    const sourceKey = String(mapping.source_field || '').toLowerCase(); // "remarks3"
+    const rowKey = sourceKey.replace('remarks', 'remark'); // "remark3"
+    const value = freeFields[rowKey];
+    const converted = convertMappedValue(value, mapping.value_type || 'string');
+    if (converted !== null) {
+      acf[targetField] = converted;
+    }
+  }
 }
 
 /**
@@ -163,7 +233,7 @@ function formatInvoiceAddress(invoiceData) {
  * @param {Object} [invoiceData] - Optional invoice data from Sportlink /financial tab
  * @returns {{knvb_id: string, email: string|null, person_image_date: string|null, data: Object}}
  */
-function preparePerson(sportlinkMember, freeFields = null, invoiceData = null) {
+function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, freeFieldMappings = []) {
   const name = buildName(sportlinkMember);
   const gender = mapGender(sportlinkMember.GenderCode);
   const birthYear = extractBirthYear(sportlinkMember.DateOfBirth);
@@ -204,8 +274,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null) {
 
   // Free fields from Sportlink /other tab (FreeScout ID, VOG datum, financial block)
   if (freeFields) {
-    if (freeFields.freescout_id) acf['freescout-id'] = freeFields.freescout_id;
-    if (freeFields.vog_datum) acf['datum-vog'] = freeFields.vog_datum;
+    applyMappedFreeFields(acf, freeFields, freeFieldMappings);
     // Financial block status (convert SQLite INTEGER 0/1 to boolean)
     // Explicitly check for 1 to treat null/undefined/0 as "not blocked"
     if (freeFields.has_financial_block !== undefined) {
@@ -297,6 +366,7 @@ async function runPrepare(options = {}) {
 
     // Open Rondo Club DB to look up free fields
     const rondoClubDb = openRondoClubDb();
+    const freeFieldMappings = getFreeFieldMappings(rondoClubDb);
 
     // Filter out invalid members and transform valid ones
     const validMembers = [];
@@ -327,7 +397,7 @@ async function runPrepare(options = {}) {
           invoiceDataCount++;
         }
 
-        const prepared = preparePerson(member, freeFields, invoiceData);
+        const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings);
         validMembers.push(prepared);
       });
     } finally {

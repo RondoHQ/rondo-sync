@@ -1,0 +1,60 @@
+<%- include('partials/head', { title, page, user }) %>
+
+<div class="settings-card">
+  <h2>Vrije Velden Mapping</h2>
+  <p class="settings-help">
+    Koppel Sportlink <code>Remarks1</code> t/m <code>Remarks8</code> aan Rondo Club velden.
+    Lege doelvelden worden niet gesynchroniseerd.
+  </p>
+
+  <% if (saved) { %>
+    <div class="settings-success">Mappings opgeslagen.</div>
+  <% } %>
+
+  <form method="POST" action="/beheer/free-fields" class="settings-form">
+    <table class="settings-table">
+      <thead>
+        <tr>
+          <th>Sportlink veld</th>
+          <th>Doelveld (ACF key)</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% mappings.forEach((mapping) => { %>
+          <% const key = mapping.source_field.toLowerCase(); %>
+          <tr>
+            <td><strong><%= mapping.source_field %></strong></td>
+            <td>
+              <input
+                type="text"
+                name="<%= key %>_target"
+                value="<%= mapping.target_field %>"
+                list="<%= key %>-options"
+                placeholder="bijv. datum-vog"
+              />
+              <datalist id="<%= key %>-options">
+                <% targetOptions.forEach((option) => { %>
+                  <option value="<%= option %>"></option>
+                <% }) %>
+              </datalist>
+            </td>
+            <td>
+              <select name="<%= key %>_type">
+                <% valueTypes.forEach((type) => { %>
+                  <option value="<%= type %>" <%= mapping.value_type === type ? 'selected' : '' %>><%= type %></option>
+                <% }) %>
+              </select>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn-start">Opslaan</button>
+    </div>
+  </form>
+</div>
+
+<%- include('partials/foot') %>
