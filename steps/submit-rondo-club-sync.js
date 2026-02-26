@@ -609,6 +609,95 @@ async function deleteOrphanParents(db, currentParentEmails, options) {
 }
 
 /**
+ * Get hash-unchanged parents that might still need relationship refresh.
+ * Returns same shape as getParentsNeedingSync().
+ * @param {Object} db - SQLite database connection
+ * @returns {Array<{email: string, data: Object, childKnvbIds: string[], source_hash: string, rondo_club_id: number|null}>}
+ */
+function getUnchangedParents(db) {
+  const rows = db.prepare(`
+    SELECT email, data_json, source_hash, rondo_club_id
+    FROM rondo_club_parents
+    WHERE last_synced_hash = source_hash
+    ORDER BY email ASC
+  `).all();
+
+  return rows.map((row) => {
+    const parsed = JSON.parse(row.data_json);
+    return {
+      email: row.email,
+      data: parsed.data || parsed,
+      childKnvbIds: parsed.childKnvbIds || [],
+      source_hash: row.source_hash,
+      rondo_club_id: row.rondo_club_id
+    };
+  });
+}
+
+/**
+ * Compare desired child links against current parent relationships in WordPress.
+ * Returns true when parent should be re-synced to repair relationships.
+ */
+async function parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, options) {
+  if (!parent.rondo_club_id) {
+    return true;
+  }
+
+  const desiredChildIds = new Set(
+    parent.childKnvbIds
+      .map(knvbId => knvbIdToRondoClubId.get(knvbId))
+      .filter(Boolean)
+      .filter(id => id !== parent.rondo_club_id)
+  );
+
+  try {
+    const existing = await rondoClubRequest(`wp/v2/people/${parent.rondo_club_id}`, 'GET', null, options);
+    const existingRelationships = existing.body?.acf?.relationships || [];
+    const existingChildIds = new Set(
+      existingRelationships
+        .filter(r => hasRelationshipType(r, RELATIONSHIP_TYPE.CHILD) || hasRelationshipType(r, 9))
+        .map(r => r.related_person)
+        .filter(Boolean)
+        .filter(id => id !== parent.rondo_club_id)
+    );
+
+    if (desiredChildIds.size !== existingChildIds.size) {
+      return true;
+    }
+
+    for (const childId of desiredChildIds) {
+      if (!existingChildIds.has(childId)) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    // If parent disappeared from WordPress, force sync to recreate/relink.
+    if (error.details?.data?.status === 404) {
+      return true;
+    }
+    const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+    logVerbose(`Could not verify relationships for ${parent.email}: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Find hash-unchanged parents that still need sync because child relationships drifted.
+ */
+async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options) {
+  const unchangedParents = getUnchangedParents(db);
+  const stale = [];
+  for (const parent of unchangedParents) {
+    if (await parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, options)) {
+      stale.push(parent);
+    }
+  }
+  return stale;
+}
+
+/**
  * Sync parents to Rondo Club
  * @param {Object} db - SQLite database connection
  * @param {Map} knvbIdToRondoClubId - Map of member KNVB ID to Rondo Club post ID
@@ -644,7 +733,22 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
 
   // Get parents needing sync (includes rondo_club_id from database)
   const needsSync = getParentsNeedingSync(db, force);
-  result.skipped = result.total - needsSync.length;
+
+  // Guard against stale links when child person IDs changed while parent source data did not.
+  if (!force) {
+    const staleRelationshipParents = await getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options);
+    if (staleRelationshipParents.length > 0) {
+      const byEmail = new Map(needsSync.map(parent => [parent.email, parent]));
+      for (const parent of staleRelationshipParents) {
+        byEmail.set(parent.email, parent);
+      }
+      needsSync.length = 0;
+      needsSync.push(...byEmail.values());
+      logVerbose(`Forced ${staleRelationshipParents.length} unchanged parent(s) due to stale relationships`);
+    }
+  }
+
+  result.skipped = Math.max(0, result.total - needsSync.length);
 
   logVerbose(`${needsSync.length} parents need sync (${result.skipped} unchanged)`);
 

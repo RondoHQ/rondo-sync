@@ -274,7 +274,8 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
 
   if (memberSince) acf['lid-sinds'] = memberSince;
-  if (relationEnd) acf['lid-tot'] = relationEnd;
+  // Always include lid-tot so previously set values are cleared when a member rejoins.
+  acf['lid-tot'] = relationEnd || '';
   if (dateOfPassing) acf['datum-overlijden'] = dateOfPassing;
   if (ageClass) acf['leeftijdsgroep'] = ageClass;
   if (personImageDate) acf['datum-foto'] = personImageDate;
