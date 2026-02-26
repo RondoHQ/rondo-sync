@@ -8,6 +8,8 @@ const {
   getMemberFreeFieldsByKnvbId,
   getFreeFieldMappings,
   upsertMembers,
+  upsertParents,
+  getParentsNeedingSync,
   updateSyncState,
   getMemberFunctions,
   getMemberCommittees,
@@ -17,6 +19,8 @@ const {
   upsertMemberFreeFields
 } = require('../lib/rondo-club-db');
 const { preparePerson } = require('../steps/prepare-rondo-club-members');
+const { runPrepare: runPrepareParents } = require('../steps/prepare-rondo-club-parents');
+const { syncParent } = require('../steps/submit-rondo-club-sync');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
@@ -229,6 +233,50 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
 }
 
 /**
+ * Sync parent records linked to a specific member KNVB ID.
+ * This keeps parent/sibling links fresh during individual member sync.
+ */
+async function syncParentsForMember(knvbId, db, options = {}) {
+  const { verbose = false } = options;
+  const log = verbose ? console.log : () => {};
+
+  const prepared = await runPrepareParents({ verbose });
+  if (!prepared.success) {
+    return { synced: 0, created: 0, updated: 0, total: 0, errors: [{ message: prepared.error || 'Prepare parents failed' }] };
+  }
+
+  upsertParents(db, prepared.parents);
+  const allParents = getParentsNeedingSync(db, true);
+  const memberParents = allParents.filter(parent => Array.isArray(parent.childKnvbIds) && parent.childKnvbIds.includes(knvbId));
+
+  if (memberParents.length === 0) {
+    return { synced: 0, created: 0, updated: 0, total: 0, errors: [] };
+  }
+
+  const rows = db.prepare('SELECT knvb_id, rondo_club_id FROM rondo_club_members WHERE rondo_club_id IS NOT NULL').all();
+  const knvbIdToRondoClubId = new Map(rows.map(row => [row.knvb_id, row.rondo_club_id]));
+
+  const result = { synced: 0, created: 0, updated: 0, total: memberParents.length, errors: [] };
+
+  for (const parent of memberParents) {
+    try {
+      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, { verbose });
+      result.synced++;
+      if (syncResult.action === 'created') result.created++;
+      if (syncResult.action === 'updated') result.updated++;
+    } catch (error) {
+      result.errors.push({ email: parent.email, message: error.message });
+    }
+  }
+
+  if (result.synced > 0) {
+    log(`Parents: ${result.synced}/${result.total} synced (${result.created} created, ${result.updated} updated)`);
+  }
+
+  return result;
+}
+
+/**
  * Sync a single person by KNVB ID
  */
 async function syncIndividual(knvbId, options = {}) {
@@ -393,6 +441,13 @@ async function syncIndividual(knvbId, options = {}) {
           }
         }
 
+        // Also sync linked parents so family relationships stay current.
+        const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+        if (parentResult.errors.length > 0) {
+          console.log(`  Parent sync errors: ${parentResult.errors.length}`);
+          parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
+        }
+
         return { success: true, action: 'updated', rondoClubId };
       }
     }
@@ -411,6 +466,13 @@ async function syncIndividual(knvbId, options = {}) {
       if (functionsResult.synced) {
         console.log(`  Functions: ${functionsResult.added} added, ${functionsResult.ended} ended`);
       }
+    }
+
+    // Also sync linked parents so family relationships stay current.
+    const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+    if (parentResult.errors.length > 0) {
+      console.log(`  Parent sync errors: ${parentResult.errors.length}`);
+      parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
     }
 
     return { success: true, action: 'created', rondoClubId: newId };

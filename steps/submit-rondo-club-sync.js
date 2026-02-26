@@ -965,7 +965,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync };
+module.exports = { runSync, syncParent };
 
 // CLI entry point
 if (require.main === module) {
