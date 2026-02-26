@@ -24,6 +24,32 @@ const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 
 /**
+ * Build a readable error message with API code/details for logs and summaries.
+ * Example: "Rondo Club API error (400) [rest_invalid_type] meta.team is not of type integer."
+ * @param {Error & {details?: any}} error
+ * @returns {string}
+ */
+function formatSyncError(error) {
+  const base = error?.message || 'Unknown error';
+  const details = error?.details;
+
+  if (!details || typeof details !== 'object') {
+    return base;
+  }
+
+  const code = details.code;
+  const detailMessage = typeof details.message === 'string' ? details.message : null;
+  const status = details.data?.status || details.status || null;
+
+  const parts = [];
+  if (code) parts.push(`[${code}]`);
+  if (detailMessage && detailMessage !== base) parts.push(detailMessage);
+  if (status && !String(base).includes(`(${status})`)) parts.push(`status=${status}`);
+
+  return parts.length ? `${base} ${parts.join(' ')}` : base;
+}
+
+/**
  * Extract tracked field values from member data.
  * Handles both Sportlink format (data object from prepare-rondo-club-members.js)
  * and Rondo Club format (ACF data from WordPress API).
@@ -574,7 +600,7 @@ async function deleteOrphanParents(db, currentParentEmails, options) {
         deleteParent(db, parent.email);
         deleted.push({ email: parent.email, rondo_club_id: parent.rondo_club_id });
       } else {
-        errors.push({ email: parent.email, message: error.message });
+        errors.push({ email: parent.email, message: formatSyncError(error) });
       }
     }
   }
@@ -637,7 +663,7 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
       if (error.details) {
         console.error('Error details:', JSON.stringify(error.details, null, 2));
       }
-      result.errors.push({ email: parent.email, message: error.message, details: error.details });
+      result.errors.push({ email: parent.email, message: formatSyncError(error), details: error.details });
     }
   }
 
@@ -700,7 +726,7 @@ async function markFormerMembers(db, currentKnvbIds, options) {
         deleteMember(db, member.knvb_id);
         marked.push({ knvb_id: member.knvb_id, rondo_club_id: member.rondo_club_id });
       } else {
-        errors.push({ knvb_id: member.knvb_id, message: error.message });
+        errors.push({ knvb_id: member.knvb_id, message: formatSyncError(error) });
       }
     }
   }
@@ -782,7 +808,7 @@ async function runSync(options = {}) {
             result.errors.push({
               knvb_id: member.knvb_id,
               email: member.email,
-              message: error.message
+              message: formatSyncError(error)
             });
           }
         }
@@ -829,7 +855,7 @@ async function runSync(options = {}) {
 
   } catch (error) {
     result.success = false;
-    result.errors.push({ message: error.message });
+    result.errors.push({ message: formatSyncError(error) });
     logError(`Sync error: ${error.message}`);
     return result;
   }
