@@ -6,6 +6,7 @@ const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/lap
 const {
   openDb: openRondoClubDb,
   getMemberFreeFieldsByKnvbId,
+  getFreeFieldMappings,
   upsertMembers,
   getMembersNeedingSync,
   updateSyncState,
@@ -280,10 +281,11 @@ async function syncIndividual(knvbId, options = {}) {
 
     // Get free fields for this member (now includes freshly fetched data if --fetch was used)
     const freeFields = getMemberFreeFieldsByKnvbId(rondoClubDb, knvbId);
+    const freeFieldMappings = getFreeFieldMappings(rondoClubDb);
     log(`Free fields: ${JSON.stringify(freeFields)}`);
 
     // Prepare the person data
-    const prepared = preparePerson(member, freeFields);
+    const prepared = preparePerson(member, freeFields, null, freeFieldMappings);
     log(`Prepared data for ${prepared.knvb_id}`);
 
     // Upsert to tracking database to get current state
