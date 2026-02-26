@@ -4,6 +4,7 @@
   <h2>Vrije Velden Mapping</h2>
   <p class="settings-help">
     Koppel Sportlink <code>Remarks1</code> t/m <code>Remarks8</code> aan Rondo Club velden.
+    Kies per mapping of deze naar <code>acf</code> of <code>meta</code> moet schrijven.
     Lege doelvelden worden niet gesynchroniseerd.
   </p>
 
@@ -16,7 +17,8 @@
       <thead>
         <tr>
           <th>Sportlink veld</th>
-          <th>Doelveld (ACF key)</th>
+          <th>Doelveld</th>
+          <th>Scope</th>
           <th>Type</th>
         </tr>
       </thead>
@@ -38,6 +40,13 @@
                   <option value="<%= option %>"></option>
                 <% }) %>
               </datalist>
+            </td>
+            <td>
+              <select name="<%= key %>_scope">
+                <% scopes.forEach((scope) => { %>
+                  <option value="<%= scope %>" <%= mapping.target_scope === scope ? 'selected' : '' %>><%= scope %></option>
+                <% }) %>
+              </select>
             </td>
             <td>
               <select name="<%= key %>_type">

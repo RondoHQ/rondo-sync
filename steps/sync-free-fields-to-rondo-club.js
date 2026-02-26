@@ -83,7 +83,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       WHERE rcm.rondo_club_id IS NOT NULL
     `);
     const mappingRows = db.prepare(`
-      SELECT source_field, target_field, value_type
+      SELECT source_field, target_field, target_scope, value_type
       FROM free_field_mappings
       WHERE target_field IS NOT NULL AND TRIM(target_field) != ''
       ORDER BY source_field ASC
@@ -113,6 +113,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       }
 
       const acf = data.acf || {};
+      const meta = data.meta || {};
       const firstName = acf.first_name;
       const lastName = acf.last_name;
 
@@ -130,13 +131,15 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       for (const mapping of mappingRows) {
         const sourceKey = String(mapping.source_field).toLowerCase().replace('remarks', 'remark');
         const targetField = String(mapping.target_field || '').trim();
+        const targetScope = (mapping.target_scope === 'meta') ? 'meta' : 'acf';
         if (!targetField) continue;
 
         const newValue = convertMappedValue(member[sourceKey], mapping.value_type || 'string');
-        const currentValue = (acf[targetField] === undefined || acf[targetField] === '') ? null : acf[targetField];
+        const sourceObj = targetScope === 'meta' ? meta : acf;
+        const currentValue = (sourceObj[targetField] === undefined || sourceObj[targetField] === '') ? null : sourceObj[targetField];
 
         if (force || newValue !== currentValue) {
-          mappedChanges.push({ targetField, currentValue, newValue });
+          mappedChanges.push({ targetField, targetScope, currentValue, newValue });
         }
       }
 
@@ -155,7 +158,12 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       };
 
       for (const change of mappedChanges) {
-        updatePayload.acf[change.targetField] = change.newValue;
+        if (change.targetScope === 'meta') {
+          if (!updatePayload.meta) updatePayload.meta = {};
+          updatePayload.meta[change.targetField] = change.newValue;
+        } else {
+          updatePayload.acf[change.targetField] = change.newValue;
+        }
       }
       if (financialBlockChanged || force) {
         updatePayload.acf['financiele-blokkade'] = newFinancialBlock;
@@ -163,7 +171,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
 
       logVerbose(`Syncing free fields for ${knvb_id} → person ${rondo_club_id}`);
       for (const change of mappedChanges) {
-        logVerbose(`  ${change.targetField}: ${change.currentValue} → ${change.newValue}`);
+        logVerbose(`  ${change.targetScope}.${change.targetField}: ${change.currentValue} → ${change.newValue}`);
       }
       if (financialBlockChanged) logVerbose(`  Financial block: ${currentFinancialBlock} → ${newFinancialBlock}`);
 

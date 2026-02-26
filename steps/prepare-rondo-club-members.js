@@ -85,12 +85,12 @@ function convertMappedValue(value, valueType) {
 }
 
 /**
- * Apply configurable free-field mappings (Remarks1..Remarks8 -> ACF field).
- * @param {Object} acf - ACF payload object
+ * Apply configurable free-field mappings (Remarks1..Remarks8 -> ACF/meta field).
+ * @param {Object} payload - Output payload with acf/meta objects
  * @param {Object} freeFields - Free fields row from DB
- * @param {Array<{source_field: string, target_field: string|null, value_type: string}>} freeFieldMappings
+ * @param {Array<{source_field: string, target_field: string|null, target_scope: 'acf'|'meta', value_type: string}>} freeFieldMappings
  */
-function applyMappedFreeFields(acf, freeFields, freeFieldMappings) {
+function applyMappedFreeFields(payload, freeFields, freeFieldMappings) {
   if (!freeFields || !Array.isArray(freeFieldMappings)) return;
 
   for (const mapping of freeFieldMappings) {
@@ -102,7 +102,9 @@ function applyMappedFreeFields(acf, freeFields, freeFieldMappings) {
     const value = freeFields[rowKey];
     const converted = convertMappedValue(value, mapping.value_type || 'string');
     if (converted !== null) {
-      acf[targetField] = converted;
+      const scope = mapping.target_scope === 'meta' ? 'meta' : 'acf';
+      if (!payload[scope]) payload[scope] = {};
+      payload[scope][targetField] = converted;
     }
   }
 }
@@ -247,6 +249,12 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     contact_info: buildContactInfo(sportlinkMember),
     addresses: buildAddresses(sportlinkMember)
   };
+  const payload = {
+    acf: acf,
+    meta: {
+      team: teams || ''
+    }
+  };
 
   // Only add optional fields if they have values
   if (name.infix) acf.infix = name.infix;
@@ -274,7 +282,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
 
   // Free fields from Sportlink /other tab (FreeScout ID, VOG datum, financial block)
   if (freeFields) {
-    applyMappedFreeFields(acf, freeFields, freeFieldMappings);
+    applyMappedFreeFields(payload, freeFields, freeFieldMappings);
     // Financial block status (convert SQLite INTEGER 0/1 to boolean)
     // Explicitly check for 1 to treat null/undefined/0 as "not blocked"
     if (freeFields.has_financial_block !== undefined) {
@@ -312,10 +320,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     person_image_date: personImageDate,
     data: {
       status: 'publish',
-      acf: acf,
-      meta: {
-        team: teams || ''
-      }
+      ...payload
     }
   };
 }
