@@ -8,7 +8,6 @@ const {
   getMemberFreeFieldsByKnvbId,
   getFreeFieldMappings,
   upsertMembers,
-  getMembersNeedingSync,
   updateSyncState,
   getMemberFunctions,
   getMemberCommittees,
@@ -233,7 +232,7 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
  * Sync a single person by KNVB ID
  */
 async function syncIndividual(knvbId, options = {}) {
-  const { verbose = false, force = false, dryRun = false, skipFunctions = false, fetch = false } = options;
+  const { verbose = false, force = true, dryRun = false, skipFunctions = false, fetch = false } = options;
   const log = verbose ? console.log : () => {};
 
   // Open databases
@@ -291,17 +290,7 @@ async function syncIndividual(knvbId, options = {}) {
     // Upsert to tracking database to get current state
     upsertMembers(rondoClubDb, [prepared]);
 
-    // Get member with rondo_club_id from database
-    const [trackedMember] = getMembersNeedingSync(rondoClubDb, force);
-    const memberToSync = trackedMember?.knvb_id === knvbId ? trackedMember : null;
-
-    if (!memberToSync && !force) {
-      console.log(`Member ${knvbId} is already up to date (no changes detected)`);
-      console.log('Use --force to sync anyway');
-      return { success: true, action: 'skipped', reason: 'no changes' };
-    }
-
-    // Get rondo_club_id from database directly if not forcing
+    // Get rondo_club_id from database
     const stmt = rondoClubDb.prepare('SELECT rondo_club_id FROM rondo_club_members WHERE knvb_id = ?');
     const row = stmt.get(knvbId);
     const rondoClubId = row?.rondo_club_id;
@@ -464,7 +453,7 @@ module.exports = { syncIndividual, findMemberByName };
 if (require.main === module) {
   const args = process.argv.slice(2);
   const verbose = args.includes('--verbose');
-  const force = args.includes('--force');
+  const force = true;
   const dryRun = args.includes('--dry-run');
   const searchMode = args.includes('--search');
   const skipFunctions = args.includes('--skip-functions');
@@ -478,7 +467,7 @@ if (require.main === module) {
     console.log('       node sync-individual.js --search <name> [options]');
     console.log('\nOptions:');
     console.log('  --verbose         Show detailed output');
-    console.log('  --force           Sync even if no changes detected');
+    console.log('  --force           (legacy) no-op; sync is always forced');
     console.log('  --dry-run         Show what would be synced without making changes');
     console.log('  --search          Search for members by name');
     console.log('  --skip-functions  Skip syncing functions/commissie work history');
