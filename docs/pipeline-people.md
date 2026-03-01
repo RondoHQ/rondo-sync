@@ -115,10 +115,11 @@ pipelines/sync-people.js
 2. Upserts events into `data/laposta-sync.sqlite` → `member_deliverability_events`.
 3. Matches events to existing members by email via `data/rondo-sync.sqlite` → `rondo_club_members`.
 4. Creates todo tasks on matched person records via `POST /wp-json/rondo/v1/people/{id}/todos`.
-5. Marks processed events with the created todo ID to avoid duplicate tasks on later runs.
-6. If configured, reassigns created tasks to a specific WordPress user (`LAPOSTA_TASK_ASSIGNEE_USER_ID`), otherwise tasks remain owned by the authenticated sync user.
+5. Skips bounce (`cleaned`) events older than 31 days to avoid creating stale follow-up tasks.
+6. Marks processed events with the created todo ID (or ignored reason) to avoid duplicate processing on later runs.
+7. If configured, reassigns created tasks to a specific WordPress user (`LAPOSTA_TASK_ASSIGNEE_USER_ID`), otherwise tasks remain owned by the authenticated sync user.
 
-**Output:** `{ scanned, pending, matched, created, unresolved, errors }`
+**Output:** `{ scanned, pending, matched, created, unresolved, skippedOldBounces, errors }`
 
 ### Step 6: Photo Download
 

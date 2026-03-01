@@ -4,7 +4,10 @@ const {
   openDb: openLapostaDb,
   upsertMemberDeliverabilityEvents,
   getPendingMemberDeliverabilityEvents,
-  markMemberDeliverabilityEventTaskCreated
+  markMemberDeliverabilityEventTaskCreated,
+  markMemberDeliverabilityEventIgnored,
+  getBounceDeliverabilityEventsWithTodos,
+  markMemberDeliverabilityTodoDeleted
 } = require('../lib/laposta-db');
 const { fetchMembers, getListConfig } = require('../lib/laposta-client');
 const { openDb: openRondoDb } = require('../lib/rondo-club-db');
@@ -13,6 +16,8 @@ const { createSyncLogger } = require('../lib/logger');
 const { parseCliArgs, readEnv } = require('../lib/utils');
 
 const DELIVERABILITY_STATES = ['unsubscribed', 'cleaned'];
+const BOUNCE_TASK_MAX_AGE_DAYS = 31;
+const OLD_BOUNCE_CLEANUP_DAYS = 92;
 
 function normalizeEmail(email) {
   if (!email) return '';
@@ -31,6 +36,30 @@ function buildEventKey({ listId, email, memberId, state }) {
   const stableEmail = normalizeEmail(email);
   const identity = memberId || stableEmail;
   return `${listId}:${identity}:${state}`;
+}
+
+function parseLapostaDate(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
+    const dt = new Date(text.replace(' ', 'T') + 'Z');
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const dt = new Date(`${text}T00:00:00Z`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  const dt = new Date(text);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function isOlderThanDays(value, days) {
+  const dt = parseLapostaDate(value);
+  if (!dt) return false;
+  return dt.getTime() < (Date.now() - (days * 24 * 60 * 60 * 1000));
 }
 
 function parseMemberName(dataJson, knvbId) {
@@ -258,6 +287,7 @@ async function runSyncLapostaDeliverabilityTasks(options = {}) {
     matched: 0,
     created: 0,
     unresolved: 0,
+    skippedOldBounces: 0,
     assigneeUserId: null,
     fetched: {
       unsubscribed: 0,
@@ -292,6 +322,17 @@ async function runSyncLapostaDeliverabilityTasks(options = {}) {
 
     for (const event of pendingEvents) {
       try {
+        const eventDate = event.modified_at || event.signup_date;
+        if (event.state === 'cleaned' && isOlderThanDays(eventDate, BOUNCE_TASK_MAX_AGE_DAYS)) {
+          markMemberDeliverabilityEventIgnored(
+            lapostaDb,
+            event.id,
+            `bounce_older_than_${BOUNCE_TASK_MAX_AGE_DAYS}_days`
+          );
+          result.skippedOldBounces++;
+          continue;
+        }
+
         const member = findRondoMemberByEmail(rondoDb, event.email);
         if (!member) {
           result.unresolved++;
@@ -326,19 +367,93 @@ async function runSyncLapostaDeliverabilityTasks(options = {}) {
   }
 }
 
-module.exports = { runSyncLapostaDeliverabilityTasks };
+/**
+ * Cleanup old bounce todos created by Laposta deliverability sync.
+ * Deletes tasks linked to bounce events older than OLD_BOUNCE_CLEANUP_DAYS.
+ *
+ * @param {Object} options
+ * @param {Object} [options.logger] - Logger instance
+ * @param {boolean} [options.verbose=false] - Verbose mode
+ * @returns {Promise<{success: boolean, total: number, deleted: number, skipped: number, errors: Array}>}
+ */
+async function runCleanupOldBounceTodos(options = {}) {
+  const { logger: providedLogger, verbose = false } = options;
+  const logger = providedLogger || createSyncLogger({ verbose, prefix: 'laposta-deliverability' });
+  const logVerbose = logger?.verbose?.bind(logger) || (verbose ? console.log : () => {});
+
+  const result = {
+    success: true,
+    total: 0,
+    deleted: 0,
+    skipped: 0,
+    errors: []
+  };
+
+  const lapostaDb = openLapostaDb();
+  try {
+    const candidates = getBounceDeliverabilityEventsWithTodos(lapostaDb);
+    const toDelete = candidates.filter((row) => {
+      const eventDate = row.modified_at || row.signup_date;
+      return isOlderThanDays(eventDate, OLD_BOUNCE_CLEANUP_DAYS);
+    });
+    result.total = toDelete.length;
+
+    for (const row of toDelete) {
+      try {
+        await rondoClubRequest(`wp/v2/todos/${row.rondo_todo_id}?force=true`, 'DELETE', null, { logger, verbose });
+        markMemberDeliverabilityTodoDeleted(lapostaDb, row.id);
+        result.deleted++;
+      } catch (error) {
+        if (error.status === 404 || error.details?.data?.status === 404) {
+          markMemberDeliverabilityTodoDeleted(lapostaDb, row.id);
+          result.skipped++;
+          continue;
+        }
+        result.errors.push({
+          eventId: row.id,
+          todoId: row.rondo_todo_id,
+          message: error.message
+        });
+        logVerbose(`Failed deleting todo ${row.rondo_todo_id}: ${error.message}`);
+      }
+    }
+
+    result.success = result.errors.length === 0;
+    return result;
+  } finally {
+    lapostaDb.close();
+  }
+}
+
+module.exports = { runSyncLapostaDeliverabilityTasks, runCleanupOldBounceTodos };
 
 if (require.main === module) {
   const { verbose } = parseCliArgs();
+  const cleanupOldBounces = process.argv.includes('--cleanup-old-bounces');
   const logger = createSyncLogger({ verbose, prefix: 'laposta-deliverability' });
 
-  runSyncLapostaDeliverabilityTasks({ logger, verbose })
+  const runner = cleanupOldBounces
+    ? runCleanupOldBounceTodos({ logger, verbose })
+    : runSyncLapostaDeliverabilityTasks({ logger, verbose });
+
+  runner
     .then((result) => {
-      logger.log(
-        `Done: ${result.created} todos created (${result.pending} pending events, ${result.unresolved} unmatched, ${result.errors.length} errors)`
-      );
+      if (cleanupOldBounces) {
+        logger.log(
+          `Cleanup done: ${result.deleted} deleted, ${result.skipped} already missing, ${result.errors.length} errors (from ${result.total} old bounce tasks)`
+        );
+      } else {
+        logger.log(
+          `Done: ${result.created} todos created (${result.pending} pending events, ${result.unresolved} unmatched, ${result.skippedOldBounces} old bounces skipped, ${result.errors.length} errors)`
+        );
+      }
       if (result.errors.length > 0) {
-        result.errors.slice(0, 20).forEach(err => logger.error(`  ${err.email} (${err.state}): ${err.message}`));
+        result.errors.slice(0, 20).forEach((err) => {
+          const label = err.email
+            ? `${err.email} (${err.state})`
+            : `todo ${err.todoId || 'unknown'}`;
+          logger.error(`  ${label}: ${err.message}`);
+        });
         process.exitCode = 1;
       }
       logger.close();

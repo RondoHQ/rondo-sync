@@ -146,6 +146,9 @@ Tracks Laposta deliverability signals (`unsubscribed`, `cleaned`) and links each
 | `assigned_user_id` | INTEGER | WordPress user ID assigned to the todo |
 | `rondo_todo_id` | INTEGER | Created Rondo Club todo ID |
 | `task_created_at` | TEXT | Timestamp when todo was created |
+| `ignored_at` | TEXT | Timestamp when event was intentionally ignored (no task created) |
+| `ignored_reason` | TEXT | Reason for ignore (e.g. old bounce) |
+| `todo_deleted_at` | TEXT | Timestamp when linked todo was deleted by cleanup |
 
 **Unique Constraint:** `event_key`
 

@@ -12,6 +12,8 @@
     "sync-laposta": "node steps/submit-laposta-list.js",
     "sync-laposta-deliverability": "node steps/sync-laposta-deliverability-tasks.js",
     "sync-laposta-deliverability-verbose": "node steps/sync-laposta-deliverability-tasks.js --verbose",
+    "cleanup-laposta-old-bounces": "node steps/sync-laposta-deliverability-tasks.js --cleanup-old-bounces",
+    "cleanup-laposta-old-bounces-verbose": "node steps/sync-laposta-deliverability-tasks.js --cleanup-old-bounces --verbose",
     "dedupe-laposta": "node tools/dedupe-laposta-list.js",
     "sync-all": "node pipelines/sync-all.js",
     "sync-all-verbose": "node pipelines/sync-all.js --verbose",
