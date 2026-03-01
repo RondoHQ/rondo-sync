@@ -155,19 +155,12 @@ async function resolveTaskAssignee(rondoDb, options = {}) {
 }
 
 function buildTodoPayload(event, member) {
-  const isBounce = event.state === 'cleaned';
-  const eventLabel = isBounce ? 'bounce' : 'afmelding';
   const dueDate = new Date().toISOString().slice(0, 10);
-  const memberLabel = member.fullName ? `${member.fullName} (${member.knvbId})` : member.knvbId;
+  const memberName = member.fullName || member.knvbId;
 
-  const content = `Laposta ${eventLabel}: controleer contactgegevens van ${memberLabel}`;
+  const content = `Controleer contactgegevens van ${memberName}`;
   const notes = [
-    '<p><strong>Laposta-signaal</strong></p>',
-    `<p>Type: ${isBounce ? 'bounce (cleaned)' : 'unsubscribe'}</p>`,
-    `<p>E-mail: ${escapeHtml(event.email)}</p>`,
-    `<p>Lijst: ${escapeHtml(event.list_id)}</p>`,
-    `<p>Gewijzigd: ${escapeHtml(event.modified_at || event.signup_date || 'onbekend')}</p>`,
-    '<p>Actie: werk contactgegevens bij indien nodig.</p>'
+    `<p>Het e-mail adres ${escapeHtml(event.email)} van ${escapeHtml(memberName)} kan geen mail ontvangen via Laposta. Aangezien we ook naar dit e-mail adres communiceren over contributie, boetes, etc. moeten we dit e-mail adres controleren.</p>`
   ].join('');
 
   return {
