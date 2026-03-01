@@ -106,7 +106,7 @@ Central table tracking all members across up to 4 Laposta lists.
 | Column | Type | Description |
 |---|---|---|
 | `id` | INTEGER | Primary key (auto-increment) |
-| `list_index` | INTEGER | Which list: 0=LAPOSTA_LIST, 1=LIST2, 2=LIST3, 3=LIST4 |
+| `list_index` | INTEGER | Which list: 1=LAPOSTA_LIST, 2=LAPOSTA_LIST2, 3=LAPOSTA_LIST3, 4=LAPOSTA_LIST4 |
 | `list_id` | TEXT | Laposta list ID (UUID) |
 | `email` | TEXT | Member email address |
 | `custom_fields_json` | TEXT | JSON object of current custom field values |
@@ -120,6 +120,38 @@ Central table tracking all members across up to 4 Laposta lists.
 **Unique Constraint:** `(list_index, email)`
 
 **Indexes:** `idx_members_list_hash` on `(list_index, source_hash, last_synced_hash)`
+
+---
+
+### member_deliverability_events
+
+Tracks Laposta deliverability signals (`unsubscribed`, `cleaned`) and links each processed event to a created Rondo Club todo.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER | Primary key (auto-increment) |
+| `list_index` | INTEGER | Laposta list index (1-4) |
+| `list_id` | TEXT | Laposta list ID |
+| `member_id` | TEXT | Laposta member ID (if provided) |
+| `email` | TEXT | Member email address |
+| `state` | TEXT | Laposta state (`unsubscribed` or `cleaned`) |
+| `modified_at` | TEXT | Laposta modification timestamp |
+| `signup_date` | TEXT | Laposta signup timestamp |
+| `event_key` | TEXT | Unique idempotency key for this event |
+| `payload_json` | TEXT | Raw Laposta member payload snapshot |
+| `first_seen_at` | TEXT | First time event was observed |
+| `last_seen_at` | TEXT | Last time event was observed |
+| `matched_knvb_id` | TEXT | KNVB ID matched by email (if any) |
+| `matched_rondo_club_id` | INTEGER | Matched WordPress person ID (if any) |
+| `assigned_user_id` | INTEGER | WordPress user ID assigned to the todo |
+| `rondo_todo_id` | INTEGER | Created Rondo Club todo ID |
+| `task_created_at` | TEXT | Timestamp when todo was created |
+
+**Unique Constraint:** `event_key`
+
+**Indexes:**
+- `idx_member_deliverability_events_pending` on `(task_created_at, last_seen_at)`
+- `idx_member_deliverability_events_email` on `(email, state)`
 
 ---
 

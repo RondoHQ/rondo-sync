@@ -9,6 +9,7 @@ const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
 const { runPrepare } = require('../steps/prepare-laposta-members');
 const { runSubmit } = require('../steps/submit-laposta-list');
 const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync');
+const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runSync: runTeamSync } = require('../steps/submit-rondo-club-teams');
 const { runSync: runWorkHistorySync } = require('../steps/submit-rondo-club-work-history');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
@@ -70,6 +71,16 @@ function printSummary(logger, stats) {
       logger.log(`List ${list.index}: not configured`);
     }
   });
+  logger.log('');
+
+  logger.log('LAPOSTA DELIVERABILITY');
+  logger.log(minorDivider);
+  logger.log(`Events scanned: ${stats.lapostaDeliverability.scanned}`);
+  logger.log(`Pending events: ${stats.lapostaDeliverability.pending}`);
+  logger.log(`Tasks created: ${stats.lapostaDeliverability.created}`);
+  if (stats.lapostaDeliverability.unresolved > 0) {
+    logger.log(`Unmatched emails: ${stats.lapostaDeliverability.unresolved}`);
+  }
   logger.log('');
 
   logger.log('RONDO CLUB SYNC');
@@ -250,6 +261,7 @@ function printSummary(logger, stats) {
 
   const allErrors = [
     ...stats.errors,
+    ...stats.lapostaDeliverability.errors,
     ...stats.rondoClub.errors,
     ...stats.teams.errors,
     ...stats.workHistory.errors,
@@ -304,6 +316,15 @@ async function runSyncAll(options = {}) {
     updated: 0,
     errors: [],
     lists: [],
+    lapostaDeliverability: {
+      scanned: 0,
+      pending: 0,
+      matched: 0,
+      created: 0,
+      unresolved: 0,
+      assigneeUserId: null,
+      errors: []
+    },
     rondoClub: {
       total: 0,
       synced: 0,
@@ -518,6 +539,31 @@ async function runSyncAll(options = {}) {
       stats.rondoClub.errors.push({
         message: `Rondo Club sync failed: ${err.message}`,
         system: 'rondoClub'
+      });
+    }
+
+    // Step 4a: Create follow-up todos for Laposta bounces/unsubscribes (NON-CRITICAL)
+    logger.verbose('Syncing Laposta deliverability events...');
+    try {
+      const lapostaDeliverabilityResult = await runSyncLapostaDeliverabilityTasks({ logger, verbose });
+      stats.lapostaDeliverability = {
+        scanned: lapostaDeliverabilityResult.scanned,
+        pending: lapostaDeliverabilityResult.pending,
+        matched: lapostaDeliverabilityResult.matched,
+        created: lapostaDeliverabilityResult.created,
+        unresolved: lapostaDeliverabilityResult.unresolved,
+        assigneeUserId: lapostaDeliverabilityResult.assigneeUserId,
+        errors: (lapostaDeliverabilityResult.errors || []).map(e => ({
+          email: e.email,
+          message: e.message,
+          system: 'laposta-deliverability'
+        }))
+      };
+    } catch (err) {
+      logger.error(`Laposta deliverability sync failed: ${err.message}`);
+      stats.lapostaDeliverability.errors.push({
+        message: `Laposta deliverability sync failed: ${err.message}`,
+        system: 'laposta-deliverability'
       });
     }
 
@@ -830,6 +876,7 @@ async function runSyncAll(options = {}) {
 
     const allErrorArrays = [
       stats.errors,
+      stats.lapostaDeliverability.errors,
       stats.rondoClub.errors,
       stats.teams.errors,
       stats.workHistory.errors,

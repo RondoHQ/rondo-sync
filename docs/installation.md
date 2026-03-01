@@ -87,6 +87,8 @@ LAPOSTA_LIST=your-primary-list-id
 LAPOSTA_LIST2=                         # Optional second list
 LAPOSTA_LIST3=                         # Optional third list
 LAPOSTA_LIST4=                         # Optional fourth list
+LAPOSTA_TASK_ASSIGNEE_USER_ID=         # Optional: WP user ID for bounce/unsubscribe todos
+LAPOSTA_TASK_ASSIGNEE_EMAIL=           # Optional fallback assignee lookup by WP user email
 
 # Rondo Club WordPress
 RONDO_URL=https://your-rondo-club-site.nl

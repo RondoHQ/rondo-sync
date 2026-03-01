@@ -10,6 +10,8 @@
     "prepare-rondo-club": "node steps/prepare-rondo-club-members.js",
     "submit-laposta": "node steps/submit-laposta-list.js",
     "sync-laposta": "node steps/submit-laposta-list.js",
+    "sync-laposta-deliverability": "node steps/sync-laposta-deliverability-tasks.js",
+    "sync-laposta-deliverability-verbose": "node steps/sync-laposta-deliverability-tasks.js --verbose",
     "dedupe-laposta": "node tools/dedupe-laposta-list.js",
     "sync-all": "node pipelines/sync-all.js",
     "sync-all-verbose": "node pipelines/sync-all.js --verbose",

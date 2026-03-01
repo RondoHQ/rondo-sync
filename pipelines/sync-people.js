@@ -8,6 +8,7 @@ const { runDownload } = require('../steps/download-data-from-sportlink');
 const { runPrepare } = require('../steps/prepare-laposta-members');
 const { runSubmit } = require('../steps/submit-laposta-list');
 const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync');
+const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
 const { runPhotoSync } = require('../steps/upload-photos-to-rondo-club');
 // const { runReverseSync } = require('../lib/reverse-sync-sportlink'); // disabled
@@ -39,6 +40,16 @@ function printSummary(logger, stats) {
   logger.log(`Members synced: ${stats.synced} (${stats.added} added, ${stats.updated} updated)`);
   logger.log('');
 
+  logger.log('LAPOSTA DELIVERABILITY');
+  logger.log(minorDivider);
+  logger.log(`Events scanned: ${stats.lapostaDeliverability.scanned}`);
+  logger.log(`Pending events: ${stats.lapostaDeliverability.pending}`);
+  logger.log(`Tasks created: ${stats.lapostaDeliverability.created}`);
+  if (stats.lapostaDeliverability.unresolved > 0) {
+    logger.log(`Unmatched emails: ${stats.lapostaDeliverability.unresolved}`);
+  }
+  logger.log('');
+
   logger.log('RONDO CLUB SYNC');
   logger.log(minorDivider);
   logger.log(`Persons synced: ${stats.rondoClub.synced}/${stats.rondoClub.total} (${stats.rondoClub.created} created, ${stats.rondoClub.updated} updated)`);
@@ -67,6 +78,7 @@ function printSummary(logger, stats) {
 
   const allErrors = [
     ...stats.errors,
+    ...stats.lapostaDeliverability.errors,
     ...stats.rondoClub.errors,
     ...stats.photos.errors
   ];
@@ -111,6 +123,15 @@ async function runPeopleSync(options = {}) {
     updated: 0,
     errors: [],
     lists: [],
+    lapostaDeliverability: {
+      scanned: 0,
+      pending: 0,
+      matched: 0,
+      created: 0,
+      unresolved: 0,
+      assigneeUserId: null,
+      errors: []
+    },
     rondoClub: {
       total: 0,
       synced: 0,
@@ -277,7 +298,48 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 5: Photo Download (Playwright-based, downloads pending photos from Sportlink)
+    // Step 5: Create follow-up todos for Laposta bounces/unsubscribes
+    logger.verbose('Syncing Laposta deliverability events...');
+    const lapostaDeliverabilityStepId = tracker.startStep('laposta-deliverability');
+    try {
+      const lapostaDeliverabilityResult = await runSyncLapostaDeliverabilityTasks({ logger, verbose });
+      stats.lapostaDeliverability.scanned = lapostaDeliverabilityResult.scanned;
+      stats.lapostaDeliverability.pending = lapostaDeliverabilityResult.pending;
+      stats.lapostaDeliverability.matched = lapostaDeliverabilityResult.matched;
+      stats.lapostaDeliverability.created = lapostaDeliverabilityResult.created;
+      stats.lapostaDeliverability.unresolved = lapostaDeliverabilityResult.unresolved;
+      stats.lapostaDeliverability.assigneeUserId = lapostaDeliverabilityResult.assigneeUserId;
+      if (lapostaDeliverabilityResult.errors?.length > 0) {
+        stats.lapostaDeliverability.errors.push(...lapostaDeliverabilityResult.errors.map(e => ({
+          email: e.email,
+          message: e.message,
+          system: 'laposta-deliverability'
+        })));
+      }
+
+      tracker.endStep(lapostaDeliverabilityStepId, {
+        outcome: lapostaDeliverabilityResult.success ? 'success' : 'partial',
+        created: stats.lapostaDeliverability.created,
+        skipped: stats.lapostaDeliverability.unresolved,
+        failed: stats.lapostaDeliverability.errors.length
+      });
+      tracker.recordErrors('laposta-deliverability', lapostaDeliverabilityStepId, stats.lapostaDeliverability.errors);
+    } catch (err) {
+      logger.error(`Laposta deliverability sync failed: ${err.message}`);
+      stats.lapostaDeliverability.errors.push({
+        message: `Laposta deliverability sync failed: ${err.message}`,
+        system: 'laposta-deliverability'
+      });
+      tracker.endStep(lapostaDeliverabilityStepId, { outcome: 'failure' });
+      tracker.recordError({
+        stepName: 'laposta-deliverability',
+        stepId: lapostaDeliverabilityStepId,
+        errorMessage: err.message,
+        errorStack: err.stack
+      });
+    }
+
+    // Step 6: Photo Download (Playwright-based, downloads pending photos from Sportlink)
     logger.verbose('Downloading photos from Sportlink...');
     const photoDownloadStepId = tracker.startStep('photo-download');
     try {
@@ -319,7 +381,7 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 6: Photo Upload/Delete
+    // Step 7: Photo Upload/Delete
     logger.verbose('Syncing photos to Rondo Club...');
     const photoUploadStepId = tracker.startStep('photo-upload');
     try {
@@ -366,14 +428,18 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 7: Reverse Sync (Rondo Club -> Sportlink) — currently disabled
+    // Step 8: Reverse Sync (Rondo Club -> Sportlink) — currently disabled
     // TODO: Re-enable once reverse sync is fixed
 
     // Complete
     stats.completedAt = formatTimestamp();
     stats.duration = formatDuration(Date.now() - startTime);
 
-    const totalErrors = stats.errors.length + stats.rondoClub.errors.length + stats.photos.errors.length;
+    const totalErrors =
+      stats.errors.length +
+      stats.lapostaDeliverability.errors.length +
+      stats.rondoClub.errors.length +
+      stats.photos.errors.length;
     const success = totalErrors === 0;
     const outcome = totalErrors === 0 ? 'success' : 'partial';
 

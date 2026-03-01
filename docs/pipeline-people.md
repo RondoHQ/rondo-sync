@@ -18,10 +18,11 @@ pipelines/sync-people.js
 ├── Step 1: steps/download-data-from-sportlink.js    → data/laposta-sync.sqlite, data/rondo-sync.sqlite
 ├── Step 2: steps/prepare-laposta-members.js         → data/laposta-sync.sqlite (members table)
 ├── Step 3: steps/submit-laposta-list.js             → Laposta API
-├── Step 4: steps/submit-rondo-club-sync.js             → Rondo Club WordPress API (members + parents + birthdate)
-├── Step 5: steps/download-photos-from-api.js        → photos/ directory
-├── Step 6: steps/upload-photos-to-rondo-club.js        → Rondo Club WordPress API (media)
-└── Step 7: lib/reverse-sync-sportlink.js      → Sportlink Club (currently disabled)
+├── Step 4: steps/submit-rondo-club-sync.js       → Rondo Club WordPress API (members + parents + birthdate)
+├── Step 5: steps/sync-laposta-deliverability-tasks.js → Rondo Club todo API (unsubscribe/bounce follow-up)
+├── Step 6: steps/download-photos-from-api.js     → photos/ directory
+├── Step 7: steps/upload-photos-to-rondo-club.js  → Rondo Club WordPress API (media)
+└── Step 8: lib/reverse-sync-sportlink.js         → Sportlink Club (currently disabled)
 ```
 
 ## Step-by-Step Details
@@ -105,7 +106,21 @@ pipelines/sync-people.js
 
 **Birthday field:** As of v2.3, birthdate is synced as `acf.birthdate` (YYYY-MM-DD) on the person record during Step 4. Previous versions used a separate `important_date` post type which is now deprecated.
 
-### Step 5: Photo Download
+### Step 5: Laposta Deliverability Follow-up Tasks
+
+**Script:** `steps/sync-laposta-deliverability-tasks.js`  
+**Function:** `runSyncLapostaDeliverabilityTasks({ logger, verbose })`
+
+1. Fetches Laposta members in state `unsubscribed` and `cleaned` (hard bounce) for each configured list.
+2. Upserts events into `data/laposta-sync.sqlite` → `member_deliverability_events`.
+3. Matches events to existing members by email via `data/rondo-sync.sqlite` → `rondo_club_members`.
+4. Creates todo tasks on matched person records via `POST /wp-json/rondo/v1/people/{id}/todos`.
+5. Marks processed events with the created todo ID to avoid duplicate tasks on later runs.
+6. If configured, reassigns created tasks to a specific WordPress user (`LAPOSTA_TASK_ASSIGNEE_USER_ID`), otherwise tasks remain owned by the authenticated sync user.
+
+**Output:** `{ scanned, pending, matched, created, unresolved, errors }`
+
+### Step 6: Photo Download
 
 **Script:** `steps/download-photos-from-api.js`
 **Function:** `runPhotoDownload({ logger, verbose })`
@@ -123,7 +138,7 @@ pipelines/sync-people.js
 
 **Output:** `{ success, total, downloaded, failed, errors }`
 
-### Step 6: Photo Upload
+### Step 7: Photo Upload
 
 **Script:** `steps/upload-photos-to-rondo-club.js`
 **Function:** `runPhotoSync({ logger, verbose })`
@@ -136,7 +151,7 @@ pipelines/sync-people.js
 
 **Output:** `{ upload: { synced, skipped, errors }, delete: { deleted, errors } }`
 
-### Step 7: Reverse Sync (Currently Disabled)
+### Step 8: Reverse Sync (Currently Disabled)
 
 **Script:** `lib/reverse-sync-sportlink.js`
 **Function:** `runReverseSync({ logger, verbose })`
@@ -188,9 +203,11 @@ See `config/field-mapping.json` for the complete mapping. Key fields:
 | `laposta-sync.sqlite` | `sportlink_runs` | Raw download results |
 | `laposta-sync.sqlite` | `members` | Prepared Laposta members with hashes |
 | `laposta-sync.sqlite` | `laposta_fields` | Cached field definitions |
+| `laposta-sync.sqlite` | `member_deliverability_events` | Unsubscribe/bounce events + created todo linkage |
 | `rondo-sync.sqlite` | `rondo_club_members` | Member → WordPress ID mapping + hashes |
 | `rondo-sync.sqlite` | `rondo_club_parents` | Parent → WordPress ID mapping |
 | `rondo-sync.sqlite` | `sportlink_member_free_fields` | Free fields (read by Step 4) |
+| `rondo-sync.sqlite` | `sportlink_member_functions` | Secretaris function lookup for task assignment |
 
 ## CLI Flags
 
@@ -216,6 +233,7 @@ See `config/field-mapping.json` for the complete mapping. Key fields:
 | `steps/prepare-laposta-members.js` | Field transformation for Laposta |
 | `steps/submit-laposta-list.js` | Laposta API sync |
 | `steps/submit-rondo-club-sync.js` | Rondo Club WordPress API sync (members + parents + birthdate) |
+| `steps/sync-laposta-deliverability-tasks.js` | Laposta unsubscribe/bounce follow-up task creation |
 | `steps/prepare-rondo-club-members.js` | Rondo Club member data preparation |
 | `steps/prepare-rondo-club-parents.js` | Parent extraction and dedup |
 | `steps/download-photos-from-api.js` | Photo download (Playwright) |
