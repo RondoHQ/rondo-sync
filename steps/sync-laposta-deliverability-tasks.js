@@ -18,6 +18,7 @@ const { parseCliArgs, readEnv } = require('../lib/utils');
 const DELIVERABILITY_STATES = ['unsubscribed', 'cleaned'];
 const BOUNCE_TASK_MAX_AGE_DAYS = 31;
 const OLD_BOUNCE_CLEANUP_DAYS = 92;
+const TODO_DUE_IN_DAYS = 7;
 
 function normalizeEmail(email) {
   if (!email) return '';
@@ -155,7 +156,7 @@ async function resolveTaskAssignee(rondoDb, options = {}) {
 }
 
 function buildTodoPayload(event, member) {
-  const dueDate = new Date().toISOString().slice(0, 10);
+  const dueDate = new Date(Date.now() + (TODO_DUE_IN_DAYS * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
   const memberName = member.fullName || member.knvbId;
 
   const content = `Controleer contactgegevens van ${memberName}`;
