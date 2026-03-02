@@ -26,11 +26,12 @@ const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const { syncCommissieWorkHistoryForMember } = require('../steps/submit-rondo-club-commissie-work-history');
-const { runSync: runPlayerHistorySync } = require('../steps/submit-rondo-club-player-history');
+const { runSync: runPlayerHistorySync, syncSingleMember: syncSinglePlayerHistory } = require('../steps/submit-rondo-club-player-history');
 const {
   loginToSportlink,
   fetchMemberGeneralData,
   fetchMemberFunctions,
+  fetchMemberTeamMemberships,
   fetchMemberDataFromOtherPage,
   parseFunctionsResponse
 } = require('../steps/download-functions-from-sportlink');
@@ -132,17 +133,26 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       log(`  Photo: ${freeFieldsData.photo_url ? 'yes' : 'no'}`);
     }
 
-    // Store to database
-    if (functions.length > 0) {
-      // Clear existing functions for this member first
+    // Fetch memberships (for player history sync) in the same authenticated browser session.
+    log(`Fetching memberships for ${knvbId}...`);
+    const teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
+    log(`  Membership rows: ${teamMemberships.length}`);
+
+    // Store to database.
+    // Always clear existing rows when we got a functions response, even if parsed arrays are empty.
+    // This prevents stale active memberships from surviving when Sportlink returns no current rows.
+    if (functionsData) {
       db.prepare('DELETE FROM sportlink_member_functions WHERE knvb_id = ?').run(knvbId);
-      upsertMemberFunctions(db, functions);
+      if (functions.length > 0) {
+        upsertMemberFunctions(db, functions);
+      }
     }
 
-    if (committees.length > 0) {
-      // Clear existing committees for this member first
+    if (functionsData) {
       db.prepare('DELETE FROM sportlink_member_committees WHERE knvb_id = ?').run(knvbId);
-      upsertMemberCommittees(db, committees);
+      if (committees.length > 0) {
+        upsertMemberCommittees(db, committees);
+      }
     }
 
     if (freeFieldsData) {
@@ -155,7 +165,8 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       memberData,
       functions,
       committees,
-      freeFields: freeFieldsData
+      freeFields: freeFieldsData,
+      teamMemberships
     };
 
   } finally {
@@ -206,8 +217,7 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
   }
 
   if (currentCommissies.length === 0) {
-    log('No functions or committees to sync');
-    return { synced: false, added: 0, ended: 0 };
+    log('No current functions or committees found; syncing to end previously tracked memberships if needed');
   }
 
   log(`Syncing ${currentCommissies.length} function(s)/committee(s) for ${knvbId}`);
@@ -291,6 +301,7 @@ async function syncIndividual(knvbId, options = {}) {
   try {
     // Fetch fresh data from Sportlink if requested
     let freshMemberData = null;
+    let freshTeamMemberships = null;
     if (fetch) {
       console.log('Fetching fresh data from Sportlink...');
       const fetchResult = await fetchFreshDataFromSportlink(knvbId, rondoClubDb, { verbose });
@@ -299,6 +310,7 @@ async function syncIndividual(knvbId, options = {}) {
         return { success: false, error: 'Failed to fetch from Sportlink' };
       }
       freshMemberData = fetchResult.memberData;
+      freshTeamMemberships = Array.isArray(fetchResult.teamMemberships) ? fetchResult.teamMemberships : null;
       console.log('Fresh data fetched successfully');
     }
 
@@ -449,7 +461,15 @@ async function syncIndividual(knvbId, options = {}) {
           parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
         }
 
-        const playerHistoryResult = await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
+        const playerHistoryResult = freshTeamMemberships
+          ? await syncSinglePlayerHistory({
+            db: rondoClubDb,
+            knvbId,
+            rondoClubId,
+            teamRows: freshTeamMemberships,
+            verbose
+          })
+          : await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
         if (playerHistoryResult.errors.length > 0) {
           console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
           playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
@@ -484,7 +504,15 @@ async function syncIndividual(knvbId, options = {}) {
       parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
     }
 
-    const playerHistoryResult = await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
+    const playerHistoryResult = freshTeamMemberships
+      ? await syncSinglePlayerHistory({
+        db: rondoClubDb,
+        knvbId,
+        rondoClubId: newId,
+        teamRows: freshTeamMemberships,
+        verbose
+      })
+      : await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
     if (playerHistoryResult.errors.length > 0) {
       console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
       playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));

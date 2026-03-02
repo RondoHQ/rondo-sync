@@ -131,6 +131,61 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   return result;
 }
 
+function buildTeamLookupMaps(db) {
+  const teams = getAllTeams(db);
+  const teamBySportlinkId = new Map();
+  const teamByName = new Map();
+  for (const team of teams) {
+    if (!team.rondo_club_id) continue;
+    if (team.sportlink_id) {
+      teamBySportlinkId.set(String(team.sportlink_id), team.rondo_club_id);
+    }
+    if (team.team_name) {
+      teamByName.set(String(team.team_name).toLowerCase(), team.rondo_club_id);
+    }
+  }
+  return { teamBySportlinkId, teamByName };
+}
+
+async function syncSingleMember(options = {}) {
+  const {
+    db,
+    knvbId,
+    rondoClubId,
+    teamRows = [],
+    verbose = false,
+    logger
+  } = options;
+
+  const { teamBySportlinkId, teamByName } = buildTeamLookupMaps(db);
+  try {
+    const res = await syncMemberPlayerHistory(
+      { knvb_id: knvbId, rondo_club_id: rondoClubId },
+      teamRows,
+      teamBySportlinkId,
+      teamByName,
+      { verbose, logger }
+    );
+    return {
+      success: true,
+      synced: res.synced ? 1 : 0,
+      created: res.created || 0,
+      skippedNoTeamMatch: res.skippedNoTeam || 0,
+      skippedDuplicate: res.skippedDuplicate || 0,
+      errors: []
+    };
+  } catch (error) {
+    return {
+      success: false,
+      synced: 0,
+      created: 0,
+      skippedNoTeamMatch: 0,
+      skippedDuplicate: 0,
+      errors: [{ knvb_id: knvbId, message: error.message }]
+    };
+  }
+}
+
 async function runSync(options = {}) {
   const { verbose = false, knvbIds = null } = options;
   const createdLogger = !options.logger;
@@ -163,18 +218,7 @@ async function runSync(options = {}) {
       return result;
     }
 
-    const teams = getAllTeams(db);
-    const teamBySportlinkId = new Map();
-    const teamByName = new Map();
-    for (const team of teams) {
-      if (!team.rondo_club_id) continue;
-      if (team.sportlink_id) {
-        teamBySportlinkId.set(String(team.sportlink_id), team.rondo_club_id);
-      }
-      if (team.team_name) {
-        teamByName.set(String(team.team_name).toLowerCase(), team.rondo_club_id);
-      }
-    }
+    const { teamBySportlinkId, teamByName } = buildTeamLookupMaps(db);
 
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -184,12 +228,33 @@ async function runSync(options = {}) {
 
     await loginToSportlink(page, { logger });
 
+    const shouldRetryAfterRelogin = (error) => {
+      const message = String(error?.message || '').toLowerCase();
+      return (
+        message.includes('non-json') ||
+        message.includes('json parse') ||
+        message.includes('failed to fetch') ||
+        message.includes('timeout') ||
+        message.includes('memberteams request failed')
+      );
+    };
+
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
       logger.verbose(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
 
       try {
-        const teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
+        let teamRows;
+        try {
+          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
+        } catch (error) {
+          if (!shouldRetryAfterRelogin(error)) {
+            throw error;
+          }
+          logger.verbose(`  Membership fetch failed for ${member.knvb_id}, re-authenticating and retrying once...`);
+          await loginToSportlink(page, { logger });
+          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
+        }
         result.downloaded++;
 
         if (!teamRows || teamRows.length === 0) continue;
@@ -248,7 +313,13 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncMemberPlayerHistory, formatDateForACF, buildFallbackTeamName };
+module.exports = {
+  runSync,
+  syncSingleMember,
+  syncMemberPlayerHistory,
+  formatDateForACF,
+  buildFallbackTeamName
+};
 
 if (require.main === module) {
   const verbose = process.argv.includes('--verbose');

@@ -6,6 +6,14 @@
       <div class="pipeline-header">
         <span class="status-indicator status-<%= pipeline.status %>"></span>
         <h3><%= pipeline.displayName %></h3>
+        <% if (pipeline.sourceSportlink) { %>
+          <img
+            src="https://rondo.svawc.nl/wp-content/themes/rondo-club/public/icons/sportlink.png"
+            alt="Sportlink"
+            class="pipeline-source-icon"
+            title="Syncs from Sportlink"
+          />
+        <% } %>
         <% if (pipeline.isOverdue) { %>
           <span class="badge-overdue">OVERDUE</span>
         <% } %>

@@ -431,8 +431,11 @@ async function fetchMemberGeneralData(page, knvbId, logger) {
     DateOfPassing: person.DateOfPassing || null,
     TypeOfMemberDescription: person.TypeOfMemberDescription || null,
     Email: comm.Email1 || null,
+    Email2: comm.Email2 || null,
     Mobile: comm.Mobile1 || null,
+    Mobile2: comm.Mobile2 || null,
     Telephone: comm.Telephone1 || null,
+    Telephone2: comm.Telephone2 || null,
     StreetName: addr.StreetName || null,
     AddressNumber: addr.AddressNumber || null,
     AddressNumberAppendix: addr.AddressNumberAppendix || null,
@@ -522,7 +525,9 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
   const memberTeamsUrl = `https://club.sportlink.com/member/team/MemberTeams?PublicPersonId=${encodeURIComponent(knvbId)}&ShowInactive=true`;
 
   logger.verbose(`  Navigating to ${membershipsUrl}...`);
-  await page.goto(membershipsUrl, { waitUntil: 'networkidle' });
+  await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  // Sportlink pages often keep background requests open; avoid strict networkidle waits.
+  await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
 
   // Click all "showInactive" toggles if present (some layouts render two toggles).
   const inactiveToggles = await page.$$('input[name="showInactive"]');
@@ -538,34 +543,28 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
   }
 
   // Explicitly request the same endpoint the UI calls, with ShowInactive=true.
-  const apiResult = await page.evaluate(async (url) => {
-    const response = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        status: response.status,
-        statusText: response.statusText
-      };
-    }
-
-    const body = await response.json();
-    return {
-      ok: true,
-      body
-    };
-  }, memberTeamsUrl);
-
-  if (!apiResult?.ok) {
-    logger.verbose(`  MemberTeams request failed (${apiResult?.status || 'unknown'} ${apiResult?.statusText || ''})`);
-    return [];
+  const response = await page.request.get(memberTeamsUrl, {
+    headers: { Accept: 'application/json' },
+    timeout: 45000
+  });
+  if (!response.ok()) {
+    throw new Error(`MemberTeams request failed (${response.status()} ${response.statusText()})`);
   }
 
-  const teams = Array.isArray(apiResult.body?.Team) ? apiResult.body.Team : [];
+  const contentType = (response.headers()['content-type'] || '').toLowerCase();
+  const rawBody = await response.text();
+  if (!contentType.includes('application/json')) {
+    throw new Error(`MemberTeams returned non-JSON content-type (${contentType || 'unknown'})`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch (err) {
+    throw new Error(`MemberTeams JSON parse error: ${err.message}`);
+  }
+
+  const teams = Array.isArray(parsed?.Team) ? parsed.Team : [];
   logger.verbose(`  Found ${teams.length} team membership row(s)`);
   return teams;
 }

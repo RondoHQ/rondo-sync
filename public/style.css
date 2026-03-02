@@ -226,6 +226,13 @@ body > form button:active {
   flex: 1;
 }
 
+.pipeline-source-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .status-indicator {
   display: inline-block;
   width: 12px;

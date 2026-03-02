@@ -154,12 +154,18 @@ function buildName(member) {
 function buildContactInfo(member) {
   const contacts = [];
   const email = (member.Email || '').trim();
+  const email2 = (member.Email2 || '').trim();
   const mobile = (member.Mobile || '').trim();
+  const mobile2 = (member.Mobile2 || '').trim();
   const phone = (member.Telephone || '').trim();
+  const phone2 = (member.Telephone2 || '').trim();
 
   if (email) contacts.push({ contact_type: 'email', contact_label: '', contact_value: email });
+  if (email2) contacts.push({ contact_type: 'email2', contact_label: '', contact_value: email2 });
   if (mobile) contacts.push({ contact_type: 'mobile', contact_label: '', contact_value: mobile });
+  if (mobile2) contacts.push({ contact_type: 'mobile', contact_label: '2', contact_value: mobile2 });
   if (phone) contacts.push({ contact_type: 'phone', contact_label: '', contact_value: phone });
+  if (phone2) contacts.push({ contact_type: 'phone', contact_label: '2', contact_value: phone2 });
 
   return contacts;
 }
