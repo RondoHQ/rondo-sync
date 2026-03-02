@@ -73,6 +73,17 @@ function applyResolutions(originalData, resolutions) {
   return resolvedData;
 }
 
+function isRetryableMembershipFetchError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('non-json') ||
+    message.includes('json parse') ||
+    message.includes('memberteams request failed') ||
+    message.includes('failed to fetch') ||
+    message.includes('timeout')
+  );
+}
+
 /**
  * Fetch fresh data from Sportlink for a single member
  * This includes functions, committees, and free fields (VOG, FreeScout ID, etc.)
@@ -134,8 +145,26 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
     }
 
     // Fetch memberships (for player history sync) in the same authenticated browser session.
+    // This endpoint occasionally returns an HTML login page when sessions race/expire.
+    let teamMemberships = [];
     log(`Fetching memberships for ${knvbId}...`);
-    const teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
+    try {
+      teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
+    } catch (error) {
+      if (!isRetryableMembershipFetchError(error)) {
+        throw error;
+      }
+
+      log(`  Membership fetch failed (${error.message}). Re-authenticating and retrying once...`);
+      try {
+        await loginToSportlink(page, logger);
+        teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
+      } catch (retryError) {
+        log(`  Membership fetch still failing after retry: ${retryError.message}`);
+        log('  Continuing individual sync without fresh memberships (player history unchanged this run).');
+        teamMemberships = [];
+      }
+    }
     log(`  Membership rows: ${teamMemberships.length}`);
 
     // Store to database.
