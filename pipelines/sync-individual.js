@@ -26,6 +26,7 @@ const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const { syncCommissieWorkHistoryForMember } = require('../steps/submit-rondo-club-commissie-work-history');
+const { runSync: runPlayerHistorySync } = require('../steps/submit-rondo-club-player-history');
 const {
   loginToSportlink,
   fetchMemberGeneralData,
@@ -448,6 +449,14 @@ async function syncIndividual(knvbId, options = {}) {
           parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
         }
 
+        const playerHistoryResult = await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
+        if (playerHistoryResult.errors.length > 0) {
+          console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
+          playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
+        } else if (playerHistoryResult.created > 0) {
+          console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+        }
+
         return { success: true, action: 'updated', rondoClubId };
       }
     }
@@ -473,6 +482,14 @@ async function syncIndividual(knvbId, options = {}) {
     if (parentResult.errors.length > 0) {
       console.log(`  Parent sync errors: ${parentResult.errors.length}`);
       parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
+    }
+
+    const playerHistoryResult = await runPlayerHistorySync({ verbose, knvbIds: [knvbId] });
+    if (playerHistoryResult.errors.length > 0) {
+      console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
+      playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
+    } else if (playerHistoryResult.created > 0) {
+      console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
     }
 
     return { success: true, action: 'created', rondoClubId: newId };

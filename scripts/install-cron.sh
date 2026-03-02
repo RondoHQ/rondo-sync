@@ -8,12 +8,13 @@ PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 echo "Rondo Sync - Cron Installation"
 echo "==============================="
 echo ""
-echo "This will set up nine sync schedules:"
+echo "This will set up ten sync schedules:"
 echo "  - People sync:            4x daily (members, parents, photos)"
 echo "  - Nikki sync:             daily at 7:00 AM"
 echo "  - FreeScout sync:         daily at 8:00 AM"
 echo "  - FreeScout conversations: daily at 9:00 AM"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
+echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
 echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
@@ -122,6 +123,9 @@ CRON_ENTRIES="
 # Team sync: weekly on Sunday at 6:00 AM
 0 6 * * 0 $PROJECT_DIR/scripts/sync.sh teams
 
+# Player history sync: monthly on the 1st at 3:00 AM
+0 3 1 * * $PROJECT_DIR/scripts/sync.sh player-history
+
 # Functions sync (recent): 4x daily, 30 min before each people sync
 30 7,10,13,16 * * * $PROJECT_DIR/scripts/sync.sh functions
 
@@ -146,6 +150,7 @@ echo "  - Nikki sync:             daily at 7:00 AM (nikki contributions)"
 echo "  - FreeScout sync:         daily at 8:00 AM (customer sync)"
 echo "  - FreeScout conversations: daily at 9:00 AM (after customer sync)"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
+echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
 echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
@@ -160,6 +165,6 @@ fi
 echo "Helpful commands:"
 echo "  View installed cron jobs:   crontab -l"
 echo "  View logs:                  ls -la $PROJECT_DIR/logs/cron/"
-echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|functions|nikki|freescout|reverse|discipline|all}"
+echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|freescout|reverse|discipline|all}"
 echo "  Remove all cron jobs:       crontab -r"
 echo ""

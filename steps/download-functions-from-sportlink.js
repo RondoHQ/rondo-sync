@@ -509,6 +509,68 @@ async function fetchMemberFunctions(page, knvbId, logger) {
 }
 
 /**
+ * Fetch team memberships for a single member from /memberships tab.
+ * Ensures inactive memberships are included by toggling all showInactive checkboxes
+ * and explicitly requesting MemberTeams with ShowInactive=true.
+ * @param {Object} page - Playwright page object
+ * @param {string} knvbId - Member KNVB ID
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<Array>} Array of Team entries
+ */
+async function fetchMemberTeamMemberships(page, knvbId, logger) {
+  const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
+  const memberTeamsUrl = `https://club.sportlink.com/member/team/MemberTeams?PublicPersonId=${encodeURIComponent(knvbId)}&ShowInactive=true`;
+
+  logger.verbose(`  Navigating to ${membershipsUrl}...`);
+  await page.goto(membershipsUrl, { waitUntil: 'networkidle' });
+
+  // Click all "showInactive" toggles if present (some layouts render two toggles).
+  const inactiveToggles = await page.$$('input[name="showInactive"]');
+  for (const toggle of inactiveToggles) {
+    try {
+      const checked = await toggle.isChecked();
+      if (!checked) {
+        await toggle.click({ force: true });
+      }
+    } catch (err) {
+      logger.verbose(`  Could not toggle showInactive checkbox: ${err.message}`);
+    }
+  }
+
+  // Explicitly request the same endpoint the UI calls, with ShowInactive=true.
+  const apiResult = await page.evaluate(async (url) => {
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        statusText: response.statusText
+      };
+    }
+
+    const body = await response.json();
+    return {
+      ok: true,
+      body
+    };
+  }, memberTeamsUrl);
+
+  if (!apiResult?.ok) {
+    logger.verbose(`  MemberTeams request failed (${apiResult?.status || 'unknown'} ${apiResult?.statusText || ''})`);
+    return [];
+  }
+
+  const teams = Array.isArray(apiResult.body?.Team) ? apiResult.body.Team : [];
+  logger.verbose(`  Found ${teams.length} team membership row(s)`);
+  return teams;
+}
+
+/**
  * Fetch KNVB IDs of volunteers needing VOG from Rondo Club API.
  * These are people we're actively waiting on a change for, so we want to
  * check their Sportlink data daily regardless of LastUpdate.
@@ -842,6 +904,7 @@ module.exports = {
   loginToSportlink,
   fetchMemberGeneralData,
   fetchMemberFunctions,
+  fetchMemberTeamMemberships,
   fetchMemberDataFromOtherPage,
   fetchMemberFinancialData,
   parseFunctionsResponse,
