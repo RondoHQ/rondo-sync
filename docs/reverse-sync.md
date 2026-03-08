@@ -11,7 +11,8 @@ When enabled: **hourly** via `scripts/sync.sh reverse`.
 ```bash
 scripts/sync.sh reverse                      # Production (with locking + email report)
 node tools/detect-rondo-club-changes.js --verbose     # Detection only (no sync)
-node pipelines/reverse-sync.js --verbose               # Contact field sync only
+node pipelines/reverse-sync.js --verbose               # Full reverse sync (all tracked fields)
+node pipelines/reverse-sync.js --knvb-id SYBH898 --verbose   # Target one member only
 ```
 
 ## Architecture
@@ -30,10 +31,10 @@ Phase 2: Sync to Sportlink (when unsynced changes exist)
 
 | Field | Rondo Club ACF Location | Sportlink Page | Sportlink Selector | Type |
 |---|---|---|---|---|
-| `email` | `contact_info` repeater (type=email) | /general | `input[name="Email"]` | text |
+| `email` | `contact_info` repeater (type=email) | /general | `input[name="Email1"], input[name="Email"]` | text |
 | `email2` | `contact_info` repeater (type=email2) | /general | `input[name="Email2"]` | text |
-| `mobile` | `contact_info` repeater (type=mobile) | /general | `input[name="Mobile"]` | text |
-| `phone` | `contact_info` repeater (type=phone) | /general | `input[name="Phone"]` | text |
+| `mobile` | `contact_info` repeater (type=mobile) | /general | `input[name="Mobile1"], input[name="Mobile"]` | text |
+| `phone` | `contact_info` repeater (type=phone) | /general | `input[name="Telephone1"], input[name="Phone"]` | text |
 | `datum_vog` | `datum-vog` | /other | `input[name="Remarks8"]` | text |
 | `freescout_id` | `freescout-id` | /other | `input[name="Remarks3"]` | text |
 | `financiele_blokkade` | `financiele-blokkade` | /financial | `input[name="HasFinancialTransferBlockOwnClub"]` | checkbox |

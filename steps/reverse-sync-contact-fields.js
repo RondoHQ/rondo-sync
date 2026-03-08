@@ -11,13 +11,16 @@ const { runReverseSync } = require('../lib/reverse-sync-sportlink');
  * @returns {Promise<{success: boolean, synced: number, failed: number, results: Array}>}
  */
 async function runContactFieldsReverseSync(options = {}) {
-  const { verbose = false, logger: providedLogger } = options;
+  const { verbose = false, knvbId = null, logger: providedLogger } = options;
   const logger = providedLogger || createSyncLogger({ verbose, prefix: 'reverse' });
 
   logger.log('Starting contact fields reverse sync (Rondo Club -> Sportlink)...');
+  if (knvbId) {
+    logger.log(`Target filter: knvb_id = ${knvbId}`);
+  }
 
   try {
-    const result = await runReverseSync({ verbose, logger });
+    const result = await runReverseSync({ verbose, logger, knvbId });
 
     if (result.synced === 0 && result.failed === 0) {
       logger.log('No contact field changes to sync');
@@ -34,6 +37,37 @@ async function runContactFieldsReverseSync(options = {}) {
 
 module.exports = { runContactFieldsReverseSync };
 
+function parseCliArgs(argv) {
+  const args = { verbose: false, knvbId: null };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+
+    if (arg === '--verbose') {
+      args.verbose = true;
+      continue;
+    }
+
+    if (arg.startsWith('--knvb-id=')) {
+      const value = arg.split('=').slice(1).join('=').trim();
+      if (value) args.knvbId = value;
+      continue;
+    }
+
+    if (arg === '--knvb-id') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('Missing value for --knvb-id');
+      }
+      args.knvbId = value.trim();
+      i++;
+      continue;
+    }
+  }
+
+  return args;
+}
+
 // CLI entry point
 if (require.main === module) {
   // Prevent accidental local runs
@@ -42,9 +76,16 @@ if (require.main === module) {
     scriptName: 'reverse-sync-contact-fields.js'
   });
 
-  const verbose = process.argv.includes('--verbose');
+  let cliArgs;
+  try {
+    cliArgs = parseCliArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(`Argument error: ${error.message}`);
+    process.exitCode = 1;
+    process.exit();
+  }
 
-  runContactFieldsReverseSync({ verbose })
+  runContactFieldsReverseSync(cliArgs)
     .then(result => {
       if (!result.success) process.exitCode = 1;
     })
