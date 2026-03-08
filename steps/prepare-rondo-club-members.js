@@ -8,6 +8,7 @@ const {
   getFreeFieldMappings
 } = require('../lib/rondo-club-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { normalizePhone } = require('../lib/phone-normalizer');
 
 /**
  * Map Sportlink gender codes to Rondo Club format
@@ -146,28 +147,21 @@ function buildName(member) {
 }
 
 /**
- * Build contact info array for ACF repeater
- * Only includes items where value is non-empty
+ * Build fixed contact fields object for ACF.
+ * Maps Sportlink API field names to the 6 fixed ACF contact fields.
+ * Phone numbers are normalized to E.164 format.
  * @param {Object} member - Sportlink member record
- * @returns {Array<{contact_type: string, contact_label: string, contact_value: string}>}
+ * @returns {Object} Object with email_1, email_2, mobile_1, mobile_2, telephone_1, telephone_2
  */
-function buildContactInfo(member) {
-  const contacts = [];
-  const email = (member.Email || '').trim();
-  const email2 = (member.Email2 || '').trim();
-  const mobile = (member.Mobile || '').trim();
-  const mobile2 = (member.Mobile2 || '').trim();
-  const phone = (member.Telephone || '').trim();
-  const phone2 = (member.Telephone2 || '').trim();
-
-  if (email) contacts.push({ contact_type: 'email', contact_label: '', contact_value: email });
-  if (email2) contacts.push({ contact_type: 'email2', contact_label: '', contact_value: email2 });
-  if (mobile) contacts.push({ contact_type: 'mobile', contact_label: '', contact_value: mobile });
-  if (mobile2) contacts.push({ contact_type: 'mobile', contact_label: '2', contact_value: mobile2 });
-  if (phone) contacts.push({ contact_type: 'phone', contact_label: '', contact_value: phone });
-  if (phone2) contacts.push({ contact_type: 'phone', contact_label: '2', contact_value: phone2 });
-
-  return contacts;
+function buildFixedContactFields(member) {
+  return {
+    email_1: (member.Email || '').trim() || null,
+    email_2: (member.EmailAlternative || '').trim() || null,
+    mobile_1: normalizePhone((member.Mobile || '').trim()) || null,
+    mobile_2: normalizePhone((member.MobileAlternative || '').trim()) || null,
+    telephone_1: normalizePhone((member.Telephone || '').trim()) || null,
+    telephone_2: normalizePhone((member.TelephoneAlternative || '').trim()) || null,
+  };
 }
 
 /**
@@ -252,9 +246,16 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     first_name: name.first_name,
     last_name: name.last_name,
     'knvb-id': sportlinkMember.PublicPersonId,
-    contact_info: buildContactInfo(sportlinkMember),
     addresses: buildAddresses(sportlinkMember)
   };
+
+  // Add fixed contact fields (email_1, email_2, mobile_1, mobile_2, telephone_1, telephone_2)
+  const contactFields = buildFixedContactFields(sportlinkMember);
+  for (const [key, value] of Object.entries(contactFields)) {
+    if (value !== null) {
+      acf[key] = value;
+    }
+  }
   const payload = {
     acf: acf,
     meta: {
