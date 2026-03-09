@@ -18,7 +18,7 @@ echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
 echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
-echo "  - Reverse sync:           hourly (Rondo Club -> Sportlink)"
+echo "  - Reverse sync:           every 5 minutes (Rondo Club -> Sportlink)"
 echo ""
 
 # Check if .env exists and has Lettermint config
@@ -135,8 +135,8 @@ CRON_ENTRIES="
 # Discipline sync: weekly on Monday at 11:30 PM
 30 23 * * 1 $PROJECT_DIR/scripts/sync.sh discipline
 
-# Reverse sync: hourly (Rondo Club -> Sportlink)
-0 * * * * $PROJECT_DIR/scripts/sync.sh reverse
+# Reverse sync: every 5 minutes (Rondo Club -> Sportlink)
+*/5 * * * * $PROJECT_DIR/scripts/sync.sh reverse
 "
 
 # Install crontab (remove old entries first)
@@ -154,7 +154,7 @@ echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
 echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
-echo "  - Reverse sync:           hourly (Rondo Club -> Sportlink)"
+echo "  - Reverse sync:           every 5 minutes (Rondo Club -> Sportlink)"
 echo ""
 echo "All times are Amsterdam timezone (Europe/Amsterdam)"
 echo ""

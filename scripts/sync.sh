@@ -13,7 +13,7 @@
 #   sync.sh freescout # Daily: FreeScout customer sync
 #   sync.sh conversations # Daily: FreeScout conversations as activities
 #   sync.sh former-members  # Manual: import former members from Sportlink
-#   sync.sh reverse  # Every 15 min: reverse sync (Rondo Club -> Sportlink)
+#   sync.sh reverse  # Every 5 min: reverse sync (Rondo Club -> Sportlink)
 #   sync.sh all      # Full sync (all steps)
 #
 # Configuration via environment variables in .env:
@@ -29,7 +29,7 @@
 #   0 6 * * 0 /path/to/sync.sh teams            # weekly Sunday
 #   0 3 1 * * /path/to/sync.sh player-history   # monthly
 #   0 3 1 * * /path/to/sync.sh invoice          # monthly 1st at 3am
-#   */15 * * * * /path/to/sync.sh reverse       # every 15 minutes
+#   */5 * * * * /path/to/sync.sh reverse        # every 5 minutes
 #
 
 set -e
