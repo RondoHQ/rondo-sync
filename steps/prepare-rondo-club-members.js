@@ -166,66 +166,48 @@ function buildFixedContactFields(member) {
 
 /**
  * Build addresses array for ACF repeater
- * Only includes address if at least street or city present
+ * Only includes address if at least street name or city present
  * @param {Object} member - Sportlink member record
- * @returns {Array<{address_label: string, street: string, postal_code: string, city: string, country: string}>}
+ * @returns {Array<Object>}
  */
 function buildAddresses(member) {
   const streetName = (member.StreetName || '').trim();
-  const houseNumber = (member.AddressNumber || '').toString().trim();
-  const houseNumberAppendix = (member.AddressNumberAppendix || '').trim();
   const city = (member.City || '').trim();
 
   // Omit empty address entirely
   if (!streetName && !city) return [];
 
-  // Combine street name with house number and appendix
-  const streetParts = [streetName, houseNumber].filter(Boolean);
-  if (houseNumberAppendix) streetParts.push(houseNumberAppendix);
-  const street = streetParts.join(' ');
-
   return [{
-    address_label: '',
-    street: street,
+    address_label: 'Home',
+    street_name: streetName,
+    house_number: (member.AddressNumber || '').toString().trim(),
+    house_number_addition: (member.AddressNumberAppendix || '').trim(),
     postal_code: (member.ZipCode || '').trim(),
     city: city,
-    country: 'Nederland'
+    country: (member.CountryName || '').trim()
   }];
 }
 
 /**
- * Format invoice address from invoice data
- * Combines street, house number, postal code, city into single formatted string
+ * Build invoice address as ACF repeater row
  * @param {Object} invoiceData - Invoice data from database
- * @returns {string} - Formatted address string or empty string if no data
+ * @returns {Object|null} - Address repeater row or null if no data
  */
-function formatInvoiceAddress(invoiceData) {
-  const parts = [];
+function buildInvoiceAddress(invoiceData) {
+  const streetName = (invoiceData.invoice_street || '').trim();
+  const city = (invoiceData.invoice_city || '').trim();
 
-  // Build street with house number
-  const streetParts = [invoiceData.invoice_street];
-  if (invoiceData.invoice_house_number) {
-    streetParts.push(invoiceData.invoice_house_number);
-  }
-  if (invoiceData.invoice_house_number_addition) {
-    streetParts.push(invoiceData.invoice_house_number_addition);
-  }
-  const street = streetParts.filter(Boolean).join(' ');
-  if (street) parts.push(street);
+  if (!streetName && !city) return null;
 
-  // Add postal code and city
-  const locationParts = [];
-  if (invoiceData.invoice_postal_code) locationParts.push(invoiceData.invoice_postal_code);
-  if (invoiceData.invoice_city) locationParts.push(invoiceData.invoice_city);
-  const location = locationParts.join(' ');
-  if (location) parts.push(location);
-
-  // Add country if not Netherlands
-  if (invoiceData.invoice_country && invoiceData.invoice_country !== 'Nederland') {
-    parts.push(invoiceData.invoice_country);
-  }
-
-  return parts.join(', ');
+  return {
+    address_label: 'Factuur',
+    street_name: streetName,
+    house_number: (invoiceData.invoice_house_number || '').trim(),
+    house_number_addition: (invoiceData.invoice_house_number_addition || '').trim(),
+    postal_code: (invoiceData.invoice_postal_code || '').trim(),
+    city: city,
+    country: (invoiceData.invoice_country || '').trim()
+  };
 }
 
 /**
@@ -303,13 +285,12 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   acf.former_member = false;
 
   // Invoice data from Sportlink /financial tab
-  // Only include if custom invoice address is set (not using member's default address)
   if (invoiceData) {
-    // Check if a custom invoice address is set (is_default = 0 means custom address)
+    // Add invoice address to addresses repeater if custom address is set
     if (invoiceData.invoice_address_is_default === 0) {
-      const formattedAddress = formatInvoiceAddress(invoiceData);
-      if (formattedAddress) {
-        acf['factuur-adres'] = formattedAddress;
+      const invoiceAddress = buildInvoiceAddress(invoiceData);
+      if (invoiceAddress) {
+        acf.addresses.push(invoiceAddress);
       }
     }
     // Invoice email (always include if present)

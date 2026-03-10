@@ -30,22 +30,17 @@ function buildParentName(member, parentIndex) {
  */
 function buildParentAddress(member) {
   const streetName = (member.StreetName || '').trim();
-  const houseNumber = (member.AddressNumber || '').toString().trim();
-  const houseNumberAppendix = (member.AddressNumberAppendix || '').trim();
   const city = (member.City || '').trim();
   if (!streetName && !city) return null;
 
-  // Combine street name with house number and appendix
-  const streetParts = [streetName, houseNumber].filter(Boolean);
-  if (houseNumberAppendix) streetParts.push(houseNumberAppendix);
-  const street = streetParts.join(' ');
-
   return {
-    address_label: '',
-    street: street,
+    address_label: 'Home',
+    street_name: streetName,
+    house_number: (member.AddressNumber || '').toString().trim(),
+    house_number_addition: (member.AddressNumberAppendix || '').trim(),
     postal_code: (member.ZipCode || '').trim(),
     city: city,
-    country: 'Nederland'
+    country: (member.CountryName || '').trim()
   };
 }
 
