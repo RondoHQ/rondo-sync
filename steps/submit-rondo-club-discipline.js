@@ -6,7 +6,8 @@ const {
   getCasesNeedingSync,
   updateCaseSyncState,
   getSeasonFromDate,
-  getAllCases
+  getAllCases,
+  getStaleSyncedCases
 } = require('../lib/discipline-db');
 const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-club-db');
 const { readEnv } = require('../lib/utils');
@@ -496,6 +497,47 @@ async function runSync(options = {}) {
         message: error.message
       });
       console.error(`Error syncing case ${dossier_id}: ${error.message}`);
+    }
+  }
+
+  // Detect cases that disappeared from Sportlink (reassigned to another club)
+  const staleCases = getStaleSyncedCases(db);
+  if (staleCases.length > 0) {
+    log(`Found ${staleCases.length} synced case(s) no longer in Sportlink download — trashing...`);
+    for (const staleCase of staleCases) {
+      log(`  Case ${staleCase.dossier_id} (WP post ${staleCase.rondo_club_id}) no longer in Sportlink`);
+      try {
+        // Fetch the old discipline case to find the person it was linked to
+        let oldPersonId = null;
+        try {
+          const caseResponse = await rondoClubRequest(`wp/v2/discipline-cases/${staleCase.rondo_club_id}`, 'GET', null, options);
+          oldPersonId = caseResponse.body?.acf?.person || null;
+        } catch (fetchError) {
+          logVerbose(`    Could not fetch old case data: ${fetchError.message}`);
+        }
+
+        await rondoClubRequest(`wp/v2/discipline-cases/${staleCase.rondo_club_id}`, 'DELETE', null, options);
+        log(`    Trashed WordPress post ${staleCase.rondo_club_id}`);
+        updateCaseSyncState(db, staleCase.dossier_id, null, null, null);
+        results.trashed++;
+
+        // Create a todo on the old person so the invoice can be reviewed
+        if (oldPersonId) {
+          if (!taskAssigneeUserId) {
+            taskAssigneeUserId = await resolveTaskAssignee(rondoClubDb, options);
+          }
+          await createReassignmentTodo(oldPersonId, staleCase.dossier_id, taskAssigneeUserId, options);
+        }
+      } catch (error) {
+        if (error.details?.data?.status === 404) {
+          logVerbose(`    Post ${staleCase.rondo_club_id} already gone, clearing sync state`);
+          updateCaseSyncState(db, staleCase.dossier_id, null, null, null);
+          results.trashed++;
+        } else {
+          console.error(`    Error trashing case ${staleCase.dossier_id}: ${error.message}`);
+          results.errors.push({ dossier_id: staleCase.dossier_id, message: `Trash failed: ${error.message}` });
+        }
+      }
     }
   }
 
