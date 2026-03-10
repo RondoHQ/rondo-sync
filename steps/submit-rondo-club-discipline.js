@@ -9,6 +9,7 @@ const {
   getAllCases
 } = require('../lib/discipline-db');
 const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-club-db');
+const { readEnv } = require('../lib/utils');
 
 /**
  * Convert date string to ACF Ymd format (e.g., "2026-01-15" -> "20260115")
@@ -258,6 +259,91 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
 }
 
 /**
+ * Resolve a WordPress user ID to assign todos to (Secretaris).
+ * @param {Object} rondoClubDb - rondo-sync.sqlite connection
+ * @param {Object} options - Logger options
+ * @returns {Promise<number|null>} - WordPress user ID or null
+ */
+async function resolveTaskAssignee(rondoClubDb, options) {
+  const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+
+  // Check for configured assignee
+  const configuredUserId = Number.parseInt(readEnv('DISCIPLINE_TASK_ASSIGNEE_USER_ID', ''), 10);
+  if (Number.isFinite(configuredUserId) && configuredUserId > 0) {
+    return configuredUserId;
+  }
+
+  // Fall back to Secretaris
+  const row = rondoClubDb.prepare(`
+    SELECT rcm.rondo_club_id
+    FROM sportlink_member_functions smf
+    INNER JOIN rondo_club_members rcm ON rcm.knvb_id = smf.knvb_id
+    WHERE smf.is_active = 1
+      AND rcm.rondo_club_id IS NOT NULL
+      AND lower(smf.function_description) LIKE '%secretaris%'
+    ORDER BY
+      CASE WHEN lower(smf.function_description) = 'secretaris' THEN 0 ELSE 1 END ASC,
+      smf.id ASC
+    LIMIT 1
+  `).get();
+
+  if (!row) return null;
+
+  try {
+    const response = await rondoClubRequest('rondo/v1/users', 'GET', null, options);
+    const users = Array.isArray(response.body) ? response.body : [];
+    const userByPerson = users.find(u => Number(u.linked_person_id) === Number(row.rondo_club_id));
+    if (userByPerson?.id) {
+      logVerbose(`  Resolved Secretaris assignee: user ${userByPerson.id}`);
+      return userByPerson.id;
+    }
+  } catch (error) {
+    logVerbose(`  Could not resolve assignee: ${error.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Create a todo on a person when their discipline case is trashed due to reassignment.
+ * @param {number} personRondoClubId - WordPress person post ID
+ * @param {string} dossierId - Dossier ID of the trashed case
+ * @param {number|null} assigneeUserId - WordPress user ID to assign the todo to
+ * @param {Object} options - Logger options
+ */
+async function createReassignmentTodo(personRondoClubId, dossierId, assigneeUserId, options) {
+  const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+
+  const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const payload = {
+    content: `Tuchtzaak ${dossierId} verwijderd — controleer factuur`,
+    due_date: dueDate,
+    status: 'open',
+    notes: `<p>Tuchtzaak <strong>${dossierId}</strong> is door de KNVB toegewezen aan iemand buiten onze club. De tuchtzaak is automatisch verwijderd uit Rondo.</p><p>Controleer of er een factuur gekoppeld is aan deze tuchtzaak. Als dat zo is, moet deze handmatig worden geannuleerd of gecrediteerd.</p>`
+  };
+
+  try {
+    const createResponse = await rondoClubRequest(
+      `rondo/v1/people/${personRondoClubId}/todos`,
+      'POST',
+      payload,
+      options
+    );
+
+    const todoId = createResponse.body?.id;
+    if (todoId && assigneeUserId) {
+      await rondoClubRequest(`wp/v2/todos/${todoId}`, 'PUT', { author: assigneeUserId }, options);
+    }
+
+    logVerbose(`  Created todo${todoId ? ` (ID: ${todoId})` : ''} for person ${personRondoClubId}`);
+  } catch (error) {
+    // Non-fatal: log but don't fail the sync
+    console.error(`  Warning: could not create todo for trashed case ${dossierId}: ${error.message}`);
+  }
+}
+
+/**
  * Main sync orchestration for discipline cases
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance
@@ -287,6 +373,9 @@ async function runSync(options = {}) {
   // Open rondo-club database for team lookups
   const rondoClubDb = openRondoClubDb();
 
+  // Resolve task assignee once (for reassignment todos)
+  let taskAssigneeUserId = null;
+
   // Get cases needing sync
   const cases = getCasesNeedingSync(db, force);
   log(`Found ${cases.length} cases needing sync${force ? ' (force mode)' : ''}`);
@@ -299,6 +388,7 @@ async function runSync(options = {}) {
     updated: 0,
     skipped: 0,
     skipped_no_person: 0,
+    trashed: 0,
     errors: []
   };
 
@@ -308,7 +398,45 @@ async function runSync(options = {}) {
     // Look up person rondo_club_id
     const personRondoClubId = personLookup.get(public_person_id);
     if (!personRondoClubId) {
-      logVerbose(`Skipping case ${dossier_id}: person ${public_person_id} not yet synced to Rondo Club`);
+      // If this case was previously synced to WordPress, the person was reassigned
+      // to someone outside our club. Trash the WordPress post.
+      if (caseData.rondo_club_id) {
+        log(`Case ${dossier_id} was reassigned to person ${public_person_id} (not in our club). Trashing WordPress post ${caseData.rondo_club_id}...`);
+        try {
+          // Fetch the old discipline case to find the person it was linked to
+          let oldPersonId = null;
+          try {
+            const caseResponse = await rondoClubRequest(`wp/v2/discipline-cases/${caseData.rondo_club_id}`, 'GET', null, options);
+            oldPersonId = caseResponse.body?.acf?.person || null;
+          } catch (fetchError) {
+            logVerbose(`  Could not fetch old case data: ${fetchError.message}`);
+          }
+
+          await rondoClubRequest(`wp/v2/discipline-cases/${caseData.rondo_club_id}`, 'DELETE', null, options);
+          log(`  Trashed discipline case post ${caseData.rondo_club_id}`);
+          updateCaseSyncState(db, dossier_id, null, null, null);
+          results.trashed++;
+
+          // Create a todo on the old person so the invoice can be reviewed
+          if (oldPersonId) {
+            if (!taskAssigneeUserId) {
+              taskAssigneeUserId = await resolveTaskAssignee(rondoClubDb, options);
+            }
+            await createReassignmentTodo(oldPersonId, dossier_id, taskAssigneeUserId, options);
+          }
+        } catch (error) {
+          if (error.details?.data?.status === 404) {
+            logVerbose(`  Post ${caseData.rondo_club_id} already gone, clearing sync state`);
+            updateCaseSyncState(db, dossier_id, null, null, null);
+            results.trashed++;
+          } else {
+            console.error(`  Error trashing case ${dossier_id} (post ${caseData.rondo_club_id}): ${error.message}`);
+            results.errors.push({ dossier_id, message: `Trash failed: ${error.message}` });
+          }
+        }
+      } else {
+        logVerbose(`Skipping case ${dossier_id}: person ${public_person_id} not yet synced to Rondo Club`);
+      }
       results.skipped_no_person++;
       continue;
     }
@@ -380,6 +508,9 @@ async function runSync(options = {}) {
   log(`  Updated: ${results.updated}`);
   log(`  Skipped (unchanged): ${results.skipped}`);
   log(`  Skipped (no person): ${results.skipped_no_person}`);
+  if (results.trashed > 0) {
+    log(`  Trashed (reassigned): ${results.trashed}`);
+  }
   if (results.errors.length > 0) {
     log(`  Errors: ${results.errors.length}`);
     results.success = false;
@@ -402,6 +533,9 @@ if (require.main === module) {
       console.log(`  Updated: ${result.updated}`);
       console.log(`  Skipped (unchanged): ${result.skipped}`);
       console.log(`  Skipped (no person): ${result.skipped_no_person}`);
+      if (result.trashed > 0) {
+        console.log(`  Trashed (reassigned): ${result.trashed}`);
+      }
       if (result.errors.length > 0) {
         console.error(`  Errors: ${result.errors.length}`);
         result.errors.forEach(e => console.error(`    - ${e.dossier_id}: ${e.message}`));
