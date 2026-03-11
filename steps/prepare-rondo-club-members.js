@@ -184,7 +184,8 @@ function buildAddresses(member) {
     house_number_addition: (member.AddressNumberAppendix || '').trim(),
     postal_code: (member.ZipCode || '').trim(),
     city: city,
-    country: (member.CountryName || '').trim()
+    country: (member.CountryName || '').trim(),
+    country_code: (member.CountryCode || '').trim()
   }];
 }
 

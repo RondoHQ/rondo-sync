@@ -441,6 +441,7 @@ async function fetchMemberGeneralData(page, knvbId, logger) {
     AddressNumberAppendix: addr.AddressNumberAppendix || null,
     ZipCode: addr.ZipCode || null,
     City: addr.City || null,
+    CountryCode: addr.CountryCode || null,
     CountryName: addr.CountryName || null,
     NameParent1: parent.NameParent1 || null,
     TelephoneParent1: parent.TelephoneParent1 || null,
