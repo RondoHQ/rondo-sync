@@ -57,7 +57,7 @@ async function inspectMember(knvbId) {
     // Login
     console.log('Logging in to Sportlink...');
     await loginToSportlink(page, {
-      logger: { log: console.log, verbose: () => {}, error: console.error },
+      logger: { log: console.log, verbose: console.log, error: console.error },
       credentials: { username, password, otpSecret }
     });
 
