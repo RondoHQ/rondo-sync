@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Inspect Sportlink address form fields on the /general page.
- * Navigates to a member, enters edit mode on the address section,
+ * Navigates to a member, finds the address edit UI,
  * and logs all input/select field names and their current values.
  *
  * Usage: node tools/inspect-sportlink-address-fields.js [knvbId]
@@ -16,11 +16,13 @@ async function run() {
   const knvbId = process.argv[2];
 
   if (!knvbId) {
-    // Pick a random member from the database
+    // Pick a living member from the database
     const db = openDb();
     const member = db.prepare(`
-      SELECT knvb_id FROM rondo_club_members
-      WHERE knvb_id IS NOT NULL
+      SELECT m.knvb_id FROM rondo_club_members m
+      WHERE m.knvb_id IS NOT NULL
+      AND m.rondo_club_id IS NOT NULL
+      ORDER BY RANDOM()
       LIMIT 1
     `).get();
     db.close();
@@ -83,7 +85,28 @@ async function inspectMember(knvbId) {
       console.log('\nNo MemberAddresses API response captured');
     }
 
-    // Find ALL Wijzig (Edit) buttons on the page
+    // Dump ALL clickable elements (buttons, links, icons) on the page
+    console.log('\n=== All clickable elements ===');
+    const clickables = await page.evaluate(() => {
+      const els = document.querySelectorAll('button, a, [role="button"], [class*="edit"], [class*="pencil"], svg[class*="edit"]');
+      return Array.from(els).map(el => ({
+        tag: el.tagName.toLowerCase(),
+        text: el.textContent?.trim().substring(0, 80) || '',
+        href: el.getAttribute('href') || '',
+        className: el.className?.toString().substring(0, 100) || '',
+        ariaLabel: el.getAttribute('aria-label') || '',
+        title: el.getAttribute('title') || '',
+        dataAction: el.getAttribute('data-action') || '',
+        id: el.id || ''
+      }));
+    });
+
+    for (const el of clickables) {
+      if (!el.text && !el.href && !el.ariaLabel && !el.title) continue;
+      console.log(`  <${el.tag}> text="${el.text}" href="${el.href}" class="${el.className}" aria="${el.ariaLabel}" title="${el.title}" id="${el.id}"`);
+    }
+
+    // Find ALL "Wijzig" buttons and any address-related clickable
     const wijzigButtons = page.locator('button:has-text("Wijzig")');
     const buttonCount = await wijzigButtons.count();
     console.log(`\n=== Found ${buttonCount} "Wijzig" buttons ===`);
@@ -91,86 +114,79 @@ async function inspectMember(knvbId) {
     for (let i = 0; i < buttonCount; i++) {
       const btn = wijzigButtons.nth(i);
       const text = await btn.textContent();
-      const parent = await btn.evaluate(el => {
-        // Walk up to find section header
-        let node = el.parentElement;
-        for (let j = 0; j < 10 && node; j++) {
-          const h = node.querySelector('h1, h2, h3, h4, h5, h6, [class*="title"], [class*="header"]');
-          if (h) return h.textContent.trim();
-          node = node.parentElement;
-        }
-        return '(unknown section)';
-      });
-      console.log(`  Button ${i}: "${text.trim()}" in section: "${parent}"`);
+      // Get bounding box for position context
+      const box = await btn.boundingBox();
+      console.log(`  Button ${i}: "${text.trim()}" at y=${Math.round(box?.y || 0)}`);
     }
 
-    // Try clicking each Wijzig button and inspecting the form fields
+    // Now try each Wijzig button and look for address fields
     for (let i = 0; i < buttonCount; i++) {
       console.log(`\n=== Clicking Wijzig button ${i} ===`);
 
-      // Reload the page fresh before each attempt
+      // Reload fresh
       if (i > 0) {
         await page.goto(url, { waitUntil: 'networkidle' });
       }
 
-      const btn = wijzigButtons.nth(i);
+      // Listen for any API calls triggered by clicking edit
+      const apiCalls = [];
+      page.on('response', resp => {
+        if (resp.url().includes('club.sportlink.com') && !resp.url().includes('.js') && !resp.url().includes('.css')) {
+          apiCalls.push(resp.url());
+        }
+      });
+
+      const btn = page.locator('button:has-text("Wijzig")').nth(i);
       try {
         await btn.waitFor({ state: 'visible', timeout: 5000 });
         await btn.click();
         await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(1500);
 
-        // Wait a moment for form to render
-        await page.waitForTimeout(1000);
-
-        // Collect all input fields
-        const fields = await page.evaluate(() => {
-          const inputs = document.querySelectorAll('input, select, textarea');
-          return Array.from(inputs).map(el => ({
-            tag: el.tagName.toLowerCase(),
-            type: el.type || '',
-            name: el.name || '',
-            id: el.id || '',
-            value: el.value || '',
-            placeholder: el.placeholder || '',
-            disabled: el.disabled,
-            // Get nearby label
-            label: (() => {
-              if (el.id) {
-                const lbl = document.querySelector(`label[for="${el.id}"]`);
-                if (lbl) return lbl.textContent.trim();
-              }
-              const parent = el.closest('.form-group, .field, [class*="field"]');
-              if (parent) {
-                const lbl = parent.querySelector('label');
-                if (lbl) return lbl.textContent.trim();
-              }
-              return '';
-            })()
-          }));
-        });
-
-        // Filter to enabled, named fields
-        const editableFields = fields.filter(f => f.name && !f.disabled);
-        console.log(`  Found ${editableFields.length} editable named fields:`);
-        for (const f of editableFields) {
-          console.log(`    ${f.tag}[name="${f.name}"] type=${f.type} value="${f.value}" label="${f.label}" placeholder="${f.placeholder}"`);
-        }
-
-        // Also look for fields that might be address-related even without name
-        const addressKeywords = ['street', 'straat', 'address', 'adres', 'house', 'huis', 'zip', 'post', 'city', 'plaats', 'country', 'land'];
-        const possibleAddressFields = fields.filter(f => {
-          const searchStr = `${f.name} ${f.id} ${f.label} ${f.placeholder}`.toLowerCase();
-          return addressKeywords.some(kw => searchStr.includes(kw));
-        });
-
-        if (possibleAddressFields.length > 0) {
-          console.log(`\n  ADDRESS-RELATED FIELDS:`);
-          for (const f of possibleAddressFields) {
-            console.log(`    ${f.tag}[name="${f.name}"] id="${f.id}" value="${f.value}" label="${f.label}" disabled=${f.disabled}`);
+        // Log API calls triggered
+        if (apiCalls.length > 0) {
+          console.log('  API calls after click:');
+          for (const url of apiCalls) {
+            console.log(`    ${url.substring(0, 150)}`);
           }
         }
 
-        // Click cancel/annuleren to exit edit mode
+        // Collect ALL form fields (including disabled ones)
+        const fields = await page.evaluate(() => {
+          const inputs = document.querySelectorAll('input, select, textarea');
+          return Array.from(inputs)
+            .filter(el => el.name || el.id)
+            .map(el => ({
+              tag: el.tagName.toLowerCase(),
+              type: el.type || '',
+              name: el.name || '',
+              id: el.id || '',
+              value: el.value || '',
+              placeholder: el.placeholder || '',
+              disabled: el.disabled,
+              readOnly: el.readOnly,
+              label: (() => {
+                if (el.id) {
+                  const lbl = document.querySelector(`label[for="${el.id}"]`);
+                  if (lbl) return lbl.textContent.trim();
+                }
+                const parent = el.closest('.form-group, .field, [class*="field"], tr, [class*="row"]');
+                if (parent) {
+                  const lbl = parent.querySelector('label, th, [class*="label"]');
+                  if (lbl) return lbl.textContent.trim();
+                }
+                return '';
+              })()
+            }));
+        });
+
+        console.log(`  All named fields (${fields.length}):`);
+        for (const f of fields) {
+          const state = f.disabled ? 'DISABLED' : f.readOnly ? 'READONLY' : 'EDITABLE';
+          console.log(`    [${state}] ${f.tag}[name="${f.name}"] id="${f.id}" type=${f.type} value="${f.value}" label="${f.label}"`);
+        }
+
+        // Click cancel
         const cancelBtn = page.locator('button:has-text("Annuleer"), button:has-text("Cancel")').first();
         if (await cancelBtn.count() > 0) {
           await cancelBtn.click();
@@ -180,7 +196,33 @@ async function inspectMember(knvbId) {
       } catch (err) {
         console.log(`  Error: ${err.message}`);
       }
+
+      page.removeAllListeners('response');
     }
+
+    // Also check if there's an "address" link or separate address edit page
+    console.log('\n=== Checking for address-specific edit links ===');
+    const addressLinks = await page.evaluate(() => {
+      const all = document.querySelectorAll('a[href*="address" i], a[href*="adres" i], button[class*="address" i]');
+      return Array.from(all).map(el => ({
+        tag: el.tagName.toLowerCase(),
+        text: el.textContent?.trim() || '',
+        href: el.getAttribute('href') || '',
+        className: el.className || ''
+      }));
+    });
+
+    if (addressLinks.length > 0) {
+      for (const l of addressLinks) {
+        console.log(`  ${l.tag}: text="${l.text}" href="${l.href}" class="${l.className}"`);
+      }
+    } else {
+      console.log('  No address-specific links found');
+    }
+
+    // Take a screenshot for visual inspection
+    await page.screenshot({ path: '/tmp/sportlink-general.png', fullPage: true });
+    console.log('\nScreenshot saved to /tmp/sportlink-general.png');
 
   } finally {
     await browser.close();
