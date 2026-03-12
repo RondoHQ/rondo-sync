@@ -1,0 +1,359 @@
+---
+id: S13
+parent: M001
+milestone: M001
+provides: []
+requires: []
+affects: []
+key_files: []
+key_decisions: []
+patterns_established: []
+observability_surfaces: []
+drill_down_paths: []
+duration: 
+verification_result: passed
+completed_at: 
+blocker_discovered: false
+---
+# S13: Freescout Conversations As Activities
+
+**# Phase 46 Plan 01: FreeScout Conversations Download and Activity Preparation**
+
+## What Happened
+
+# Phase 46 Plan 01: FreeScout Conversations Download and Activity Preparation
+
+**One-liner:** SQLite tracking for FreeScout conversations with pagination support, incremental sync, and transformation to Rondo Club activity payloads.
+
+## What Was Built
+
+### 1. FreeScout Conversations Database Module (`lib/freescout-conversations-db.js`)
+
+SQLite tracking database for FreeScout conversations with deduplication and sync state management.
+
+**Schema:**
+- `freescout_conversations` table: conversation_id (UNIQUE), knvb_id, freescout_customer_id, subject, status, created_at, source_hash, rondo_club_activity_id, last_synced_at
+- `sync_metadata` table: key-value store for last_download_at timestamp
+- Indexes: knvb_id lookup, partial index on unsynced conversations (WHERE rondo_club_activity_id IS NULL)
+
+**Functions:**
+- `openDb(dbPath)` - Open database with WAL mode and busy_timeout
+- `upsertConversations(db, conversations)` - Bulk insert/update with ON CONFLICT handling
+- `getUnsyncedConversations(db)` - Query conversations needing activity creation
+- `markConversationSynced(db, conversationId, rondoClubActivityId)` - Update sync state
+- `getLastSyncTimestamp(db)` / `updateLastSyncTimestamp(db, timestamp)` - Metadata tracking
+- `computeConversationHash(conversation)` - SHA-256 hash for change detection
+
+**Pattern:** Follows exact structure from `lib/freescout-db.js` - WAL mode, transactions, hash-based change detection.
+
+### 2. Conversations Download Step (`steps/download-freescout-conversations.js`)
+
+Downloads FreeScout conversations for all tracked customers with pagination and incremental sync support.
+
+**Core logic:**
+1. Get all tracked customers with freescout_id from freescout-sync database
+2. Get last sync timestamp (skip if `--force` flag used)
+3. For each customer:
+   - Fetch conversations: `GET /api/conversations?customerId={id}` (add `&createdSince={timestamp}` for incremental)
+   - Handle pagination: check `response.body.page.totalPages`, loop through all pages
+   - Transform conversations: compute hash, build records with conversation_id, knvb_id, freescout_customer_id, subject, status, created_at, source_hash
+   - Add 100ms delay between customers (rate limiting)
+4. Bulk upsert all conversations
+5. Update last sync timestamp to current time
+
+**Error handling:** Per-customer try/catch - errors logged but don't fail entire step. Step succeeds if at least some customers processed successfully.
+
+**CLI:** `node steps/download-freescout-conversations.js [--verbose] [--force]`
+
+### 3. Activity Preparation Step (`steps/prepare-freescout-activities.js`)
+
+Transforms unsynced FreeScout conversations into Rondo Club activity payloads.
+
+**Core logic:**
+1. Get unsynced conversations from conversations database
+2. For each conversation:
+   - Look up rondo_club_id from rondo-sync database using knvb_id
+   - Skip if no rondo_club_id found (member not synced to Rondo Club)
+   - Extract date (YYYY-MM-DD) and time (HH:MM) from ISO 8601 created_at
+   - Build activity payload with:
+     - `personId`: rondo_club_id (for URL path)
+     - `conversationId`: conversation_id (for tracking)
+     - `body.content`: HTML with escaped subject + FreeScout link
+     - `body.activity_type`: "email"
+     - `body.activity_date`: YYYY-MM-DD
+     - `body.activity_time`: HH:MM
+3. Return array of activity payloads ready for submission
+
+**HTML escaping:** Inline function escapes &, <, >, " characters to prevent XSS in activity content.
+
+**CLI:** `node steps/prepare-freescout-activities.js [--verbose]`
+
+## Deviations from Plan
+
+None - plan executed exactly as written.
+
+## Verification Results
+
+All verification steps passed:
+
+1. ✓ `lib/freescout-conversations-db.js` loads without error
+2. ✓ `steps/download-freescout-conversations.js` loads without error
+3. ✓ `steps/prepare-freescout-activities.js` loads without error
+4. ✓ In-memory DB test: upsert → query unsynced (1) → mark synced → query unsynced (0)
+5. ✓ All three files follow module/CLI hybrid pattern (export functions + CLI entry point)
+
+## Key Technical Details
+
+### Database Path
+`data/freescout-conversations.sqlite` - **separate from** `data/freescout-sync.sqlite` (different concern: conversations vs customers)
+
+### Pagination Handling
+```javascript
+const totalPages = firstResponse.body.page?.totalPages || 1;
+for (let page = 2; page <= totalPages; page++) {
+  const pageEndpoint = `${endpoint}&page=${page}`;
+  // fetch and accumulate
+}
+```
+
+### Incremental Sync
+```javascript
+const lastSyncTimestamp = force ? null : getLastSyncTimestamp(conversationsDb);
+if (lastSyncTimestamp && !force) {
+  endpoint += `&createdSince=${encodeURIComponent(lastSyncTimestamp)}`;
+}
+```
+
+### Activity Payload Structure
+```javascript
+{
+  personId: 12345,              // Rondo Club person ID (for URL path)
+  conversationId: 67890,         // FreeScout conversation ID (for tracking)
+  body: {
+    content: "<p><strong>Subject</strong></p><p><a href=\"...\">Bekijk in FreeScout</a></p>",
+    activity_type: "email",
+    activity_date: "2026-02-12",
+    activity_time: "14:30"
+  }
+}
+```
+
+## Next Steps
+
+This plan provides the foundation for syncing FreeScout conversations to Rondo Club. Next steps:
+
+1. Create upload step (`steps/upload-freescout-activities.js`) - POST activities to Rondo Club Activities API
+2. Create pipeline orchestrator (`pipelines/sync-freescout-conversations.js`) - connects download → prepare → upload
+3. Add to cron schedule for automated sync (likely daily)
+
+## Self-Check: PASSED
+
+**Files created:**
+- ✓ FOUND: lib/freescout-conversations-db.js
+- ✓ FOUND: steps/download-freescout-conversations.js
+- ✓ FOUND: steps/prepare-freescout-activities.js
+
+**Commits exist:**
+- ✓ FOUND: 52ecdb4 (feat(46-01): create FreeScout conversations SQLite tracking module)
+- ✓ FOUND: c201042 (feat(46-01): create download and prepare steps for FreeScout conversations)
+
+All planned deliverables created and committed successfully.
+
+# Phase 46 Plan 02: FreeScout Conversations Pipeline Integration
+
+**One-liner:** Complete end-to-end pipeline for syncing FreeScout conversations to Rondo Club activity timeline with deduplication, error handling, and CLI integration.
+
+## What Was Built
+
+### 1. Submit Step (`steps/submit-freescout-activities.js`)
+
+Submits FreeScout conversation activities to Rondo Club Activities API and marks conversations as synced in SQLite.
+
+**Core logic:**
+1. Accepts pre-prepared activities array or runs prepare step internally
+2. Opens conversations database for sync tracking
+3. For each activity:
+   - Defensive check: skip if conversation already synced (query `rondo_club_activity_id IS NOT NULL`)
+   - POST to `rondo/v1/people/{personId}/activities` via `rondoClubRequestWithRetry`
+   - Extract activity ID from response body
+   - Mark conversation as synced via `markConversationSynced(db, conversationId, activityId)`
+   - 100ms delay between API calls (rate limiting)
+   - Per-activity try/catch - errors logged but don't stop pipeline
+4. Returns: `{ success, total, created, skipped, failed, errors }`
+
+**Error handling:** Non-critical per-activity errors. Failed submissions logged with conversation ID, person ID, and error message. Pipeline continues to next activity.
+
+**Deduplication strategy:** Two-layer defense:
+- SQLite `rondo_club_activity_id` column tracks synced conversations (set by `markConversationSynced`)
+- Defensive check before POST prevents duplicate API calls if sync tracking fails
+
+**CLI:** `node steps/submit-freescout-activities.js [--verbose]`
+
+### 2. Pipeline Orchestrator (`pipelines/sync-freescout-conversations.js`)
+
+Complete pipeline following sync-freescout.js pattern with credential check, RunTracker, and comprehensive summary.
+
+**Pipeline flow:**
+1. Check FreeScout credentials via `checkFreescoutCredentials()` - exit early if not configured
+2. Create RunTracker('freescout-conversations')
+3. **Step 1:** Download conversations (`runDownloadConversations`)
+   - Tracks: totalCustomers, totalConversations, newConversations
+   - Step tracked via `tracker.startStep('conversations-download')`
+4. **Step 2:** Prepare activity payloads (`runPrepareActivities`)
+   - Tracks: total, prepared, skipped (no Rondo Club ID)
+   - Step tracked via `tracker.startStep('activities-prepare')`
+5. **Step 3:** Submit to Rondo Club (`runSubmitActivities` with prepared activities)
+   - Tracks: total, created, skipped, failed, errors
+   - Step tracked via `tracker.startStep('activities-submit')`
+6. End run with outcome ('success'|'partial'|'failure')
+7. Print comprehensive summary with dividers
+
+**printSummary sections:**
+- Completed/Duration
+- CONVERSATION DOWNLOAD: customers processed, conversations found, new conversations
+- ACTIVITY PREPARATION: total, prepared, skipped (no Rondo Club ID)
+- ACTIVITY SUBMISSION: total, created, skipped, failed
+- ERRORS: up to 10 errors displayed (download + submit combined)
+
+**CLI:** `node pipelines/sync-freescout-conversations.js [--verbose] [--force]`
+
+### 3. CLI Integration (`scripts/sync.sh`)
+
+Added `conversations` as sync type option 11.
+
+**Changes:**
+- Interactive menu: added option 11 with description "FreeScout conversations as activities"
+- Choice range updated from [1-10] to [1-11]
+- Validation case statement: added `conversations` to valid types
+- Script mapping: `conversations)` → `SYNC_SCRIPT="sync-freescout-conversations.js"`
+- Help comment updated to include `sync.sh conversations` usage
+
+**Usage:** `scripts/sync.sh conversations [--verbose] [--force]`
+
+### 4. Full Sync Integration (`pipelines/sync-all.js`)
+
+Conversations sync added as Step 7b (non-critical, within FreeScout credentials check).
+
+**Changes:**
+- Import: `runFreescoutConversationsSync` from `./sync-freescout-conversations`
+- Stats initialization: `freescoutConversations: { total, created, skipped, failed, errors }`
+- Step 7b execution (after Step 7 FreeScout customer sync):
+  - Only runs if `freescoutCreds.configured`
+  - Maps `convResult.stats.submit` to `stats.freescoutConversations`
+  - Errors caught and logged, pipeline continues
+- Summary output: FREESCOUT CONVERSATIONS section after FREESCOUT SYNC
+  - Shows activities created, skipped, failed
+  - Shows "Conversations synced: 0 changes" if no activity
+- Error tracking: `stats.freescoutConversations.errors` added to both `allErrors` and `allErrorArrays`
+
+**Pattern:** Follows discipline sync pattern - non-critical step that enriches sync-all without blocking on failure.
+
+## Deviations from Plan
+
+None - plan executed exactly as written.
+
+## Verification Results
+
+All verification steps passed:
+
+1. ✓ `steps/submit-freescout-activities.js` loads without error
+2. ✓ `pipelines/sync-freescout-conversations.js` loads without error
+3. ✓ `pipelines/sync-all.js` loads without error (no broken imports)
+4. ✓ `scripts/sync.sh` validates `conversations` as sync type (5 matches found)
+5. ✓ Pipeline follows RunTracker pattern with step tracking
+6. ✓ Submit step marks conversations as synced after successful API call
+
+## Key Technical Details
+
+### API Integration
+
+**Endpoint:** `POST /wp-json/rondo/v1/people/{personId}/activities`
+
+**Payload structure:**
+```javascript
+{
+  content: "<p><strong>Subject</strong></p><p><a href=\"...\">Bekijk in FreeScout</a></p>",
+  activity_type: "email",
+  activity_date: "2026-02-12",
+  activity_time: "14:30"
+}
+```
+
+**Response:** `{ id: 12345, ... }` - activity ID extracted and stored in SQLite
+
+**Retry logic:** Uses `rondoClubRequestWithRetry` with exponential backoff (1s, 2s, 4s) for 5xx errors
+
+### Deduplication Flow
+
+1. Download step: conversations upserted to SQLite (by conversation_id UNIQUE constraint)
+2. Prepare step: queries unsynced conversations (`WHERE rondo_club_activity_id IS NULL`)
+3. Submit step (defensive layer):
+   - Before POST: check if `rondo_club_activity_id IS NOT NULL`
+   - If exists: skip with log message
+   - If null: proceed with POST
+4. After successful POST: `markConversationSynced` sets `rondo_club_activity_id` and `last_synced_at`
+
+**Why defensive check?** Prevents duplicate API calls if:
+- Another process synced the conversation between prepare and submit
+- Prepare step cache is stale
+- Manual testing/debugging scenarios
+
+### Pipeline Orchestration Pattern
+
+Follows established patterns from `sync-freescout.js` and `sync-nikki.js`:
+- Credential validation before any work
+- RunTracker for dashboard integration (run tracking, step tracking, error recording)
+- Stats object with nested sections (download, prepare, submit)
+- Non-critical step error handling (try/catch per step, continue on failure)
+- Comprehensive printSummary with dividers and conditional sections
+- CLI entry point with verbose/force flags
+
+### Integration Points
+
+**sync.sh → pipeline:**
+- Shell script maps `conversations` sync type to `sync-freescout-conversations.js`
+- Passes through `--verbose` and `--force` flags
+- Uses flock-based locking to prevent concurrent runs
+- Sends failure alerts via Postmark on non-zero exit code
+
+**sync-all.js → pipeline:**
+- Runs conversations sync only if FreeScout credentials configured
+- Places conversations sync after customer sync (Step 7b after Step 7)
+- Aggregates stats into sync-all summary
+- Includes errors in total error count
+- Non-blocking: conversations sync failure doesn't fail sync-all
+
+## Next Steps
+
+This completes Phase 46 (FreeScout Conversations as Activities). The pipeline is now operational via:
+
+1. **Manual execution:** `scripts/sync.sh conversations`
+2. **Full sync inclusion:** `scripts/sync.sh all` (includes conversations sync)
+3. **Direct CLI:** `node pipelines/sync-freescout-conversations.js [--verbose] [--force]`
+
+**Recommended cron schedule:** Daily at 8:15am (after FreeScout customer sync at 8:00am)
+```
+15 8 * * * /path/to/sync.sh conversations
+```
+
+**Monitoring:** Pipeline runs tracked in dashboard database (`data/dashboard.sqlite`) via RunTracker. Check dashboard for:
+- Run outcomes (success/partial/failure)
+- Step-level outcomes
+- Error details
+- Duration metrics
+
+## Self-Check: PASSED
+
+**Files created:**
+- ✓ FOUND: steps/submit-freescout-activities.js
+- ✓ FOUND: pipelines/sync-freescout-conversations.js
+
+**Files modified:**
+- ✓ FOUND: scripts/sync.sh (conversations command added)
+- ✓ FOUND: pipelines/sync-all.js (Step 7b added)
+
+**Commits exist:**
+- ✓ FOUND: 27d1190 (feat(46-02): create submit step for FreeScout activities)
+- ✓ FOUND: 9960fff (feat(46-02): create pipeline orchestrator and integrate conversations sync)
+
+All planned deliverables created, verified, and committed successfully.
