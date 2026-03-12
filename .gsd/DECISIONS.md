@@ -127,3 +127,7 @@
 - "Individual sync page visit order: general → functions → other → financial → memberships (extends bulk order with functions step)"
 - "Invoice data always read from DB before preparePerson, works for both --fetch and non-fetch modes"
 - "Structural verification via grep/node-require for S01 (no test framework — project has none; script-based checks sufficient)"
+- "Photo download happens inline in fetchFreshDataFromSportlink() while signed CDN URL is fresh (not deferred to a later step)"
+- "Photo upload is non-critical in individual sync: wrapped in try/catch, sync continues without photo on failure"
+- "Export uploadPhotoToRondoClub and findPhotoFile from upload-photos-to-rondo-club.js for reuse (previously only runPhotoSync was exported)"
+- "Photo upload only attempted when --fetch flag is used (signed URL required for download)"

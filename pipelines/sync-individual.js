@@ -19,7 +19,8 @@ const {
   upsertMemberFunctions,
   upsertMemberCommittees,
   upsertMemberFreeFields,
-  upsertMemberInvoiceData
+  upsertMemberInvoiceData,
+  updatePhotoState
 } = require('../lib/rondo-club-db');
 const { preparePerson } = require('../steps/prepare-rondo-club-members');
 const { runPrepare: runPrepareParents } = require('../steps/prepare-rondo-club-parents');
@@ -30,6 +31,11 @@ const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const { syncCommissieWorkHistoryForMember } = require('../steps/submit-rondo-club-commissie-work-history');
 const { runSync: runPlayerHistorySync, syncSingleMember: syncSinglePlayerHistory } = require('../steps/submit-rondo-club-player-history');
+const { downloadPhotoFromUrl } = require('../lib/photo-utils');
+const { uploadPhotoToRondoClub, findPhotoFile } = require('../steps/upload-photos-to-rondo-club');
+const fs = require('fs/promises');
+const path = require('path');
+
 const {
   loginToSportlink,
   fetchMemberGeneralData,
@@ -208,6 +214,28 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       upsertMemberFreeFields(db, [freeFieldsData]);
     }
 
+    // Download photo while signed CDN URL is still fresh
+    const photosDir = path.join(process.cwd(), 'photos');
+    let photoDownload = null;
+
+    if (freeFieldsData?.photo_url) {
+      logger.verbose(`Downloading photo for ${knvbId}...`);
+      try {
+        await fs.mkdir(photosDir, { recursive: true });
+        photoDownload = await downloadPhotoFromUrl(freeFieldsData.photo_url, knvbId, photosDir, logger);
+        if (photoDownload.success) {
+          logger.verbose(`Photo downloaded: ${photoDownload.bytes} bytes to ${photoDownload.path}`);
+        } else {
+          logger.verbose(`Photo download did not succeed for ${knvbId}`);
+        }
+      } catch (error) {
+        logger.error(`Photo download failed for ${knvbId}: ${error.message}`);
+        photoDownload = { success: false, error: error.message };
+      }
+    } else {
+      logger.verbose(`No photo URL available for ${knvbId}`);
+    }
+
     return {
       success: true,
       memberData,
@@ -215,7 +243,8 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       committees,
       freeFields: freeFieldsData,
       invoiceData,
-      teamMemberships
+      teamMemberships,
+      photoDownload
     };
 
   } finally {
@@ -351,9 +380,10 @@ async function syncIndividual(knvbId, options = {}) {
     // Fetch fresh data from Sportlink if requested
     let freshMemberData = null;
     let freshTeamMemberships = null;
+    let fetchResult = null;
     if (fetch) {
       console.log('Fetching fresh data from Sportlink...');
-      const fetchResult = await fetchFreshDataFromSportlink(knvbId, rondoClubDb, { verbose });
+      fetchResult = await fetchFreshDataFromSportlink(knvbId, rondoClubDb, { verbose });
       if (!fetchResult.success) {
         console.error('Failed to fetch data from Sportlink');
         return { success: false, error: 'Failed to fetch from Sportlink' };
@@ -467,6 +497,11 @@ async function syncIndividual(knvbId, options = {}) {
         console.log('  Volunteer status: (will be captured on first sync)');
       }
 
+      // Photo status
+      console.log('\nPhoto:');
+      console.log(`  Available: ${freeFields?.photo_url ? 'yes' : 'no'}`);
+      if (freeFields?.photo_date) console.log(`  Photo date: ${freeFields.photo_date}`);
+
       return { success: true, action: 'dry-run' };
     }
 
@@ -565,6 +600,25 @@ async function syncIndividual(knvbId, options = {}) {
           console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
         }
 
+        // Photo upload (non-critical — failures logged but not propagated)
+        if (fetch && fetchResult?.photoDownload?.success) {
+          try {
+            const photosDir = path.join(process.cwd(), 'photos');
+            const photoFile = await findPhotoFile(knvbId, photosDir);
+            if (photoFile.found) {
+              await uploadPhotoToRondoClub(rondoClubId, photoFile.path, { verbose });
+              updatePhotoState(rondoClubDb, knvbId, 'synced');
+              console.log('  Photo: uploaded successfully');
+            } else {
+              console.log('  Photo: skipped (file not found after download)');
+            }
+          } catch (error) {
+            console.log(`  Photo: upload failed: ${error.message}`);
+          }
+        } else if (fetch) {
+          console.log('  Photo: skipped (not available)');
+        }
+
         return { success: true, action: 'updated', rondoClubId };
       }
     }
@@ -616,6 +670,25 @@ async function syncIndividual(knvbId, options = {}) {
       playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
     } else if (playerHistoryResult.created > 0) {
       console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+    }
+
+    // Photo upload (non-critical — failures logged but not propagated)
+    if (fetch && fetchResult?.photoDownload?.success) {
+      try {
+        const photosDir = path.join(process.cwd(), 'photos');
+        const photoFile = await findPhotoFile(knvbId, photosDir);
+        if (photoFile.found) {
+          await uploadPhotoToRondoClub(newId, photoFile.path, { verbose });
+          updatePhotoState(rondoClubDb, knvbId, 'synced');
+          console.log('  Photo: uploaded successfully');
+        } else {
+          console.log('  Photo: skipped (file not found after download)');
+        }
+      } catch (error) {
+        console.log(`  Photo: upload failed: ${error.message}`);
+      }
+    } else if (fetch) {
+      console.log('  Photo: skipped (not available)');
     }
 
     return { success: true, action: 'created', rondoClubId: newId };

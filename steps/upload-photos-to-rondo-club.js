@@ -430,7 +430,7 @@ async function runPhotoSync(options = {}) {
   }
 }
 
-module.exports = { runPhotoSync };
+module.exports = { runPhotoSync, uploadPhotoToRondoClub, findPhotoFile };
 
 // CLI entry point
 if (require.main === module) {
