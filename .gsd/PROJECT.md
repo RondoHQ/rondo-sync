@@ -181,5 +181,12 @@ Full bidirectional sync pipeline operational with web monitoring dashboard:
 | Conversations as Step 7b in sync-all | Non-critical; follows discipline pattern for graceful failures | ✓ Good |
 | Date normalization utility | Multi-format date handling (YYYYMMDD, YYYY-MM-DD, ISO 8601) | ✓ Good |
 
+## Milestones
+
+| Milestone | Status | Description | Completed |
+|-----------|--------|-------------|-----------|
+| **M001: Migration** | ✅ Complete | Web dashboard, stadion→rondo_club rename, former member import, FreeScout integration | 2026-03-12 |
+| **M002: Individual Sync Parity** | ⬜ Planned | TBD | — |
+
 ---
-*Last updated: 2026-02-12 after v3.3 milestone*
+*Last updated: 2026-03-12 after M001 milestone completion*
