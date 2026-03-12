@@ -122,3 +122,4 @@
 - "Return null for invalid/empty date inputs rather than throwing errors (graceful degradation)"
 - "Use FREESCOUT_FIELD_RELATION_END env var with default 9 for field ID mapping"
 - "Empty string fallback for null relation_end values to prevent API errors"
+- "Multi-club readiness deferred until a second club actually onboards — no speculative abstraction (YAGNI)"

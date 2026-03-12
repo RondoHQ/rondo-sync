@@ -17,7 +17,7 @@
   > After this: Build the pipeline overview page, run history page, and run detail page for the dashboard.
 - [x] **S05: Email Migration** `risk:medium` `depends:[S04]`
   > After this: Replace always-send email reports with error-only alerts containing dashboard links.
-- [ ] **S06: Multi Club Readiness — deferred until second club onboards** `risk:medium` `depends:[S05]`
+- [x] **S06: Multi Club Readiness — deferred until second club onboards** `risk:medium` `depends:[S05]`
   > After this: unit tests prove Multi-Club Readiness — deferred until second club onboards works
 - [x] **S07: Former Member Import Tool** `risk:medium` `depends:[S06]`
   > After this: Create the former member import tool: a Playwright-based download step that toggles Sportlink status filters to INACTIVE, and an orchestrator tool that downloads, prepares, and syncs former members to Rondo Club with `acf.
