@@ -262,6 +262,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const dateOfPassing = (sportlinkMember.DateOfPassing || '').trim() || null;
   const ageClass = (sportlinkMember.AgeClassDescription || '').trim() || null;
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
+  const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
 
   if (memberSince) acf['lid-sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
@@ -270,6 +271,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   if (ageClass) acf['leeftijdsgroep'] = ageClass;
   if (personImageDate) acf['datum-foto'] = personImageDate;
   if (memberType) acf['type-lid'] = memberType;
+  if (gameActivities) acf['spelactiviteit'] = gameActivities;
 
   // Free fields from Sportlink /other tab (FreeScout ID, VOG datum, financial block)
   if (freeFields) {
