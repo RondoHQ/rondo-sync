@@ -43,7 +43,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Invoice data and side-effects** `risk:medium` `depends:[]`
+- [x] **S01: Invoice data and side-effects** `risk:medium` `depends:[]`
   > After this: individual sync fetches financial data from Sportlink, passes invoice data to preparePerson, logs financial block activities, and captures volunteer status — verified by running `--fetch --dry-run` and seeing invoice fields in output, then a real sync showing activity log and volunteer status in Rondo Club
 
 - [ ] **S02: Photo sync** `risk:medium` `depends:[S01]`

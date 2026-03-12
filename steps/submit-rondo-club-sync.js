@@ -973,7 +973,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncParent };
+module.exports = { runSync, syncParent, logFinancialBlockActivity };
 
 // CLI entry point
 if (require.main === module) {

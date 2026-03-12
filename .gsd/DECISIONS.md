@@ -123,3 +123,7 @@
 - "Use FREESCOUT_FIELD_RELATION_END env var with default 9 for field ID mapping"
 - "Empty string fallback for null relation_end values to prevent API errors"
 - "Multi-club readiness deferred until a second club actually onboards — no speculative abstraction (YAGNI)"
+- "Financial tab fetch is non-critical in individual sync: wrapped in try/catch, sync continues without invoice data on failure"
+- "Individual sync page visit order: general → functions → other → financial → memberships (extends bulk order with functions step)"
+- "Invoice data always read from DB before preparePerson, works for both --fetch and non-fetch modes"
+- "Structural verification via grep/node-require for S01 (no test framework — project has none; script-based checks sufficient)"

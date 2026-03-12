@@ -6,21 +6,24 @@ const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/lap
 const {
   openDb: openRondoClubDb,
   getMemberFreeFieldsByKnvbId,
+  getMemberInvoiceDataByKnvbId,
   getFreeFieldMappings,
   upsertMembers,
   upsertParents,
   getParentsNeedingSync,
   updateSyncState,
+  updateVolunteerStatus,
   getMemberFunctions,
   getMemberCommittees,
   getAllCommissies,
   upsertMemberFunctions,
   upsertMemberCommittees,
-  upsertMemberFreeFields
+  upsertMemberFreeFields,
+  upsertMemberInvoiceData
 } = require('../lib/rondo-club-db');
 const { preparePerson } = require('../steps/prepare-rondo-club-members');
 const { runPrepare: runPrepareParents } = require('../steps/prepare-rondo-club-parents');
-const { syncParent } = require('../steps/submit-rondo-club-sync');
+const { syncParent, logFinancialBlockActivity } = require('../steps/submit-rondo-club-sync');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
@@ -33,6 +36,7 @@ const {
   fetchMemberFunctions,
   fetchMemberTeamMemberships,
   fetchMemberDataFromOtherPage,
+  fetchMemberFinancialData,
   parseFunctionsResponse
 } = require('../steps/download-functions-from-sportlink');
 
@@ -144,6 +148,21 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       log(`  Photo: ${freeFieldsData.photo_url ? 'yes' : 'no'}`);
     }
 
+    // Fetch financial/invoice data
+    log(`Fetching financial data for ${knvbId}...`);
+    let invoiceData = null;
+    try {
+      invoiceData = await fetchMemberFinancialData(page, knvbId, logger);
+      if (invoiceData) {
+        upsertMemberInvoiceData(db, [invoiceData]);
+        log(`  Invoice email: ${invoiceData.invoice_email || 'none'}`);
+      } else {
+        log('  No financial data captured');
+      }
+    } catch (error) {
+      log(`  Warning: Could not fetch financial data: ${error.message}`);
+    }
+
     // Fetch memberships (for player history sync) in the same authenticated browser session.
     // This endpoint occasionally returns an HTML login page when sessions race/expire.
     let teamMemberships = [];
@@ -195,6 +214,7 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
       functions,
       committees,
       freeFields: freeFieldsData,
+      invoiceData,
       teamMemberships
     };
 
@@ -373,8 +393,12 @@ async function syncIndividual(knvbId, options = {}) {
     const freeFieldMappings = getFreeFieldMappings(rondoClubDb);
     log(`Free fields: ${JSON.stringify(freeFields)}`);
 
+    // Get invoice data for this member (populated by --fetch or previous bulk sync)
+    const invoiceData = getMemberInvoiceDataByKnvbId(rondoClubDb, knvbId);
+    log(`Invoice data: ${invoiceData ? 'found' : 'none'}`);
+
     // Prepare the person data
-    const prepared = preparePerson(member, freeFields, null, freeFieldMappings);
+    const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings);
     log(`Prepared data for ${prepared.knvb_id}`);
 
     // Upsert to tracking database to get current state
@@ -419,6 +443,30 @@ async function syncIndividual(knvbId, options = {}) {
           });
         }
       }
+
+      // Invoice data
+      console.log('\nInvoice data:');
+      if (invoiceData) {
+        if (invoiceData.invoice_email) console.log(`  Email: ${invoiceData.invoice_email}`);
+        if (invoiceData.invoice_external_code) console.log(`  Reference: ${invoiceData.invoice_external_code}`);
+        if (invoiceData.invoice_address_is_default === 0) {
+          console.log(`  Custom address: ${invoiceData.invoice_street || ''} ${invoiceData.invoice_house_number || ''}, ${invoiceData.invoice_postal_code || ''} ${invoiceData.invoice_city || ''}`);
+        } else {
+          console.log('  Address: (default - same as home address)');
+        }
+      } else {
+        console.log('  (none - run functions sync with --with-invoice first, or use --fetch)');
+      }
+
+      // Financial block and volunteer status
+      console.log('\nFinancial/volunteer status:');
+      console.log(`  Financial block: ${prepared.data.acf['financiele-blokkade'] ? 'YES' : 'no'}`);
+      if (rondoClubId) {
+        console.log('  Volunteer status: (available after sync - stored in Rondo Club)');
+      } else {
+        console.log('  Volunteer status: (will be captured on first sync)');
+      }
+
       return { success: true, action: 'dry-run' };
     }
 
@@ -473,6 +521,17 @@ async function syncIndividual(knvbId, options = {}) {
         await rondoClubRequest(`wp/v2/people/${rondoClubId}`, 'PUT', updateData, { verbose });
         updateSyncState(rondoClubDb, knvbId, prepared.source_hash, rondoClubId);
 
+        // Capture volunteer status from Rondo Club
+        const volunteerStatus = existingData.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+        updateVolunteerStatus(rondoClubDb, knvbId, volunteerStatus);
+
+        // Compare financial block status and log activity if changed
+        const previousBlockStatus = existingData.acf?.['financiele-blokkade'] || false;
+        const newBlockStatus = prepared.data.acf?.['financiele-blokkade'] || false;
+        if (previousBlockStatus !== newBlockStatus) {
+          await logFinancialBlockActivity(rondoClubId, newBlockStatus, { verbose });
+        }
+
         console.log(`Updated person ${rondoClubId} (${prepared.data.acf.first_name} ${prepared.data.acf.last_name})`);
 
         // Sync functions/commissie work history
@@ -515,6 +574,16 @@ async function syncIndividual(knvbId, options = {}) {
     const response = await rondoClubRequest('wp/v2/people', 'POST', prepared.data, { verbose });
     const newId = response.body.id;
     updateSyncState(rondoClubDb, knvbId, prepared.source_hash, newId);
+
+    // Capture volunteer status from newly created person
+    const createVolunteerStatus = response.body.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+    updateVolunteerStatus(rondoClubDb, knvbId, createVolunteerStatus);
+
+    // Log initial block status for newly created persons
+    const newBlockStatus = prepared.data.acf?.['financiele-blokkade'] || false;
+    if (newBlockStatus) {
+      await logFinancialBlockActivity(newId, true, { verbose });
+    }
 
     console.log(`Created person ${newId} (${prepared.data.acf.first_name} ${prepared.data.acf.last_name})`);
 
