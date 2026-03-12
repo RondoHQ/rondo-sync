@@ -8,9 +8,21 @@ A sync system with web dashboard that synchronizes member data bidirectionally b
 
 Keep downstream systems (Laposta, Rondo Club) automatically in sync with Sportlink member data without manual intervention — now bidirectionally, with web-based monitoring.
 
-## Current State (v3.3 Shipped)
+## Current State (v3.4 Shipped)
 
-**Shipped:** 2026-02-12
+**Shipped:** 2026-03-12
+
+Everything from v3.3 plus individual sync parity:
+- Individual sync (`sync-individual.js --fetch`) fetches invoice data from Sportlink financial tab
+- Invoice email, reference, and address passed to `preparePerson()` (was previously null)
+- Financial block activity logged to Rondo Club on status change (UPDATE and CREATE paths)
+- Volunteer status captured and stored after every individual sync
+- Photo downloaded inline during Sportlink fetch and uploaded to Rondo Club after person sync
+- `--dry-run` output shows invoice fields, financial block status, volunteer status, and photo availability
+- Web API endpoint `POST /api/sync/individual` exercises all new data flows via `fetch: true`
+
+<details>
+<summary>Previous: v3.3 FreeScout Integration (2026-02-12)</summary>
 
 Everything from v3.2 plus deep FreeScout integration:
 - Sportlink RelationEnd (lid-tot) date syncs to FreeScout "Lid tot" custom field (ID 9) with multi-format date normalization
@@ -19,6 +31,8 @@ Everything from v3.2 plus deep FreeScout integration:
 - Conversations transform to Rondo Club email activities with HTML content and FreeScout deep links
 - Complete conversations pipeline (download → prepare → submit) with RunTracker, defensive deduplication, and CLI/sync-all integration
 - Separate SQLite database (freescout-conversations.sqlite) for conversation tracking
+
+</details>
 
 <details>
 <summary>Previous: v3.2 Stadion-to-Rondo Rename (2026-02-11)</summary>
@@ -99,6 +113,12 @@ Full bidirectional sync pipeline operational with web monitoring dashboard:
 - ✓ FreeScout email conversations visible as activities on Rondo Club person records — v3.3
 - ✓ Member photos from Rondo Club sync to FreeScout as customer avatars — v3.3
 - ✓ Sportlink RelationEnd syncs to FreeScout "Lid tot" custom field (ID 9) — v3.3
+
+- ✓ Individual sync fetches invoice data from Sportlink financial tab — M002
+- ✓ Individual sync downloads and uploads member photos — M002
+- ✓ Individual sync logs financial block activity changes — M002
+- ✓ Individual sync captures volunteer status — M002
+- ✓ Individual sync --dry-run shows all fields including invoice, photo, financial block — M002
 
 ### Active
 
@@ -186,7 +206,7 @@ Full bidirectional sync pipeline operational with web monitoring dashboard:
 | Milestone | Status | Description | Completed |
 |-----------|--------|-------------|-----------|
 | **M001: Migration** | ✅ Complete | Web dashboard, stadion→rondo_club rename, former member import, FreeScout integration | 2026-03-12 |
-| **M002: Individual Sync Parity** | ⬜ Planned | TBD | — |
+| **M002: Individual Sync Parity** | ✅ Complete | Individual sync produces same data as bulk people sync (invoice, photos, financial block, volunteer status) | 2026-03-12 |
 
 ---
-*Last updated: 2026-03-12 after M001 milestone completion*
+*Last updated: 2026-03-12 after M002 milestone completion*
