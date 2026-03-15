@@ -1,7 +1,7 @@
 # Rondo Sync
 
 [![Node.js 18+](https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license)
+[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0)
 [![Version](https://img.shields.io/badge/version-v3.3-blue)](https://github.com/RondoHQ/rondo-sync/releases)
 
 **Automated member data synchronization for Dutch sports clubs.** Extracts data from Sportlink Club (KNVB's member administration — no API) via headless browser automation and syncs it to Laposta, Rondo Club (WordPress), and FreeScout. Club volunteers never enter the same data twice.
@@ -112,4 +112,4 @@ Node.js 18+ · Playwright · better-sqlite3 · otplib · Lettermint · dotenv
 
 ## License
 
-Private project — all rights reserved.
+[GPL v2 or later](LICENSE)
