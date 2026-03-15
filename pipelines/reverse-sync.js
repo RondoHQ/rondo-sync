@@ -2,6 +2,7 @@ require('dotenv/config');
 
 const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
+const { RunTracker } = require('../lib/run-tracker');
 const { runReverseSyncMultiPage } = require('../lib/reverse-sync-sportlink');
 const { detectChanges } = require('../lib/detect-rondo-club-changes');
 
@@ -16,6 +17,8 @@ const { detectChanges } = require('../lib/detect-rondo-club-changes');
 async function runAllFieldsReverseSync(options = {}) {
   const { verbose = false, knvbId = null, logger: providedLogger } = options;
   const logger = providedLogger || createSyncLogger({ verbose, prefix: 'reverse' });
+  const tracker = new RunTracker('reverse');
+  tracker.startRun();
 
   logger.log('Starting reverse sync (Rondo Club -> Sportlink) for all fields...');
   logger.log('Fields: email, email2, mobile, phone, datum-vog, freescout-id, financiele-blokkade');
@@ -29,6 +32,7 @@ async function runAllFieldsReverseSync(options = {}) {
     const detectedChanges = await detectChanges({ verbose, logger, knvbId });
     logger.log(`Detected ${detectedChanges.length} field change(s)`);
 
+    const stepId = tracker.startStep('sportlink-update');
     const result = await runReverseSyncMultiPage({ verbose, logger, knvbId });
 
     if (result.synced === 0 && result.failed === 0) {
@@ -37,9 +41,22 @@ async function runAllFieldsReverseSync(options = {}) {
       logger.log(`Reverse sync complete: ${result.synced} members synced, ${result.failed} failed`);
     }
 
+    tracker.endStep(stepId, {
+      outcome: result.failed > 0 ? 'partial' : 'success',
+      updated: result.synced,
+      failed: result.failed
+    });
+
+    const outcome = result.failed > 0 ? 'partial' : 'success';
+    tracker.endRun(outcome, {
+      synced: result.synced,
+      failed: result.failed
+    });
+
     return result;
   } catch (err) {
     logger.error(`Reverse sync failed: ${err.message}`);
+    tracker.endRun('failure', { error: err.message });
     return { success: false, synced: 0, failed: 0, error: err.message };
   }
 }
