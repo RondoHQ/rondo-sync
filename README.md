@@ -1,8 +1,10 @@
 # Rondo Sync
 
-Sportlink Club is the member administration system used by Dutch sports clubs, mandated by the KNVB (Royal Dutch Football Association). It is the single source of truth for member data, but it lacks APIs. This tool extracts member data via browser automation (Playwright with headless Chromium and TOTP 2FA) and syncs it to Laposta (email marketing), Rondo Club (WordPress), FreeScout (helpdesk), and more. It also pulls contribution data from Nikki, a separate financial system.
+[![Node.js 18+](https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license)
+[![Version](https://img.shields.io/badge/version-v3.3-blue)](https://github.com/RondoHQ/rondo-sync/releases)
 
-Hash-based change detection ensures only actual changes are synced. Club volunteers never have to enter the same data twice.
+**Automated member data synchronization for Dutch sports clubs.** Extracts data from Sportlink Club (KNVB's member administration — no API) via headless browser automation and syncs it to Laposta, Rondo Club (WordPress), and FreeScout. Club volunteers never enter the same data twice.
 
 ## System Architecture
 
@@ -10,7 +12,7 @@ Hash-based change detection ensures only actual changes are synced. Club volunte
 graph LR
     SL[Sportlink Club]
     NK[Nikki]
-    SYNC[Rondo Sync Tool<br>+ SQLite databases]
+    SYNC[Rondo Sync<br>+ SQLite databases]
     ST[Rondo Club WordPress]
     LP[Laposta]
     FS[FreeScout]
@@ -24,6 +26,16 @@ graph LR
     SYNC -->|Reverse sync| SL
 ```
 
+## How It Works
+
+- **Browser automation** — Playwright (headless Chromium) with TOTP 2FA navigates Sportlink's UI to extract data from a system that has no API
+- **Hash-based change detection** — SHA-256 diffing ensures only records that actually changed get synced, minimizing API calls and avoiding unnecessary updates
+- **State tracking** — 4 SQLite databases maintain ID mappings, sync history, and photo upload state across systems
+- **Pipeline locking** — flock-based concurrency prevention ensures parallel cron jobs don't collide
+- **Email reports** — HTML summaries via Lettermint after every sync run
+- **Photo sync** — Downloads member photos from Sportlink, uploads to WordPress with a state machine tracking each photo's lifecycle
+- **Reverse sync** — Pushes Rondo Club field changes back to Sportlink via browser automation
+
 ## Sync Pipelines
 
 | Pipeline | Schedule | What it syncs |
@@ -35,9 +47,9 @@ graph LR
 | Teams | Weekly | Team rosters + work history → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
-## Daily Timeline
+### Daily Timeline
 
-All times are Europe/Amsterdam timezone.
+All times in Europe/Amsterdam timezone.
 
 ```
  07:00         Nikki sync
@@ -51,23 +63,17 @@ All times are Europe/Amsterdam timezone.
  Monday  23:30  Discipline sync
 ```
 
-## Key Features
-
-- **Browser automation** — Playwright (headless Chromium) for systems without APIs, with TOTP 2FA
-- **Change detection** — SHA-256 hash-based diffing, only syncs records that actually changed
-- **State tracking** — 4 SQLite databases maintain ID mappings and sync history
-- **Locking** — flock-based concurrency prevention per pipeline
-- **Email reports** — HTML summaries after every sync via Postmark
-- **Photo sync** — downloads member photos and uploads to WordPress with state machine
-- **Reverse sync** — can push Rondo Club changes back to Sportlink (currently disabled)
-
 ## Quick Start
+
+**Prerequisites:** Node.js 18+, a Sportlink Club account with TOTP 2FA configured.
 
 ```bash
 npm install
 npx playwright install chromium
-cp .env.example .env  # Edit with your credentials
+cp .env.example .env  # Fill in your credentials
 ```
+
+Run a pipeline:
 
 ```bash
 scripts/sync.sh people           # Members, parents, photos
@@ -80,7 +86,7 @@ scripts/sync.sh discipline       # Discipline cases
 scripts/sync.sh all              # Everything
 ```
 
-See [Installation Guide](docs/installation.md) for full setup instructions.
+See the [Installation Guide](docs/installation.md) for full setup instructions including server deployment and cron configuration.
 
 ## Documentation
 
@@ -94,7 +100,7 @@ See [Installation Guide](docs/installation.md) for full setup instructions.
 | [Functions Pipeline](docs/pipeline-functions.md) | Commissies, free fields, daily vs full mode |
 | [FreeScout Pipeline](docs/pipeline-freescout.md) | Customer sync with custom fields |
 | [Discipline Pipeline](docs/pipeline-discipline.md) | Discipline cases + season taxonomy |
-| [Reverse Sync](docs/reverse-sync.md) | Rondo Club → Sportlink (currently disabled) |
+| [Reverse Sync](docs/reverse-sync.md) | Rondo Club → Sportlink browser automation |
 | [Database Schema](docs/database-schema.md) | All 4 databases, 21 tables |
 | [Operations](docs/operations.md) | Server ops, monitoring, deploys |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
@@ -102,7 +108,7 @@ See [Installation Guide](docs/installation.md) for full setup instructions.
 
 ## Tech Stack
 
-Node.js 18+ · Playwright · better-sqlite3 · otplib · Postmark · dotenv
+Node.js 18+ · Playwright · better-sqlite3 · otplib · Lettermint · dotenv
 
 ## License
 
