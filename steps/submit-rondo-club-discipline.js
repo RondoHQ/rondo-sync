@@ -7,7 +7,8 @@ const {
   updateCaseSyncState,
   getSeasonFromDate,
   getAllCases,
-  getStaleSyncedCases
+  getStaleSyncedCases,
+  dismissCase
 } = require('../lib/discipline-db');
 const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-club-db');
 const { readEnv } = require('../lib/utils');
@@ -518,7 +519,7 @@ async function runSync(options = {}) {
 
         await rondoClubRequest(`wp/v2/discipline-cases/${staleCase.rondo_club_id}`, 'DELETE', null, options);
         log(`    Trashed WordPress post ${staleCase.rondo_club_id}`);
-        updateCaseSyncState(db, staleCase.dossier_id, null, null, null);
+        dismissCase(db, staleCase.dossier_id);
         results.trashed++;
 
         // Create a todo on the old person so the invoice can be reviewed
@@ -530,8 +531,8 @@ async function runSync(options = {}) {
         }
       } catch (error) {
         if (error.details?.data?.status === 404) {
-          logVerbose(`    Post ${staleCase.rondo_club_id} already gone, clearing sync state`);
-          updateCaseSyncState(db, staleCase.dossier_id, null, null, null);
+          logVerbose(`    Post ${staleCase.rondo_club_id} already gone, dismissing case`);
+          dismissCase(db, staleCase.dossier_id);
           results.trashed++;
         } else {
           console.error(`    Error trashing case ${staleCase.dossier_id}: ${error.message}`);
