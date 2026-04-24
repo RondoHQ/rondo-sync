@@ -15,9 +15,14 @@ const { parseMemberHeaderResponse, downloadPhotoFromUrl } = require('../lib/phot
  * Launches Playwright, logs into Sportlink, visits /other tab for each member
  * with pending_download photo state, captures MemberHeader response for the
  * signed photo URL, and downloads the photo immediately.
+ *
+ * @param {Object} options
+ * @param {Object} [options.logger] - Logger instance
+ * @param {boolean} [options.verbose=false] - Verbose mode
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  */
 async function runPhotoDownload(options = {}) {
-  const { logger: providedLogger, verbose = false } = options;
+  const { logger: providedLogger, verbose = false, page: sharedPage } = options;
   const logger = providedLogger || createSyncLogger({ verbose });
 
   const result = {
@@ -45,23 +50,33 @@ async function runPhotoDownload(options = {}) {
     const photosDir = path.join(process.cwd(), 'photos');
     await fs.mkdir(photosDir, { recursive: true });
 
+    const ownsBrowser = !sharedPage;
     const logDebug = createDebugLogger();
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let browser;
+    let page;
 
-    page.on('request', r => logDebug('>>', r.method(), r.url()));
-    page.on('response', r => logDebug('<<', r.status(), r.url()));
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      });
+      page = await context.newPage();
+
+      page.on('request', r => logDebug('>>', r.method(), r.url()));
+      page.on('response', r => logDebug('<<', r.status(), r.url()));
+    }
 
     try {
-      try {
-        await loginToSportlink(page, { logger });
-      } catch (loginError) {
-        logger.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
-        result.warning = `Login failed: ${loginError.message.split('\n')[0]}`;
-        return result;
+      if (!sharedPage) {
+        try {
+          await loginToSportlink(page, { logger });
+        } catch (loginError) {
+          logger.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
+          result.warning = `Login failed: ${loginError.message.split('\n')[0]}`;
+          return result;
+        }
       }
 
       for (let i = 0; i < members.length; i++) {
@@ -136,7 +151,9 @@ async function runPhotoDownload(options = {}) {
         }
       }
     } finally {
-      await browser.close();
+      if (ownsBrowser && browser) {
+        await browser.close();
+      }
     }
 
     // Summary

@@ -4,6 +4,7 @@ const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { runDownload } = require('../steps/download-data-from-sportlink');
 const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
 const { runPrepare } = require('../steps/prepare-laposta-members');
@@ -426,14 +427,33 @@ async function runSyncAll(options = {}) {
     }
   };
 
+  // Shared Sportlink browser session — reused across all Sportlink download steps
+  const sportlinkSession = new SportlinkSession({ logger, verbose });
+
   try {
-    // Step 1: Download from Sportlink
+    // Initialize shared Sportlink session (single login for all browser steps)
+    let sportlinkPage;
+    try {
+      sportlinkPage = await sportlinkSession.getPage();
+    } catch (loginErr) {
+      const errorMsg = `Sportlink login failed: ${loginErr.message}`;
+      logger.error(errorMsg);
+      tracker.endRun('failure', stats);
+      stats.completedAt = formatTimestamp();
+      stats.duration = formatDuration(Date.now() - startTime);
+      printSummary(logger, stats);
+      logger.close();
+      return { success: false, stats, error: errorMsg };
+    }
+
+    // Step 1: Download from Sportlink (uses shared session)
     logger.verbose('Starting download from Sportlink...');
-    const downloadResult = await runDownload({ logger, verbose });
+    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage });
 
     if (!downloadResult.success) {
       const errorMsg = downloadResult.error || 'Download failed';
       logger.error(`Download failed: ${errorMsg}`);
+      await sportlinkSession.close();
       tracker.endRun('failure', stats);
       stats.completedAt = formatTimestamp();
       stats.duration = formatDuration(Date.now() - startTime);
@@ -567,11 +587,12 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 4b: Team Download + Sync (NON-CRITICAL)
+    // Step 4b: Team Download + Sync (NON-CRITICAL, uses shared session)
     logger.verbose('Downloading teams from Sportlink...');
     let teamDownloadSportlinkIds = [];
     try {
-      const teamDownloadResult = await runTeamDownload({ logger, verbose });
+      const teamPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const teamDownloadResult = await runTeamDownload({ logger, verbose, page: teamPage });
       if (teamDownloadResult.success) {
         logger.verbose(`Downloaded ${teamDownloadResult.teamCount} teams with ${teamDownloadResult.memberCount} members`);
         // Store the sportlink IDs for orphan detection
@@ -642,10 +663,11 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 4d: Functions Download from Sportlink (NON-CRITICAL)
+    // Step 4d: Functions Download from Sportlink (NON-CRITICAL, uses shared session)
     logger.verbose('Downloading functions from Sportlink...');
     try {
-      const functionsResult = await runFunctionsDownload({ logger, verbose });
+      const functionsPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const functionsResult = await runFunctionsDownload({ logger, verbose, page: functionsPage });
       stats.functions.total = functionsResult.total;
       stats.functions.downloaded = functionsResult.downloaded;
       stats.functions.functionsCount = functionsResult.functionsCount;
@@ -714,10 +736,11 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 5: Photo Download (NON-CRITICAL)
+    // Step 5: Photo Download (NON-CRITICAL, uses shared session)
     logger.verbose('Downloading photos from Sportlink...');
     try {
-      const photoDownloadResult = await runPhotoDownload({ logger, verbose });
+      const photoPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const photoDownloadResult = await runPhotoDownload({ logger, verbose, page: photoPage });
 
       stats.photos.download = {
         total: photoDownloadResult.total,
@@ -844,10 +867,11 @@ async function runSyncAll(options = {}) {
       logger.verbose('FreeScout sync skipped (credentials not configured)');
     }
 
-    // Step 8: Discipline Sync (NON-CRITICAL, weekly pipeline included for completeness)
+    // Step 8: Discipline Sync (NON-CRITICAL, uses shared session)
     logger.verbose('Syncing discipline cases to Rondo Club...');
     try {
-      const disciplineResult = await runDisciplinePipelineSync({ verbose, force });
+      const disciplinePage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const disciplineResult = await runDisciplinePipelineSync({ verbose, force, page: disciplinePage });
 
       if (disciplineResult.stats) {
         stats.discipline = {
@@ -867,6 +891,12 @@ async function runSyncAll(options = {}) {
         message: `Discipline sync failed: ${err.message}`,
         system: 'discipline'
       });
+    }
+
+    // Close shared Sportlink session (done with all browser steps)
+    await sportlinkSession.close();
+    if (sportlinkSession.loginCount > 0) {
+      logger.verbose(`Shared Sportlink session closed (${sportlinkSession.loginCount} login(s))`);
     }
 
     // Complete timing
@@ -909,6 +939,7 @@ async function runSyncAll(options = {}) {
     const errorMsg = err.message || String(err);
     logger.error(`Fatal error: ${errorMsg}`);
 
+    await sportlinkSession.close();
     tracker.endRun('failure', stats);
 
     stats.completedAt = formatTimestamp();

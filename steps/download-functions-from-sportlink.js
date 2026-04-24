@@ -647,10 +647,11 @@ function filterRecentlyUpdated(members, memberDataMap, days = 2) {
  * @param {boolean} [options.withInvoice=false] - Also fetch invoice data from /financial tab (slow, run monthly)
  * @param {boolean} [options.recentOnly=true] - Only process members with recent updates
  * @param {number} [options.days=2] - Number of days back to consider for recent updates
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, total: number, downloaded: number, functionsCount: number, committeesCount: number, errors: Array}>}
  */
 async function runFunctionsDownload(options = {}) {
-  const { logger: providedLogger, verbose = false, withInvoice = false, recentOnly = true, days = 2 } = options;
+  const { logger: providedLogger, verbose = false, withInvoice = false, recentOnly = true, days = 2, page: sharedPage } = options;
   const logger = providedLogger || createSyncLogger({ verbose });
 
   const result = {
@@ -738,14 +739,22 @@ async function runFunctionsDownload(options = {}) {
     // preventing race conditions where other syncs see empty tables mid-process.
 
     const logDebug = createDebugLogger();
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    const ownsBrowser = !sharedPage;
+    let browser;
+    let page;
 
-    page.on('request', r => logDebug('>>', r.method(), r.url()));
-    page.on('response', r => logDebug('<<', r.status(), r.url()));
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      });
+      page = await context.newPage();
+
+      page.on('request', r => logDebug('>>', r.method(), r.url()));
+      page.on('response', r => logDebug('<<', r.status(), r.url()));
+    }
 
     const allFunctions = [];
     const allCommittees = [];
@@ -754,7 +763,9 @@ async function runFunctionsDownload(options = {}) {
     const uniqueCommitteeNames = new Set();
 
     try {
-      await loginToSportlink(page, { logger });
+      if (!sharedPage) {
+        await loginToSportlink(page, { logger });
+      }
 
       // Process each member
       for (let i = 0; i < members.length; i++) {
@@ -821,7 +832,9 @@ async function runFunctionsDownload(options = {}) {
         }
       }
     } finally {
-      await browser.close();
+      if (ownsBrowser && browser) {
+        await browser.close();
+      }
     }
 
     // Store to database

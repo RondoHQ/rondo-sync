@@ -77,7 +77,7 @@ function printSummary(logger, stats) {
  * Uses member data from last people sync to link cases to persons
  */
 async function runDisciplineSyncPipeline(options = {}) {
-  const { verbose = false, force = false } = options;
+  const { verbose = false, force = false, page: sharedPage } = options;
 
   const logger = createSyncLogger({ verbose, prefix: 'discipline' });
   const startTime = Date.now();
@@ -109,7 +109,7 @@ async function runDisciplineSyncPipeline(options = {}) {
     logger.verbose('Downloading discipline cases from Sportlink...');
     const downloadStepId = tracker.startStep('discipline-download');
     try {
-      const downloadResult = await runDownload({ logger, verbose });
+      const downloadResult = await runDownload({ logger, verbose, page: sharedPage });
       stats.download.caseCount = downloadResult.caseCount || 0;
       if (!downloadResult.success) {
         stats.download.errors.push({

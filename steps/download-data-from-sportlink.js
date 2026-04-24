@@ -10,30 +10,40 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode (creates logger if not provided)
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, memberCount: number, error?: string}>}
  */
 async function runDownload(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, page: sharedPage } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
+  // When a shared page is provided, skip browser launch and login
+  const ownsBrowser = !sharedPage;
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      acceptDownloads: true,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let page;
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        acceptDownloads: true,
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      });
+      page = await context.newPage();
+    }
 
     try {
-      if (isDebugEnabled()) {
+      if (!sharedPage && isDebugEnabled()) {
         page.on('request', r => logDebug('>>', r.method(), r.url()));
         page.on('response', r => logDebug('<<', r.status(), r.url()));
       }
 
-      await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
+      if (!sharedPage) {
+        await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
+      }
 
       const memberSearchPageUrl = 'https://club.sportlink.com/member/search';
       logDebug('Navigating to member search page:', memberSearchPageUrl);
@@ -95,7 +105,9 @@ async function runDownload(options = {}) {
       log(`Downloaded ${memberCount} members from Sportlink`);
       return { success: true, memberCount };
     } finally {
-      await browser.close();
+      if (ownsBrowser && browser) {
+        await browser.close();
+      }
     }
   } catch (err) {
     const errorMsg = err.message || String(err);

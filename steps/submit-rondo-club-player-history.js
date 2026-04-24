@@ -187,7 +187,7 @@ async function syncSingleMember(options = {}) {
 }
 
 async function runSync(options = {}) {
-  const { verbose = false, knvbIds = null } = options;
+  const { verbose = false, knvbIds = null, page: sharedPage } = options;
   const createdLogger = !options.logger;
   const logger = options.logger || createSyncLogger({ verbose, prefix: 'player-history' });
 
@@ -220,13 +220,18 @@ async function runSync(options = {}) {
 
     const { teamBySportlinkId, teamByName } = buildTeamLookupMaps(db);
 
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-    });
-    const page = await context.newPage();
+    let page;
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      });
+      page = await context.newPage();
 
-    await loginToSportlink(page, { logger });
+      await loginToSportlink(page, { logger });
+    }
 
     const shouldRetryAfterRelogin = (error) => {
       const message = String(error?.message || '').toLowerCase();
@@ -303,7 +308,7 @@ async function runSync(options = {}) {
 
     return result;
   } finally {
-    if (browser) {
+    if (!sharedPage && browser) {
       await browser.close();
     }
     db.close();
