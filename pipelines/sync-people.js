@@ -4,6 +4,9 @@ const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { SportlinkSession } = require('../lib/sportlink-session');
+const { rondoClubRequest } = require('../lib/rondo-club-client');
+const { openDb: openRondoClubDb, bulkSetVolunteerStatus } = require('../lib/rondo-club-db');
 const { runDownload } = require('../steps/download-data-from-sportlink');
 const { runPrepare } = require('../steps/prepare-laposta-members');
 const { runSubmit } = require('../steps/submit-laposta-list');
@@ -12,6 +15,41 @@ const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-del
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
 const { runPhotoSync } = require('../steps/upload-photos-to-rondo-club');
 // const { runReverseSync } = require('../lib/reverse-sync-sportlink'); // disabled
+
+/**
+ * Fetch all current volunteers from Rondo Club and update local DB.
+ * Ensures Laposta gets accurate volunteer status regardless of whether a member was synced this run.
+ */
+async function refreshVolunteerStatus(logger) {
+  const volunteerKnvbIds = new Set();
+  let page = 1;
+
+  while (true) {
+    const response = await rondoClubRequest(
+      `rondo/v1/people/filtered?huidig_vrijwilliger=1&per_page=100&page=${page}`,
+      'GET',
+      null,
+      { logger }
+    );
+    const data = response.body;
+    if (!data.people || data.people.length === 0) break;
+    for (const person of data.people) {
+      const knvbId = person.acf?.['knvb-id'];
+      if (knvbId) volunteerKnvbIds.add(String(knvbId));
+    }
+    if (page >= (data.total_pages || 1)) break;
+    page++;
+  }
+
+  const db = openRondoClubDb();
+  try {
+    bulkSetVolunteerStatus(db, volunteerKnvbIds);
+  } finally {
+    db.close();
+  }
+
+  return volunteerKnvbIds.size;
+}
 
 /**
  * Print summary report for people sync
@@ -151,11 +189,33 @@ async function runPeopleSync(options = {}) {
     reverseSync: { synced: 0, failed: 0, errors: [], results: [] } // disabled, kept for summary compat
   };
 
+  // Shared Sportlink browser session — reused across member download + photo download
+  const sportlinkSession = new SportlinkSession({ logger, verbose });
+
   try {
-    // Step 1: Download from Sportlink
+    // Step 1: Download from Sportlink (uses shared session)
     logger.verbose('Starting download from Sportlink...');
     const downloadStepId = tracker.startStep('sportlink-download');
-    const downloadResult = await runDownload({ logger, verbose });
+    let sportlinkPage;
+    try {
+      sportlinkPage = await sportlinkSession.getPage();
+    } catch (loginErr) {
+      const errorMsg = `Sportlink login failed: ${loginErr.message}`;
+      logger.error(errorMsg);
+      tracker.endStep(downloadStepId, { outcome: 'failure' });
+      tracker.recordError({
+        stepName: 'sportlink-download',
+        stepId: downloadStepId,
+        errorMessage: errorMsg
+      });
+      tracker.endRun('failure', stats);
+      stats.completedAt = formatTimestamp();
+      stats.duration = formatDuration(Date.now() - startTime);
+      printSummary(logger, stats);
+      logger.close();
+      return { success: false, stats, error: errorMsg };
+    }
+    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage });
 
     if (!downloadResult.success) {
       const errorMsg = downloadResult.error || 'Download failed';
@@ -170,6 +230,7 @@ async function runPeopleSync(options = {}) {
       stats.completedAt = formatTimestamp();
       stats.duration = formatDuration(Date.now() - startTime);
       printSummary(logger, stats);
+      await sportlinkSession.close();
       logger.close();
       return { success: false, stats, error: errorMsg };
     }
@@ -178,7 +239,16 @@ async function runPeopleSync(options = {}) {
     logger.verbose(`Downloaded ${downloadResult.memberCount} members`);
     tracker.endStep(downloadStepId, { outcome: 'success', created: stats.downloaded });
 
-    // Step 2: Prepare Laposta members
+    // Step 2: Refresh volunteer status from Rondo Club before Laposta prepare
+    // Must run before prepare so Laposta gets current status for all members, not just those synced this run.
+    try {
+      const volunteerCount = await refreshVolunteerStatus(logger);
+      logger.verbose(`Refreshed volunteer status: ${volunteerCount} current volunteers`);
+    } catch (err) {
+      logger.verbose(`Could not refresh volunteer status from Rondo Club: ${err.message}`);
+    }
+
+    // Step 3: Prepare Laposta members
     logger.verbose('Preparing Laposta members...');
     const prepareStepId = tracker.startStep('laposta-prepare');
     const prepareResult = await runPrepare({ logger, verbose });
@@ -205,7 +275,7 @@ async function runPeopleSync(options = {}) {
     logger.verbose(`Prepared ${stats.prepared} members (${stats.excluded} excluded)`);
     tracker.endStep(prepareStepId, { outcome: 'success', created: stats.prepared });
 
-    // Step 3: Submit to Laposta
+    // Step 4: Submit to Laposta
     logger.verbose('Submitting to Laposta...');
     const submitStepId = tracker.startStep('laposta-submit');
     const submitResult = await runSubmit({ logger, verbose, force });
@@ -238,7 +308,7 @@ async function runPeopleSync(options = {}) {
     });
     tracker.recordErrors('laposta-submit', submitStepId, stats.errors);
 
-    // Step 4: Sync to Rondo Club
+    // Step 5: Sync to Rondo Club
     logger.verbose('Syncing to Rondo Club...');
     const rondoClubStepId = tracker.startStep('rondo-club-sync');
     try {
@@ -298,7 +368,7 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 5: Create follow-up todos for Laposta bounces/unsubscribes
+    // Step 6: Create follow-up todos for Laposta bounces/unsubscribes
     logger.verbose('Syncing Laposta deliverability events...');
     const lapostaDeliverabilityStepId = tracker.startStep('laposta-deliverability');
     try {
@@ -339,11 +409,13 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 6: Photo Download (Playwright-based, downloads pending photos from Sportlink)
+    // Step 7: Photo Download (reuses shared Sportlink session)
     logger.verbose('Downloading photos from Sportlink...');
     const photoDownloadStepId = tracker.startStep('photo-download');
     try {
-      const photoDownloadResult = await runPhotoDownload({ logger, verbose });
+      // Reuse the shared Sportlink page — already logged in from step 1
+      const photoPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const photoDownloadResult = await runPhotoDownload({ logger, verbose, page: photoPage });
 
       stats.photos.downloaded = photoDownloadResult.downloaded;
       stats.photos.pending = photoDownloadResult.total - photoDownloadResult.downloaded;
@@ -381,7 +453,7 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 7: Photo Upload/Delete
+    // Step 8: Photo Upload/Delete
     logger.verbose('Syncing photos to Rondo Club...');
     const photoUploadStepId = tracker.startStep('photo-upload');
     try {
@@ -428,8 +500,14 @@ async function runPeopleSync(options = {}) {
       });
     }
 
-    // Step 8: Reverse Sync (Rondo Club -> Sportlink) — currently disabled
+    // Step 9: Reverse Sync (Rondo Club -> Sportlink) — currently disabled
     // TODO: Re-enable once reverse sync is fixed
+
+    // Close the shared Sportlink session (done with all browser steps)
+    await sportlinkSession.close();
+    if (sportlinkSession.loginCount > 0) {
+      logger.verbose(`Shared Sportlink session closed (${sportlinkSession.loginCount} login(s))`);
+    }
 
     // Complete
     stats.completedAt = formatTimestamp();
@@ -454,6 +532,7 @@ async function runPeopleSync(options = {}) {
     const errorMsg = err.message || String(err);
     logger.error(`Fatal error: ${errorMsg}`);
 
+    await sportlinkSession.close();
     tracker.endRun('failure', stats);
 
     stats.completedAt = formatTimestamp();
