@@ -67,30 +67,51 @@ async function runDownload(options = {}) {
       const allMembersMap = new Map();
       let searchErrors = 0;
 
+      const setupSearchPage = async () => {
+        await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForLoadState('networkidle');
+        await page.waitForSelector('#btnShowMore', { timeout: 20000 });
+        await page.click('#btnShowMore');
+        await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
+        await page.check('#scFetchUnionTeams_input');
+      };
+
       for (const letter of letters) {
-        logVerbose(`Searching for letter: ${letter}`);
-        await page.fill('input[name="SEARCHVALUE"]', letter);
+        try {
+          logVerbose(`Searching for letter: ${letter}`);
+          await page.fill('input[name="SEARCHVALUE"]', letter);
 
-        const responsePromise = page.waitForResponse(
-          resp => resp.url().includes('/navajo/entity/common/clubweb/member/search/SearchMembers') && resp.request().method() === 'POST',
-          { timeout: 60000 }
-        );
+          const responsePromise = page.waitForResponse(
+            resp => resp.url().includes('/navajo/entity/common/clubweb/member/search/SearchMembers') && resp.request().method() === 'POST',
+            { timeout: 60000 }
+          );
 
-        await page.click('#btnSearch');
-        const response = await responsePromise;
-        logDebug(`Letter "${letter}" response: ${response.status()}`);
+          await page.click('#btnSearch');
+          const response = await responsePromise;
+          logDebug(`Letter "${letter}" response: ${response.status()}`);
 
-        if (!response.ok()) {
-          logError(`Search for "${letter}" failed: ${response.status()}`);
+          if (!response.ok()) {
+            logError(`Search for "${letter}" failed: ${response.status()}`);
+            searchErrors++;
+            await setupSearchPage();
+            continue;
+          }
+
+          const jsonData = await response.json();
+          for (const member of (jsonData.Members || [])) {
+            const key = member.PublicPersonId;
+            if (key && !allMembersMap.has(key)) {
+              allMembersMap.set(key, member);
+            }
+          }
+        } catch (letterErr) {
+          logError(`Error searching for "${letter}": ${letterErr.message}`);
           searchErrors++;
-          continue;
-        }
-
-        const jsonData = await response.json();
-        for (const member of (jsonData.Members || [])) {
-          const key = member.PublicPersonId;
-          if (key && !allMembersMap.has(key)) {
-            allMembersMap.set(key, member);
+          try {
+            await setupSearchPage();
+          } catch (recoveryErr) {
+            logError(`Recovery failed after "${letter}": ${recoveryErr.message}`);
+            break;
           }
         }
       }
