@@ -62,10 +62,13 @@ async function runDownload(options = {}) {
       await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
       await page.check('#scFetchUnionTeams_input');
 
-      // Sportlink returns 500 for empty searches, so search a-z and merge results
-      const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+      // Sportlink returns 500 for empty searches, so search a-z and merge results.
+      // If a single letter fails, expand it to letter+vowel combinations.
+      const vowels = ['a', 'e', 'i', 'o', 'u'];
+      const terms = 'abcdefghijklmnopqrstuvwxyz'.split('');
       const allMembersMap = new Map();
-      let searchErrors = 0;
+      let successCount = 0;
+      let errorCount = 0;
 
       const setupSearchPage = async () => {
         await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
@@ -76,10 +79,10 @@ async function runDownload(options = {}) {
         await page.check('#scFetchUnionTeams_input');
       };
 
-      for (const letter of letters) {
+      for (const term of terms) {
         try {
-          logVerbose(`Searching for letter: ${letter}`);
-          await page.fill('input[name="SEARCHVALUE"]', letter);
+          logVerbose(`Searching for: "${term}"`);
+          await page.fill('input[name="SEARCHVALUE"]', term);
 
           const responsePromise = page.waitForResponse(
             resp => resp.url().includes('/navajo/entity/common/clubweb/member/search/SearchMembers') && resp.request().method() === 'POST',
@@ -88,11 +91,12 @@ async function runDownload(options = {}) {
 
           await page.click('#btnSearch');
           const response = await responsePromise;
-          logDebug(`Letter "${letter}" response: ${response.status()}`);
+          logDebug(`"${term}" response: ${response.status()}`);
 
           if (!response.ok()) {
-            logError(`Search for "${letter}" failed: ${response.status()}`);
-            searchErrors++;
+            logError(`Search for "${term}" failed: ${response.status()}`);
+            if (term.length === 1) terms.push(...vowels.map(v => term + v));
+            errorCount++;
             await setupSearchPage();
             continue;
           }
@@ -100,24 +104,24 @@ async function runDownload(options = {}) {
           const jsonData = await response.json();
           for (const member of (jsonData.Members || [])) {
             const key = member.PublicPersonId;
-            if (key && !allMembersMap.has(key)) {
-              allMembersMap.set(key, member);
-            }
+            if (key && !allMembersMap.has(key)) allMembersMap.set(key, member);
           }
-        } catch (letterErr) {
-          logError(`Error searching for "${letter}": ${letterErr.message}`);
-          searchErrors++;
+          successCount++;
+        } catch (termErr) {
+          logError(`Error searching for "${term}": ${termErr.message}`);
+          if (term.length === 1) terms.push(...vowels.map(v => term + v));
+          errorCount++;
           try {
             await setupSearchPage();
           } catch (recoveryErr) {
-            logError(`Recovery failed after "${letter}": ${recoveryErr.message}`);
+            logError(`Recovery failed after "${term}": ${recoveryErr.message}`);
             break;
           }
         }
       }
 
-      if (searchErrors === letters.length) {
-        const errorMsg = `All ${letters.length} letter searches failed`;
+      if (successCount === 0) {
+        const errorMsg = `All ${terms.length} searches failed`;
         logError(errorMsg);
         return { success: false, memberCount: 0, error: errorMsg };
       }
@@ -131,7 +135,7 @@ async function runDownload(options = {}) {
         db.close();
       }
 
-      log(`Downloaded ${memberCount} members from Sportlink (${letters.length - searchErrors}/${letters.length} letter searches succeeded)`);
+      log(`Downloaded ${memberCount} members from Sportlink (${successCount} searches OK, ${errorCount} failed/expanded)`);
       return { success: true, memberCount };
     } finally {
       if (ownsBrowser && browser) {
