@@ -62,47 +62,55 @@ async function runDownload(options = {}) {
       await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
       await page.check('#scFetchUnionTeams_input');
 
-      // Set up listener for the SearchMembers POST response before clicking
-      logDebug('Setting up response listener for SearchMembers POST request...');
-      const responsePromise = page.waitForResponse(
-        resp => resp.url().includes('/navajo/entity/common/clubweb/member/search/SearchMembers') && resp.request().method() === 'POST',
-        { timeout: 60000 } // 60 seconds timeout for long-running search requests
-      );
+      // Sportlink returns 500 for empty searches, so search a-z and merge results
+      const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+      const allMembersMap = new Map();
+      let searchErrors = 0;
 
-      logDebug('Clicking search button: #btnSearch');
-      await page.click('#btnSearch');
+      for (const letter of letters) {
+        logVerbose(`Searching for letter: ${letter}`);
+        await page.fill('input[name="SEARCHVALUE"]', letter);
 
-      const response = await responsePromise;
-      logDebug('Search response received. Status:', response.status(), response.statusText());
-      logDebug('Search response headers:', JSON.stringify(response.headers(), null, 2));
+        const responsePromise = page.waitForResponse(
+          resp => resp.url().includes('/navajo/entity/common/clubweb/member/search/SearchMembers') && resp.request().method() === 'POST',
+          { timeout: 60000 }
+        );
 
-      if (!response.ok()) {
-        let errorBody = '';
-        try {
-          errorBody = await response.text();
-          logDebug('Search response body:', errorBody);
-        } catch (e) {
-          logDebug('Could not read response body:', e.message);
+        await page.click('#btnSearch');
+        const response = await responsePromise;
+        logDebug(`Letter "${letter}" response: ${response.status()}`);
+
+        if (!response.ok()) {
+          logError(`Search for "${letter}" failed: ${response.status()}`);
+          searchErrors++;
+          continue;
         }
-        const errorMsg = `Search request failed (${response.status()} ${response.statusText()}): ${errorBody || 'No error details'}`;
-        logError('Search request failed:');
-        logError('  URL:', response.url());
-        logError('  Status:', response.status(), response.statusText());
-        logError('  Response body:', errorBody || '(empty)');
+
+        const jsonData = await response.json();
+        for (const member of (jsonData.Members || [])) {
+          const key = member.PublicPersonId;
+          if (key && !allMembersMap.has(key)) {
+            allMembersMap.set(key, member);
+          }
+        }
+      }
+
+      if (searchErrors === letters.length) {
+        const errorMsg = `All ${letters.length} letter searches failed`;
+        logError(errorMsg);
         return { success: false, memberCount: 0, error: errorMsg };
       }
 
-      const jsonData = await response.json();
-      const memberCount = Array.isArray(jsonData.Members) ? jsonData.Members.length : 0;
-      const jsonText = JSON.stringify(jsonData);
+      const mergedMembers = Array.from(allMembersMap.values());
+      const memberCount = mergedMembers.length;
       const db = openDb();
       try {
-        insertSportlinkRun(db, jsonText);
+        insertSportlinkRun(db, JSON.stringify({ Members: mergedMembers }));
       } finally {
         db.close();
       }
 
-      log(`Downloaded ${memberCount} members from Sportlink`);
+      log(`Downloaded ${memberCount} members from Sportlink (${letters.length - searchErrors}/${letters.length} letter searches succeeded)`);
       return { success: true, memberCount };
     } finally {
       if (ownsBrowser && browser) {
