@@ -186,9 +186,9 @@ async function runFunctionsSync(options = {}) {
       stats.download.total = downloadResult.total || 0;
       stats.download.functionsCount = downloadResult.functionsCount || 0;
       stats.download.committeesCount = downloadResult.committeesCount || 0;
-      if (!downloadResult.success) {
+      if (downloadResult.error) {
         stats.download.errors.push({
-          message: downloadResult.error || 'Unknown error',
+          message: downloadResult.error,
           system: 'functions-download'
         });
       }

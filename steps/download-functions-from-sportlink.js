@@ -157,7 +157,7 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger) {
   ).catch(() => null);
 
   logger.verbose(`  Navigating to ${otherUrl}...`);
-  await page.goto(otherUrl, { waitUntil: 'networkidle' });
+  await page.goto(otherUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   // Await both responses
   const [freeFieldsResponse, memberHeaderResponse] = await Promise.all([
@@ -283,7 +283,7 @@ async function fetchMemberFinancialData(page, knvbId, logger) {
   ).catch(() => null);
 
   logger.verbose(`  Navigating to ${financialUrl}...`);
-  await page.goto(financialUrl, { waitUntil: 'networkidle' });
+  await page.goto(financialUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   // Await both responses
   const [addressResponse, infoResponse] = await Promise.all([
@@ -371,7 +371,7 @@ async function fetchMemberGeneralData(page, knvbId, logger) {
   ).catch(() => null);
 
   logger.verbose(`  Navigating to ${generalUrl}...`);
-  await page.goto(generalUrl, { waitUntil: 'networkidle' });
+  await page.goto(generalUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   const [personDataResponse, communicationResponse, addressesResponse, parentalInfoResponse] = await Promise.all([
     personDataPromise,
@@ -472,7 +472,7 @@ async function fetchMemberFunctions(page, knvbId, logger) {
   ).catch(() => null);
 
   logger.verbose(`  Navigating to ${functionsUrl}...`);
-  await page.goto(functionsUrl, { waitUntil: 'networkidle' });
+  await page.goto(functionsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   // Wait for both responses (or timeout)
   const [functionsResponse, committeesResponse] = await Promise.all([
