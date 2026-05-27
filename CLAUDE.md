@@ -65,6 +65,8 @@ FREESCOUT_URL=               # FreeScout URL (optional)
 NIKKI_API_KEY=               # Nikki API key (optional)
 NIKKI_URL=                   # Nikki URL (optional)
 SYNC_API_KEY=                # API key for programmatic sync endpoints (used by Rondo Club)
+HEALTHCHECK_PEOPLE_URL=      # Optional: healthchecks.io ping URL for People sync dead-man's switch
+                             # (add HEALTHCHECK_<PIPELINE>_URL per pipeline as needed)
 ```
 
 ## Directory Layout

@@ -195,6 +195,22 @@ echo "Starting $SYNC_TYPE sync at $(date)" | tee -a "$LOG_FILE"
 node "$PROJECT_DIR/pipelines/$SYNC_SCRIPT" $SYNC_FLAGS 2>&1 | tee -a "$LOG_FILE"
 EXIT_CODE=${PIPESTATUS[0]}
 
+# Healthchecks.io dead-man's switch (optional, per pipeline).
+# Set HEALTHCHECK_<PIPELINE>_URL in .env (e.g. HEALTHCHECK_PEOPLE_URL).
+# Pings always — even on failure — because failure emails are already covered
+# above; the dead-man only catches the "nothing ran at all" case.
+HC_VAR_NAME="HEALTHCHECK_$(echo "$SYNC_TYPE" | tr '[:lower:]-' '[:upper:]_')_URL"
+HC_URL="${!HC_VAR_NAME}"
+if [ -n "$HC_URL" ]; then
+    if [ $EXIT_CODE -eq 0 ]; then
+        curl -fsS -m 10 --retry 3 "$HC_URL" -o /dev/null 2>&1 || \
+            echo "Warning: Healthcheck ping failed for $SYNC_TYPE" >&2
+    else
+        curl -fsS -m 10 --retry 3 "${HC_URL}/fail" -o /dev/null 2>&1 || \
+            echo "Warning: Healthcheck fail ping failed for $SYNC_TYPE" >&2
+    fi
+fi
+
 # Send failure alert if pipeline failed
 if [ $EXIT_CODE -ne 0 ]; then
     if [ -n "$LETTERMINT_API_TOKEN" ] && [ -n "$LETTERMINT_FROM_EMAIL" ] && [ -n "$OPERATOR_EMAIL" ]; then
