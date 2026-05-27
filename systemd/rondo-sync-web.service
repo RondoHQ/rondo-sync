@@ -16,6 +16,11 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=rondo-sync-web
 
+# Stop only the web server on restart, not detached sync children
+# spawned from POST /api/pipeline/:name/start. Without this, an in-flight
+# Sportlink/Laposta sync gets SIGTERMed mid-flight on every deploy.
+KillMode=process
+
 # Security hardening (INFRA-04: non-root, minimal permissions)
 NoNewPrivileges=true
 PrivateTmp=true
