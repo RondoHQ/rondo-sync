@@ -36,11 +36,20 @@ function buildJobTitle(teamRow) {
 }
 
 function buildSignature(entry) {
-  const team = String(entry.team || '');
+  const teamKey = entry.team
+    ? `id:${entry.team}`
+    : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
   const start = String(entry.start_date || '');
   const end = String(entry.end_date || '');
   const title = String(entry.job_title || '').trim().toLowerCase();
-  return `${team}|${start}|${end}|${title}`;
+  return `${teamKey}|${start}|${end}|${title}`;
+}
+
+function buildHistoricalTeamName(teamRow) {
+  const baseName = buildFallbackTeamName(teamRow);
+  const season = String(teamRow.SeasonDescription || '').trim();
+  if (baseName && season) return `${baseName} (${season})`;
+  return baseName || season || 'Onbekend team';
 }
 
 function resolveTeamRondoClubId(teamRow, teamBySportlinkId, teamByName) {
@@ -68,7 +77,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   const result = {
     synced: false,
     created: 0,
-    skippedNoTeam: 0,
+    textFallback: 0,
     skippedDuplicate: 0
   };
 
@@ -85,18 +94,21 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
 
   for (const row of teamRows) {
     const teamRondoClubId = resolveTeamRondoClubId(row, teamBySportlinkId, teamByName);
-    if (!teamRondoClubId) {
-      result.skippedNoTeam++;
-      continue;
-    }
 
     const entry = {
       job_title: buildJobTitle(row),
       is_current: !row.RelationEnd,
       start_date: formatDateForACF(row.RelationStart),
-      end_date: formatDateForACF(row.RelationEnd),
-      team: teamRondoClubId
+      end_date: formatDateForACF(row.RelationEnd)
     };
+
+    if (teamRondoClubId) {
+      entry.team = teamRondoClubId;
+    } else {
+      entry.team_name_text = buildHistoricalTeamName(row);
+      entry.entity_type = 'external_team';
+      result.textFallback++;
+    }
 
     const signature = buildSignature(entry);
     if (signatures.has(signature)) {
@@ -170,7 +182,7 @@ async function syncSingleMember(options = {}) {
       success: true,
       synced: res.synced ? 1 : 0,
       created: res.created || 0,
-      skippedNoTeamMatch: res.skippedNoTeam || 0,
+      textFallback: res.textFallback || 0,
       skippedDuplicate: res.skippedDuplicate || 0,
       errors: []
     };
@@ -179,7 +191,7 @@ async function syncSingleMember(options = {}) {
       success: false,
       synced: 0,
       created: 0,
-      skippedNoTeamMatch: 0,
+      textFallback: 0,
       skippedDuplicate: 0,
       errors: [{ knvb_id: knvbId, message: error.message }]
     };
@@ -197,7 +209,7 @@ async function runSync(options = {}) {
     downloaded: 0,
     synced: 0,
     created: 0,
-    skippedNoTeamMatch: 0,
+    textFallback: 0,
     skippedDuplicate: 0,
     errors: []
   };
@@ -277,7 +289,7 @@ async function runSync(options = {}) {
 
         if (syncResult.synced) result.synced++;
         result.created += syncResult.created;
-        result.skippedNoTeamMatch += syncResult.skippedNoTeam;
+        result.textFallback += syncResult.textFallback;
         result.skippedDuplicate += syncResult.skippedDuplicate;
       } catch (error) {
         result.errors.push({
@@ -299,8 +311,8 @@ async function runSync(options = {}) {
     logger.log(`Player history fetched for ${result.downloaded}/${result.total} member(s)`);
     logger.log(`  Members updated: ${result.synced}`);
     logger.log(`  Work history rows created: ${result.created}`);
-    if (result.skippedNoTeamMatch > 0) {
-      logger.log(`  Rows skipped (unknown team mapping): ${result.skippedNoTeamMatch}`);
+    if (result.textFallback > 0) {
+      logger.log(`  Rows written with text fallback (no Rondo team match): ${result.textFallback}`);
     }
     if (result.skippedDuplicate > 0) {
       logger.log(`  Rows skipped (already present): ${result.skippedDuplicate}`);

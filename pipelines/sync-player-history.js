@@ -24,8 +24,8 @@ function printSummary(logger, stats) {
   logger.log(`Membership pages fetched: ${stats.history.downloaded}`);
   logger.log(`Members updated: ${stats.history.synced}`);
   logger.log(`Work history rows created: ${stats.history.created}`);
-  if (stats.history.skippedNoTeamMatch > 0) {
-    logger.log(`Skipped (unknown team mapping): ${stats.history.skippedNoTeamMatch}`);
+  if (stats.history.textFallback > 0) {
+    logger.log(`Written with text fallback (no Rondo team match): ${stats.history.textFallback}`);
   }
   if (stats.history.skippedDuplicate > 0) {
     logger.log(`Skipped (already exists): ${stats.history.skippedDuplicate}`);
@@ -59,7 +59,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       downloaded: 0,
       synced: 0,
       created: 0,
-      skippedNoTeamMatch: 0,
+      textFallback: 0,
       skippedDuplicate: 0,
       errors: []
     }
@@ -76,7 +76,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       stats.history.downloaded = res.downloaded || 0;
       stats.history.synced = res.synced || 0;
       stats.history.created = res.created || 0;
-      stats.history.skippedNoTeamMatch = res.skippedNoTeamMatch || 0;
+      stats.history.textFallback = res.textFallback || 0;
       stats.history.skippedDuplicate = res.skippedDuplicate || 0;
       stats.history.errors = res.errors || [];
 
