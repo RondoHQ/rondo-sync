@@ -122,6 +122,38 @@ These are defined as `RELATIONSHIP_TYPE` constants in `steps/submit-rondo-club-s
 
 **Rondo Club API docs** are in the developer docs site at `~/Code/rondo/developer/src/content/docs/api/`.
 
+## Sportlink Patterns
+
+### Always use `SportlinkSession` for browser work — never call `chromium.launch + loginToSportlink` directly
+
+`lib/sportlink-session.js` owns Playwright launch + login. It transparently:
+- Reuses an in-process page across multiple step calls (pass `sharedPage` option).
+- Loads a disk-cached `storageState` (`data/sportlink-storage-state.json`) so cron-launched processes skip the 30–60s OTP login dance.
+- Coordinates concurrent refreshes via an O_EXCL lockfile so two cron ticks don't both burn a TOTP code.
+- Exposes `session.relogin()` for the mid-run reauth path; uses the same lock so the new state is persisted for siblings.
+
+Bypassing it (raw `chromium.launch + loginToSportlink`) re-introduces the per-process login burn AND the TOTP-collision class of bug that shows up as `Login failed: Could not find dashboard element` when multiple syncs overlap. Every existing step file uses it (`steps/download-*-from-sportlink.js`, `pipelines/sync-individual.js`, `pipelines/sync-former-members.js`, `steps/submit-rondo-club-player-history.js`). Stay consistent.
+
+### `/navajo/entity/common/clubweb/*` endpoints reject direct `page.request.get()` calls with 401
+
+The Sportlink SPA's data endpoints require an in-page auth header that Playwright's `page.request.get(...)` doesn't carry. Direct fetches always return 401, even from a fully-logged-in browser context.
+
+The working pattern (used by every Sportlink fetch in the repo): trigger the SPA to make the request itself — navigate to the matching member-details URL, optionally interact with UI to drive parameters (e.g. click the "Show inactive" toggle), and intercept the response with `page.waitForResponse(url => url.includes('/navajo/.../EndpointName'))`. See `fetchMemberTeamMemberships`, `fetchMemberFunctions` in `steps/download-functions-from-sportlink.js` for canonical examples. **Don't try to call the endpoints directly** — you'll just waste a TOTP code chasing a 401 that has no auth-side fix.
+
+### `upsertMembers(db, members)` reads `member.data` (object), NOT `member.data_json` (string)
+
+The function takes the prepared ACF blob as an OBJECT in the `data` field and computes `data_json` + `source_hash` internally. Passing `data_json: JSON.stringify(prepared.data)` silently leaves `member.data` undefined, so it defaults to `{}` and the row gets written with literal `"{}"` as data_json. The change detector then sees Rondo Club's real ACF differ from the empty stored mirror and re-flags every field as a "change" every cycle — the reverse-sync loop we kept hitting.
+
+Caller shape:
+```js
+upsertMembers(db, [{
+  knvb_id: '...',
+  email: prepared.email,
+  data: prepared.data,                  // ← object, not the string version
+  person_image_date: prepared.person_image_date
+}]);
+```
+
 ## Documentation Maintenance
 
 After functional changes, update:
