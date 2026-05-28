@@ -523,7 +523,7 @@ async function fetchMemberFunctions(page, knvbId, logger) {
  */
 async function fetchMemberTeamMemberships(page, knvbId, logger) {
   const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
-  const memberTeamsUrl = `https://club.sportlink.com/member/team/MemberTeams?PublicPersonId=${encodeURIComponent(knvbId)}&ShowInactive=true`;
+  const memberTeamsUrl = `https://club.sportlink.com/navajo/entity/common/clubweb/member/team/MemberTeams?PublicPersonId=${encodeURIComponent(knvbId)}&ShowInactive=true`;
 
   logger.verbose(`  Navigating to ${membershipsUrl}...`);
   await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
