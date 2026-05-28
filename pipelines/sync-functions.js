@@ -182,7 +182,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose(`Downloading functions from Sportlink (${syncMode})...`);
     const downloadStepId = tracker.startStep('functions-download');
     try {
-      const downloadResult = await runFunctionsDownload({ logger, verbose, withInvoice, recentOnly: !all, days });
+      const downloadOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(downloadStepId, { current, total, label });
+      const downloadResult = await runFunctionsDownload({ logger, verbose, withInvoice, recentOnly: !all, days, onProgress: downloadOnProgress });
       stats.download.total = downloadResult.total || 0;
       stats.download.functionsCount = downloadResult.functionsCount || 0;
       stats.download.committeesCount = downloadResult.committeesCount || 0;

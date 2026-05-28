@@ -651,7 +651,7 @@ function filterRecentlyUpdated(members, memberDataMap, days = 2) {
  * @returns {Promise<{success: boolean, total: number, downloaded: number, functionsCount: number, committeesCount: number, errors: Array}>}
  */
 async function runFunctionsDownload(options = {}) {
-  const { logger: providedLogger, verbose = false, withInvoice = false, recentOnly = true, days = 2, page: sharedPage } = options;
+  const { logger: providedLogger, verbose = false, withInvoice = false, recentOnly = true, days = 2, page: sharedPage, onProgress = null } = options;
   const logger = providedLogger || createSyncLogger({ verbose });
 
   const result = {
@@ -771,6 +771,9 @@ async function runFunctionsDownload(options = {}) {
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
         logger.verbose(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
+        if (onProgress) {
+          onProgress({ current: i + 1, total: members.length, label: member.knvb_id });
+        }
 
         try {
           const data = await fetchMemberFunctions(page, member.knvb_id, logger);
