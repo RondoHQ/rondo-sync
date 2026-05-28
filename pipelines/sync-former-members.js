@@ -4,7 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const https = require('https');
-const { chromium } = require('playwright');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const FormData = require('form-data');
 const { runDownloadInactive } = require('../steps/download-inactive-members');
 const { preparePerson, isValidMember } = require('../steps/prepare-rondo-club-members');
@@ -287,23 +287,21 @@ async function runImport(options = {}) {
         console.log(`${membersNeedingPhotos.length} former members need photo downloads`);
 
         const logDebug = createDebugLogger();
-        const browser = await chromium.launch({ headless: true });
-        const context = await browser.newContext({
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+        const session = new SportlinkSession({
+          logger: { log: console.log, verbose: verbose ? console.log : () => {}, error: console.error }
         });
-        const page = await context.newPage();
-
-        page.on('request', r => logDebug('>>', r.method(), r.url()));
-        page.on('response', r => logDebug('<<', r.status(), r.url()));
+        let page;
 
         try {
-          // Login to Sportlink
+          // Login (or reuse cached session) before downloading photos
           try {
-            await loginToSportlink(page, { verbose });
+            page = await session.getPage();
+            page.on('request', r => logDebug('>>', r.method(), r.url()));
+            page.on('response', r => logDebug('<<', r.status(), r.url()));
           } catch (loginError) {
             console.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
             stats.photos.failed = membersNeedingPhotos.length;
-            await browser.close();
+            await session.close();
             dbForPhotos.close();
             // Continue to Step 5
             console.log('');
@@ -403,7 +401,7 @@ async function runImport(options = {}) {
             }
           }
         } finally {
-          await browser.close();
+          await session.close();
         }
 
         console.log(`Downloaded ${stats.photos.downloaded} photos (${stats.photos.noPhoto} no photo, ${stats.photos.failed} failed)`);

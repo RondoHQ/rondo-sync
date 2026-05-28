@@ -1,11 +1,10 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const fs = require('fs/promises');
 const path = require('path');
 const { openDb, getMembersNeedingPhotoDownload, updatePhotoState } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createDebugLogger } = require('../lib/log-adapters');
 const { parseMemberHeaderResponse, downloadPhotoFromUrl } = require('../lib/photo-utils');
 
@@ -50,34 +49,27 @@ async function runPhotoDownload(options = {}) {
     const photosDir = path.join(process.cwd(), 'photos');
     await fs.mkdir(photosDir, { recursive: true });
 
-    const ownsBrowser = !sharedPage;
     const logDebug = createDebugLogger();
-    let browser;
+    let session;
     let page;
 
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-      });
-      page = await context.newPage();
-
+      session = new SportlinkSession({ logger });
+      try {
+        page = await session.getPage();
+      } catch (loginError) {
+        logger.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
+        result.warning = `Login failed: ${loginError.message.split('\n')[0]}`;
+        await session.close();
+        return result;
+      }
       page.on('request', r => logDebug('>>', r.method(), r.url()));
       page.on('response', r => logDebug('<<', r.status(), r.url()));
     }
 
     try {
-      if (!sharedPage) {
-        try {
-          await loginToSportlink(page, { logger });
-        } catch (loginError) {
-          logger.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
-          result.warning = `Login failed: ${loginError.message.split('\n')[0]}`;
-          return result;
-        }
-      }
 
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
@@ -151,8 +143,8 @@ async function runPhotoDownload(options = {}) {
         }
       }
     } finally {
-      if (ownsBrowser && browser) {
-        await browser.close();
+      if (session) {
+        await session.close();
       }
     }
 

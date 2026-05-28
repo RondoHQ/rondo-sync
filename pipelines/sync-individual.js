@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 require('dotenv/config');
 
-const { chromium } = require('playwright');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/laposta-db');
 const {
   openDb: openRondoClubDb,
@@ -37,7 +37,6 @@ const fs = require('fs/promises');
 const path = require('path');
 
 const {
-  loginToSportlink,
   fetchMemberGeneralData,
   fetchMemberFunctions,
   fetchMemberTeamMemberships,
@@ -104,21 +103,17 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
 
   log('Launching browser to fetch fresh data from Sportlink...');
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-  });
-  const page = await context.newPage();
-
   const logger = {
     log: verbose ? console.log : () => {},
     verbose: verbose ? console.log : () => {},
     error: console.error
   };
 
+  const session = new SportlinkSession({ logger });
+  const page = await session.getPage();
+
   try {
-    await loginToSportlink(page, logger);
-    log('Logged in to Sportlink');
+    log('Sportlink session ready');
 
     // Fetch general member data (person, communication, address, parental info)
     log(`Fetching general data for ${knvbId}...`);
@@ -182,7 +177,7 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
 
       log(`  Membership fetch failed (${error.message}). Re-authenticating and retrying once...`);
       try {
-        await loginToSportlink(page, logger);
+        await session.relogin();
         teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
       } catch (retryError) {
         log(`  Membership fetch still failing after retry: ${retryError.message}`);
@@ -248,7 +243,7 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
     };
 
   } finally {
-    await browser.close();
+    await session.close();
     log('Browser closed');
   }
 }

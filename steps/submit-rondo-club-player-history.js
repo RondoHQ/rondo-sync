@@ -1,10 +1,10 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb, getAllTrackedMembers, getAllTeams } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
-const { loginToSportlink, fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
+const { SportlinkSession } = require('../lib/sportlink-session');
+const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
 
 function formatDateForACF(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return '';
@@ -215,7 +215,7 @@ async function runSync(options = {}) {
   };
 
   const db = openDb();
-  let browser;
+  let session;
 
   try {
     let members = getAllTrackedMembers(db);
@@ -236,13 +236,8 @@ async function runSync(options = {}) {
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-      });
-      page = await context.newPage();
-
-      await loginToSportlink(page, { logger });
+      session = new SportlinkSession({ logger });
+      page = await session.getPage();
     }
 
     const shouldRetryAfterRelogin = (error) => {
@@ -272,7 +267,9 @@ async function runSync(options = {}) {
             throw error;
           }
           logger.verbose(`  Membership fetch failed for ${member.knvb_id}, re-authenticating and retrying once...`);
-          await loginToSportlink(page, { logger });
+          if (session) {
+            await session.relogin();
+          }
           teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
         }
         result.downloaded++;
@@ -323,8 +320,8 @@ async function runSync(options = {}) {
 
     return result;
   } finally {
-    if (!sharedPage && browser) {
-      await browser.close();
+    if (session) {
+      await session.close();
     }
     db.close();
     if (createdLogger && typeof logger.close === 'function') {

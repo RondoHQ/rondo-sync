@@ -1,6 +1,5 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const {
   openDb,
   getActiveTrackedMembers,
@@ -15,6 +14,7 @@ const {
   clearMemberInvoiceData
 } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { loginToSportlink } = require('../lib/sportlink-login');
 const { createLoggerAdapter, createDebugLogger } = require('../lib/log-adapters');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
@@ -759,19 +759,14 @@ async function runFunctionsDownload(options = {}) {
     // preventing race conditions where other syncs see empty tables mid-process.
 
     const logDebug = createDebugLogger();
-    const ownsBrowser = !sharedPage;
-    let browser;
+    let session;
     let page;
 
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-      });
-      page = await context.newPage();
-
+      session = new SportlinkSession({ logger });
+      page = await session.getPage();
       page.on('request', r => logDebug('>>', r.method(), r.url()));
       page.on('response', r => logDebug('<<', r.status(), r.url()));
     }
@@ -783,10 +778,6 @@ async function runFunctionsDownload(options = {}) {
     const uniqueCommitteeNames = new Set();
 
     try {
-      if (!sharedPage) {
-        await loginToSportlink(page, { logger });
-      }
-
       // Process each member
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
@@ -855,8 +846,8 @@ async function runFunctionsDownload(options = {}) {
         }
       }
     } finally {
-      if (ownsBrowser && browser) {
-        await browser.close();
+      if (session) {
+        await session.close();
       }
     }
 

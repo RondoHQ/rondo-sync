@@ -1,8 +1,7 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const { openDb, insertSportlinkRun } = require('../lib/laposta-db');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -19,30 +18,25 @@ async function runDownload(options = {}) {
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
-  // When a shared page is provided, skip browser launch and login
-  const ownsBrowser = !sharedPage;
-  let browser;
+  // When a shared page is provided, skip browser launch and login.
+  // Otherwise acquire an authenticated page from SportlinkSession, which
+  // reuses a cached login across processes when possible.
+  let session;
   try {
     let page;
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        acceptDownloads: true,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      session = new SportlinkSession({
+        logger: { log, verbose: logVerbose, error: logError }
       });
-      page = await context.newPage();
+      page = await session.getPage();
     }
 
     try {
       if (!sharedPage && isDebugEnabled()) {
         page.on('request', r => logDebug('>>', r.method(), r.url()));
         page.on('response', r => logDebug('<<', r.status(), r.url()));
-      }
-
-      if (!sharedPage) {
-        await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
       }
 
       const memberSearchPageUrl = 'https://club.sportlink.com/member/search';
@@ -138,8 +132,8 @@ async function runDownload(options = {}) {
       log(`Downloaded ${memberCount} members from Sportlink (${successCount} searches OK, ${errorCount} failed/expanded)`);
       return { success: true, memberCount };
     } finally {
-      if (ownsBrowser && browser) {
-        await browser.close();
+      if (session) {
+        await session.close();
       }
     }
   } catch (err) {
