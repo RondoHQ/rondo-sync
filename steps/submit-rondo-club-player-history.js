@@ -1,7 +1,7 @@
 require('dotenv/config');
 
 const { rondoClubRequest } = require('../lib/rondo-club-client');
-const { openDb, getAllTrackedMembers, getAllTeams } = require('../lib/rondo-club-db');
+const { openDb, getAllTrackedMembers, getAllTeams, computeMemberTeamSignature, updateMemberPlayerHistorySignature } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
@@ -199,7 +199,7 @@ async function syncSingleMember(options = {}) {
 }
 
 async function runSync(options = {}) {
-  const { verbose = false, knvbIds = null, page: sharedPage, onProgress = null } = options;
+  const { verbose = false, knvbIds = null, page: sharedPage, onProgress = null, force = false } = options;
   const createdLogger = !options.logger;
   const logger = options.logger || createSyncLogger({ verbose, prefix: 'player-history' });
 
@@ -211,6 +211,7 @@ async function runSync(options = {}) {
     created: 0,
     textFallback: 0,
     skippedDuplicate: 0,
+    skippedUnchanged: 0,
     errors: []
   };
 
@@ -253,11 +254,34 @@ async function runSync(options = {}) {
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
+
+      // Skip members whose current team-membership signature matches the
+      // one stored at their last successful run. Sportlink historical data
+      // is immutable, so if current team-relations haven't changed since
+      // last time, the Sportlink fetch + GET/PUT round-trip cycle would
+      // be pure no-op work. Skip the Sportlink fetch entirely.
+      // --force / force=true bypasses this for one-off backfills or to
+      // recover from a suspected Sportlink historical correction.
+      const currentSignature = computeMemberTeamSignature(db, member.knvb_id);
+      if (
+        !force &&
+        member.last_player_history_team_signature !== null &&
+        member.last_player_history_team_signature !== undefined &&
+        member.last_player_history_team_signature === currentSignature
+      ) {
+        result.skippedUnchanged++;
+        if (onProgress) {
+          onProgress({ current: i + 1, total: members.length, label: `${member.knvb_id} (unchanged)` });
+        }
+        continue;
+      }
+
       logger.log(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
       if (onProgress) {
         onProgress({ current: i + 1, total: members.length, label: member.knvb_id });
       }
 
+      let memberSucceeded = false;
       try {
         let teamRows;
         try {
@@ -274,7 +298,12 @@ async function runSync(options = {}) {
         }
         result.downloaded++;
 
-        if (!teamRows || teamRows.length === 0) continue;
+        if (!teamRows || teamRows.length === 0) {
+          // Member has no Sportlink team data — record that we checked so
+          // future runs with the same (empty) signature skip them.
+          memberSucceeded = true;
+          continue;
+        }
 
         const syncResult = await syncMemberPlayerHistory(
           member,
@@ -288,11 +317,20 @@ async function runSync(options = {}) {
         result.created += syncResult.created;
         result.textFallback += syncResult.textFallback;
         result.skippedDuplicate += syncResult.skippedDuplicate;
+        memberSucceeded = true;
       } catch (error) {
         result.errors.push({
           knvb_id: member.knvb_id,
           message: error.message
         });
+      } finally {
+        if (memberSucceeded) {
+          try {
+            updateMemberPlayerHistorySignature(db, member.knvb_id, currentSignature);
+          } catch (sigErr) {
+            logger.verbose(`  Failed to update player-history signature for ${member.knvb_id}: ${sigErr.message}`);
+          }
+        }
       }
 
       if (i < members.length - 1) {
@@ -308,6 +346,9 @@ async function runSync(options = {}) {
     logger.log(`Player history fetched for ${result.downloaded}/${result.total} member(s)`);
     logger.log(`  Members updated: ${result.synced}`);
     logger.log(`  Work history rows created: ${result.created}`);
+    if (result.skippedUnchanged > 0) {
+      logger.log(`  Skipped (team data unchanged since last run): ${result.skippedUnchanged}`);
+    }
     if (result.textFallback > 0) {
       logger.log(`  Rows written with text fallback (no Rondo team match): ${result.textFallback}`);
     }
@@ -340,12 +381,13 @@ module.exports = {
 
 if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
+  const force = process.argv.includes('--force');
   const knvbIdx = process.argv.indexOf('--knvb-id');
   const knvbIds = knvbIdx >= 0 && process.argv[knvbIdx + 1]
     ? process.argv[knvbIdx + 1].split(',').map(id => id.trim()).filter(Boolean)
     : null;
 
-  runSync({ verbose, knvbIds })
+  runSync({ verbose, knvbIds, force })
     .then((res) => {
       if (!res.success) process.exitCode = 1;
     })

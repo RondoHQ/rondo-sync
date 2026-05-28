@@ -24,6 +24,9 @@ function printSummary(logger, stats) {
   logger.log(`Membership pages fetched: ${stats.history.downloaded}`);
   logger.log(`Members updated: ${stats.history.synced}`);
   logger.log(`Work history rows created: ${stats.history.created}`);
+  if (stats.history.skippedUnchanged > 0) {
+    logger.log(`Skipped (team data unchanged since last run): ${stats.history.skippedUnchanged}`);
+  }
   if (stats.history.textFallback > 0) {
     logger.log(`Written with text fallback (no Rondo team match): ${stats.history.textFallback}`);
   }
@@ -45,7 +48,7 @@ function printSummary(logger, stats) {
 }
 
 async function runPlayerHistoryPipeline(options = {}) {
-  const { verbose = false } = options;
+  const { verbose = false, force = false } = options;
   const logger = createSyncLogger({ verbose, prefix: 'player-history' });
   const tracker = new RunTracker('player-history');
   tracker.startRun();
@@ -61,6 +64,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       created: 0,
       textFallback: 0,
       skippedDuplicate: 0,
+      skippedUnchanged: 0,
       errors: []
     }
   };
@@ -71,20 +75,21 @@ async function runPlayerHistoryPipeline(options = {}) {
       const onProgress = ({ current, total, label }) => {
         tracker.updateStep(stepId, { current, total, label });
       };
-      const res = await runPlayerHistorySync({ verbose, logger, onProgress });
+      const res = await runPlayerHistorySync({ verbose, logger, onProgress, force });
       stats.history.total = res.total || 0;
       stats.history.downloaded = res.downloaded || 0;
       stats.history.synced = res.synced || 0;
       stats.history.created = res.created || 0;
       stats.history.textFallback = res.textFallback || 0;
       stats.history.skippedDuplicate = res.skippedDuplicate || 0;
+      stats.history.skippedUnchanged = res.skippedUnchanged || 0;
       stats.history.errors = res.errors || [];
 
       tracker.endStep(stepId, {
         outcome: res.success ? 'success' : 'failure',
         created: stats.history.created,
         updated: stats.history.synced,
-        skipped: stats.history.skippedDuplicate,
+        skipped: stats.history.skippedDuplicate + stats.history.skippedUnchanged,
         failed: stats.history.errors.length
       });
       tracker.recordErrors('player-history-sync', stepId, stats.history.errors);
@@ -123,7 +128,8 @@ module.exports = { runPlayerHistoryPipeline };
 
 if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
-  runPlayerHistoryPipeline({ verbose })
+  const force = process.argv.includes('--force');
+  runPlayerHistoryPipeline({ verbose, force })
     .then((result) => {
       if (!result.success) process.exitCode = 1;
     })
