@@ -61,7 +61,8 @@
     "verify-rondo-club": "node tools/verify-rondo-club-data.js",
     "verify-rondo-club-verbose": "node tools/verify-rondo-club-data.js --verbose",
     "verify-rondo-club-fix": "node tools/verify-rondo-club-data.js --fix --verbose",
-    "install-cron": "bash scripts/install-cron.sh"
+    "install-cron": "bash scripts/install-cron.sh",
+    "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

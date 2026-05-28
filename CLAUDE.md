@@ -67,6 +67,8 @@ NIKKI_URL=                   # Nikki URL (optional)
 SYNC_API_KEY=                # API key for programmatic sync endpoints (used by Rondo Club)
 HEALTHCHECK_PEOPLE_URL=      # Optional: healthchecks.io ping URL for People sync dead-man's switch
                              # (add HEALTHCHECK_<PIPELINE>_URL per pipeline as needed)
+RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP request (default 45000ms).
+                             # Applies to every call through lib/http-client.js (Rondo Club + FreeScout).
 ```
 
 ## Directory Layout
@@ -121,6 +123,8 @@ logger.error('Error messages');
 These are defined as `RELATIONSHIP_TYPE` constants in `steps/submit-rondo-club-sync.js`. Do NOT use hardcoded integers. Rondo Club's `class-inverse-relationships.php` automatically creates bidirectional and sibling relations server-side when valid type IDs are used.
 
 **Rondo Club API docs** are in the developer docs site at `~/Code/rondo/developer/src/content/docs/api/`.
+
+**HTTP client has a hard total-time deadline — don't bypass it.** Every call to Rondo Club + FreeScout goes through `lib/http-client.js:makeRequest`, which enforces both a socket-idle `timeout` AND a total-time `deadline` (default 45s, configurable via `RONDO_SYNC_HTTP_DEADLINE_MS` or per-call). The deadline exists because on 2026-05-28 a single PUT through Cloudflare hung for 20+ minutes — the socket-idle handler never fired because the connection was technically active, and SIGTERM couldn't kill the process because Node was awaiting a Promise that never settled. If you write a new client or add a raw `https.request`/`fetch`/`axios` somewhere, give it the same deadline-with-single-settle pattern or you'll reintroduce the hang. Deadline rejections look like `Error: Request deadline exceeded: <apiName> did not complete within <N> seconds` with `code: 'ERR_REQUEST_DEADLINE'` — per-member catches treat them as normal errors and the pipeline continues.
 
 ## Sportlink Patterns
 
