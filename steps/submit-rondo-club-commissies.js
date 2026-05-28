@@ -153,7 +153,7 @@ async function syncCommissie(commissie, db, options) {
  * @returns {Promise<Object>} - Sync result
  */
 async function runSync(options = {}) {
-  const { logger, verbose = false, force = false, enableOrphanDetection = false } = options;
+  const { logger, verbose = false, force = false, enableOrphanDetection = false, onProgress = null } = options;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
   const logError = logger?.error.bind(logger) || console.error;
 
@@ -193,6 +193,9 @@ async function runSync(options = {}) {
         for (let i = 0; i < needsSync.length; i++) {
           const commissie = needsSync[i];
           logVerbose(`Syncing ${i + 1}/${needsSync.length}: ${commissie.commissie_name}`);
+          if (onProgress) {
+            onProgress({ current: i + 1, total: needsSync.length, label: commissie.commissie_name });
+          }
 
           try {
             const syncResult = await syncCommissie(commissie, db, options);

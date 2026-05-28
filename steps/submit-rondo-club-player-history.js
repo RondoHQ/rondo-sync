@@ -187,7 +187,7 @@ async function syncSingleMember(options = {}) {
 }
 
 async function runSync(options = {}) {
-  const { verbose = false, knvbIds = null, page: sharedPage } = options;
+  const { verbose = false, knvbIds = null, page: sharedPage, onProgress = null } = options;
   const createdLogger = !options.logger;
   const logger = options.logger || createSyncLogger({ verbose, prefix: 'player-history' });
 
@@ -246,7 +246,10 @@ async function runSync(options = {}) {
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
-      logger.verbose(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
+      logger.log(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
+      if (onProgress) {
+        onProgress({ current: i + 1, total: members.length, label: member.knvb_id });
+      }
 
       try {
         let teamRows;

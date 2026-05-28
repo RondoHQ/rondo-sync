@@ -226,7 +226,9 @@ async function runFunctionsSync(options = {}) {
     try {
       // Pass enableOrphanDetection flag instead of stale currentCommissieNames
       // The sync function will get fresh commissie names AFTER updating tracking table
-      const commissieResult = await runCommissiesSync({ logger, verbose, force, enableOrphanDetection: true });
+      const commissieOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(commissieStepId, { current, total, label });
+      const commissieResult = await runCommissiesSync({ logger, verbose, force, enableOrphanDetection: true, onProgress: commissieOnProgress });
       stats.commissies.total = commissieResult.total;
       stats.commissies.synced = commissieResult.synced;
       stats.commissies.created = commissieResult.created;
@@ -267,7 +269,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing commissie work history to Rondo Club...');
     const workHistoryStepId = tracker.startStep('commissie-work-history-sync');
     try {
-      const workHistoryResult = await runCommissieWorkHistorySync({ logger, verbose, force });
+      const workHistoryOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(workHistoryStepId, { current, total, label });
+      const workHistoryResult = await runCommissieWorkHistorySync({ logger, verbose, force, onProgress: workHistoryOnProgress });
       stats.workHistory.total = workHistoryResult.total;
       stats.workHistory.synced = workHistoryResult.synced;
       stats.workHistory.created = workHistoryResult.created;
@@ -307,7 +311,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing free fields to Rondo Club person records...');
     const freeFieldsStepId = tracker.startStep('free-fields-sync');
     try {
-      const freeFieldsResult = await runSyncFreeFieldsToRondoClub({ logger, verbose, force });
+      const freeFieldsOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(freeFieldsStepId, { current, total, label });
+      const freeFieldsResult = await runSyncFreeFieldsToRondoClub({ logger, verbose, force, onProgress: freeFieldsOnProgress });
       stats.freeFields.total = freeFieldsResult.total;
       stats.freeFields.synced = freeFieldsResult.synced;
       stats.freeFields.skipped = freeFieldsResult.skipped;
@@ -344,7 +350,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing capabilities for tracked members...');
     const capabilitySyncStepId = tracker.startStep('capability-sync');
     try {
-      const capabilityResult = await runCapabilitySync({ logger, verbose });
+      const capabilityOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(capabilitySyncStepId, { current, total, label });
+      const capabilityResult = await runCapabilitySync({ logger, verbose, onProgress: capabilityOnProgress });
       stats.capabilitySync.total = capabilityResult.total;
       stats.capabilitySync.synced = capabilityResult.synced;
       stats.capabilitySync.skipped = capabilityResult.skipped;

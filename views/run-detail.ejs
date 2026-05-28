@@ -1,8 +1,12 @@
-<%- include('partials/head', { title, page, user }) %>
+<%- include('partials/head', { title, page, user, refreshInterval: run.outcome === 'running' ? 5 : 60 }) %>
 
 <div class="breadcrumb">
   <a href="/">Overview</a> &gt; <a href="/pipeline/<%= run.pipeline %>"><%= pipelineDisplayName %></a> &gt; Run #<%= run.id %>
 </div>
+
+<% if (run.outcome === 'running') { %>
+  <div class="live-banner">Live — auto-refreshing every 5 seconds</div>
+<% } %>
 
 <div class="run-summary">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -82,13 +86,25 @@
       </thead>
       <tbody>
         <% steps.forEach(step => { %>
+          <% const isRunning = !step.finished_at; %>
+          <% const hasProgress = isRunning && step.progress_total > 0; %>
+          <% const pct = hasProgress ? Math.min(100, Math.floor((step.progress_current || 0) / step.progress_total * 100)) : 0; %>
           <tr>
             <td><%= step.step_name %></td>
-            <td><%= formatDuration(step.duration_ms) %></td>
+            <td><%= isRunning ? '—' : formatDuration(step.duration_ms) %></td>
             <td>
-              <span class="outcome-<%= step.outcome %>">
-                <%= step.outcome %>
-              </span>
+              <% if (hasProgress) { %>
+                <div class="step-progress" title="<%= step.progress_current || 0 %> / <%= step.progress_total %>">
+                  <div class="step-progress-bar" style="width: <%= pct %>%"></div>
+                </div>
+                <div class="step-progress-text">
+                  <%= (step.progress_current || 0).toLocaleString() %> / <%= step.progress_total.toLocaleString() %> (<%= pct %>%)<% if (step.progress_label) { %> · <%= step.progress_label %><% } %>
+                </div>
+              <% } else { %>
+                <span class="outcome-<%= step.outcome || 'running' %>">
+                  <%= step.outcome || 'running' %>
+                </span>
+              <% } %>
             </td>
             <td><%= step.created_count %></td>
             <td><%= step.updated_count %></td>

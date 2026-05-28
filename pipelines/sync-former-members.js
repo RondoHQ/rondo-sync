@@ -193,10 +193,14 @@ async function runImport(options = {}) {
   console.log('Syncing former members to Rondo Club...');
   console.log('');
 
+  const syncStepId = tracker ? tracker.startStep('former-members-sync') : null;
   const dbForSync = openDb();
   try {
     for (let i = 0; i < toSync.length; i++) {
       const { knvb_id, prepared, rondo_club_id } = toSync[i];
+      if (tracker) {
+        tracker.updateStep(syncStepId, { current: i + 1, total: toSync.length, label: knvb_id });
+      }
 
       try {
         let response;
@@ -253,6 +257,14 @@ async function runImport(options = {}) {
     }
   } finally {
     dbForSync.close();
+    if (tracker) {
+      tracker.endStep(syncStepId, {
+        outcome: stats.failed > 0 ? (stats.synced > 0 ? 'partial' : 'failure') : 'success',
+        created: stats.synced,
+        failed: stats.failed,
+        skipped: stats.skippedFormer
+      });
+    }
   }
 
   // Step 4: Download photos for former members
@@ -306,9 +318,15 @@ async function runImport(options = {}) {
             return stats;
           }
 
+          const photoStepId = tracker ? tracker.startStep('former-members-photos-download') : null;
+          let photoStepEnded = false;
+          try {
           for (let i = 0; i < membersNeedingPhotos.length; i++) {
             const member = membersNeedingPhotos[i];
             if (verbose) console.log(`  Processing ${i + 1}/${membersNeedingPhotos.length}: ${member.knvb_id}`);
+            if (tracker) {
+              tracker.updateStep(photoStepId, { current: i + 1, total: membersNeedingPhotos.length, label: member.knvb_id });
+            }
 
             try {
               const otherUrl = `https://club.sportlink.com/member/member-details/${member.knvb_id}/other`;
@@ -373,6 +391,17 @@ async function runImport(options = {}) {
               await new Promise(r => setTimeout(r, delay));
             }
           }
+          } finally {
+            if (tracker && !photoStepEnded) {
+              photoStepEnded = true;
+              tracker.endStep(photoStepId, {
+                outcome: stats.photos.failed > 0 ? 'partial' : 'success',
+                created: stats.photos.downloaded,
+                skipped: stats.photos.noPhoto,
+                failed: stats.photos.failed
+              });
+            }
+          }
         } finally {
           await browser.close();
         }
@@ -397,9 +426,15 @@ async function runImport(options = {}) {
       } else {
         console.log(`${membersWithPhotos.length} photos to upload`);
 
+        const uploadStepId = tracker ? tracker.startStep('former-members-photos-upload') : null;
+        const uploadStartFailed = stats.photos.failed;
+        try {
         for (let i = 0; i < membersWithPhotos.length; i++) {
           const member = membersWithPhotos[i];
           if (verbose) console.log(`  Uploading ${i + 1}/${membersWithPhotos.length}: ${member.knvb_id}`);
+          if (tracker) {
+            tracker.updateStep(uploadStepId, { current: i + 1, total: membersWithPhotos.length, label: member.knvb_id });
+          }
 
           if (!member.rondo_club_id) {
             if (verbose) console.log(`    Skipped: no rondo_club_id`);
@@ -427,6 +462,16 @@ async function runImport(options = {}) {
           // Rate limit: 2 seconds between uploads
           if (i < membersWithPhotos.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        } finally {
+          if (tracker) {
+            const newFailures = stats.photos.failed - uploadStartFailed;
+            tracker.endStep(uploadStepId, {
+              outcome: newFailures > 0 ? 'partial' : 'success',
+              updated: stats.photos.uploaded,
+              failed: newFailures
+            });
           }
         }
 

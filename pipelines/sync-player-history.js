@@ -68,7 +68,10 @@ async function runPlayerHistoryPipeline(options = {}) {
   try {
     const stepId = tracker.startStep('player-history-sync');
     try {
-      const res = await runPlayerHistorySync({ verbose, logger });
+      const onProgress = ({ current, total, label }) => {
+        tracker.updateStep(stepId, { current, total, label });
+      };
+      const res = await runPlayerHistorySync({ verbose, logger, onProgress });
       stats.history.total = res.total || 0;
       stats.history.downloaded = res.downloaded || 0;
       stats.history.synced = res.synced || 0;
