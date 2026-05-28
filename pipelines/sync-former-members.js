@@ -216,14 +216,20 @@ async function runImport(options = {}) {
           const resultId = rondo_club_id || response.body.id;
           const sourceHash = computeSourceHash(knvb_id, prepared.data);
 
-          // Track in rondo_club_members table
+          // Track in rondo_club_members table.
+          // NOTE: upsertMembers reads `data` (object) — not `data_json` (string)
+          // — and computes data_json + source_hash internally from it. Earlier
+          // this call passed `data_json` instead, which upsertMembers silently
+          // ignored, defaulting `data` to {} and writing literal "{}" to the
+          // row. That left 2604 former members with empty local data_json, so
+          // the change detector saw every Rondo Club ACF field as a "change"
+          // every cycle (root cause of the reverse-sync loop the
+          // rest_pre_insert_person + former_member-skip work was masking).
           upsertMembers(dbForSync, [{
             knvb_id: knvb_id,
             email: prepared.email,
-            data_json: JSON.stringify(prepared.data),
-            source_hash: sourceHash,
-            person_image_date: prepared.person_image_date,
-            last_seen_at: new Date().toISOString()
+            data: prepared.data,
+            person_image_date: prepared.person_image_date
           }]);
 
           // Update sync state with rondo_club_id
