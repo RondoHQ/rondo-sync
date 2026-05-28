@@ -426,7 +426,7 @@ async function findPersonByEmail(email, options) {
  * @param {Object} options - Logger and verbose options
  * @returns {Promise<{action: string, id: number}>}
  */
-async function syncParent(parent, db, knvbIdToRondoClubId, options) {
+async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard = {}) {
   const { email, childKnvbIds, data, source_hash } = parent;
   let { rondo_club_id } = parent;
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
@@ -447,14 +447,17 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
 
   // If no rondo_club_id yet, check if person already exists by email (e.g., they're also a member)
   // Check local database first (reliable and fast), then WordPress API as fallback
-  // Important: exclude the parent's own children — in youth clubs, parents often share
-  // an email with their children in Sportlink, but they're separate people.
+  // Important: exclude any known child — in youth clubs, multiple siblings often share
+  // the family inbox in Sportlink, so a sibling's WP post can match this parent's email.
+  // We exclude both this parent's direct children AND any sibling registered as a child
+  // of any other parent record (sibling-by-shared-email guard).
   if (!rondo_club_id) {
-    const childKnvbIdSet = new Set(childKnvbIds);
+    const knownChildKnvbIds = siblingGuard.allChildKnvbIds || new Set(childKnvbIds);
+    const knownChildRondoClubIds = siblingGuard.allChildRondoClubIds || new Set(childRondoClubIds);
     const memberMatches = db.prepare(
       'SELECT knvb_id, rondo_club_id FROM rondo_club_members WHERE LOWER(email) = LOWER(?) AND rondo_club_id IS NOT NULL'
     ).all(email);
-    const nonChildMatch = memberMatches.find(m => !childKnvbIdSet.has(m.knvb_id));
+    const nonChildMatch = memberMatches.find(m => !knownChildKnvbIds.has(m.knvb_id));
     if (nonChildMatch) {
       logVerbose(`Parent ${email} found as member in local DB (person ${nonChildMatch.rondo_club_id}), will merge`);
       rondo_club_id = nonChildMatch.rondo_club_id;
@@ -462,17 +465,17 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
       // No member match at all — check WordPress API as fallback
       const existingId = await findPersonByEmail(email, options);
       if (existingId) {
-        // Verify the API match isn't one of our children either
-        const isChild = childRondoClubIds.includes(existingId);
+        // Verify the API match isn't a known child (own or sibling-by-shared-email)
+        const isChild = knownChildRondoClubIds.has(existingId);
         if (!isChild) {
           logVerbose(`Parent ${email} already exists as person ${existingId}, will merge`);
           rondo_club_id = existingId;
         } else {
-          logVerbose(`Parent ${email} found person ${existingId} but it's their own child, will create separate`);
+          logVerbose(`Parent ${email} found person ${existingId} but it's a known child, will create separate`);
         }
       }
     } else {
-      logVerbose(`Parent ${email} only matches own children in local DB, will create separate`);
+      logVerbose(`Parent ${email} only matches known children in local DB, will create separate`);
     }
   }
 
@@ -739,6 +742,22 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
   // Upsert to tracking database
   upsertParents(db, parents);
 
+  // Build a global set of every KNVB ID that appears as a child of any parent.
+  // Used as a safety net so a sibling sharing the family email is never merged
+  // into a parent record, even if they were excluded from this specific parent's
+  // childKnvbIds (e.g. their NameParentN was empty in Sportlink).
+  const allChildKnvbIds = new Set();
+  for (const parent of parents) {
+    for (const knvbId of parent.childKnvbIds || []) {
+      allChildKnvbIds.add(knvbId);
+    }
+  }
+  const allChildRondoClubIds = new Set();
+  for (const knvbId of allChildKnvbIds) {
+    const rondoId = knvbIdToRondoClubId.get(knvbId);
+    if (rondoId) allChildRondoClubIds.add(rondoId);
+  }
+
   // Get parents needing sync (includes rondo_club_id from database)
   const needsSync = getParentsNeedingSync(db, force);
 
@@ -766,7 +785,10 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
     logVerbose(`Syncing parent ${i + 1}/${needsSync.length}: ${parent.email}`);
 
     try {
-      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, options);
+      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, options, {
+        allChildKnvbIds,
+        allChildRondoClubIds
+      });
       result.synced++;
       if (syncResult.action === 'created') result.created++;
       if (syncResult.action === 'updated') result.updated++;
