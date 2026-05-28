@@ -109,15 +109,54 @@ case "$SYNC_TYPE" in
         ;;
 esac
 
-# Create logs directory
+# Create logs directories (cron-run logs + per-pipeline daily log)
 LOG_DIR="$PROJECT_DIR/logs/cron"
+DAILY_LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
+
+# Compute log paths up-front so the lock-contention path can write to them
+DATE=$(date +%Y-%m-%d_%H-%M-%S)
+LOG_FILE="$LOG_DIR/sync-${SYNC_TYPE}-${DATE}.log"
+DAILY_LOG_FILE="$DAILY_LOG_DIR/sync-${SYNC_TYPE}-$(date +%Y-%m-%d).log"
 
 # Flock-based locking (per sync type to allow parallel different syncs)
 LOCKFILE="$PROJECT_DIR/.sync-${SYNC_TYPE}.lock"
 exec 200>"$LOCKFILE"
 if ! flock -n 200; then
-    echo "Another $SYNC_TYPE sync is running. Exiting." >&2
+    # Identify the process currently holding the lock — usually a hung previous run.
+    # lsof prints "p<pid>" lines when called with -F p; fall back to fuser if unavailable.
+    HOLDER_PID=$(lsof -F p "$LOCKFILE" 2>/dev/null | awk '/^p/{sub(/^p/,""); print; exit}')
+    if [ -z "$HOLDER_PID" ]; then
+        HOLDER_PID=$(fuser "$LOCKFILE" 2>/dev/null | awk '{print $1}')
+    fi
+
+    HOLDER_INFO="unknown"
+    HOLDER_AGE_S=""
+    if [ -n "$HOLDER_PID" ] && [ -d "/proc/$HOLDER_PID" ]; then
+        HOLDER_AGE_S=$(ps -o etimes= -p "$HOLDER_PID" 2>/dev/null | tr -d ' ')
+        HOLDER_CMD=$(ps -o args= -p "$HOLDER_PID" 2>/dev/null | head -c 200)
+        HOLDER_INFO="pid=$HOLDER_PID age=${HOLDER_AGE_S}s cmd=\"$HOLDER_CMD\""
+    fi
+
+    # ISO-8601 timestamp matching lib/logger.js format (without milliseconds — close enough).
+    TS=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+    MSG="Another $SYNC_TYPE sync is already running ($HOLDER_INFO). Skipping this run."
+    LINE="[$TS] [ERROR] $MSG"
+
+    # Stderr (so cron mail still flags it) + cron run log + daily pipeline log
+    echo "$MSG" >&2
+    echo "$LINE" >> "$LOG_FILE" 2>/dev/null || true
+    echo "$LINE" >> "$DAILY_LOG_FILE" 2>/dev/null || true
+
+    # Loud signal when the holder is older than 1 hour — almost certainly hung.
+    # People takes ~15 min, functions ~5 min, reverse ~5 min, weekly jobs ~30 min.
+    if [ -n "$HOLDER_AGE_S" ] && [ "$HOLDER_AGE_S" -gt 3600 ]; then
+        STALE_MSG="WARNING: lock holder pid=$HOLDER_PID has been running ${HOLDER_AGE_S}s (>1h) — likely hung. Investigate and kill manually."
+        echo "$STALE_MSG" >&2
+        echo "[$TS] [ERROR] $STALE_MSG" >> "$LOG_FILE" 2>/dev/null || true
+        echo "[$TS] [ERROR] $STALE_MSG" >> "$DAILY_LOG_FILE" 2>/dev/null || true
+    fi
+
     exit 1
 fi
 
@@ -136,9 +175,7 @@ else
     echo "Warning: .env file not found at $PROJECT_DIR/.env" >&2
 fi
 
-# Generate log file path
-DATE=$(date +%Y-%m-%d_%H-%M-%S)
-LOG_FILE="$LOG_DIR/sync-${SYNC_TYPE}-${DATE}.log"
+# LOG_FILE path was generated up-front before the flock check
 
 # Determine which script to run
 case "$SYNC_TYPE" in
