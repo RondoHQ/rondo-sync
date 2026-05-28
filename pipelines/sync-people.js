@@ -212,6 +212,10 @@ async function runPeopleSync(options = {}) {
       stats.completedAt = formatTimestamp();
       stats.duration = formatDuration(Date.now() - startTime);
       printSummary(logger, stats);
+      // Close any partially-initialized browser session so the Node process can exit.
+      // Without this, the Chromium subprocess keeps the event loop alive and the
+      // .sync-people.lock flock is held indefinitely, blocking every subsequent cron run.
+      await sportlinkSession.close();
       logger.close();
       return { success: false, stats, error: errorMsg };
     }
