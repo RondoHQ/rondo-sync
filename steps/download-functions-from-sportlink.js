@@ -523,19 +523,35 @@ async function fetchMemberFunctions(page, knvbId, logger) {
  */
 async function fetchMemberTeamMemberships(page, knvbId, logger) {
   const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
-  const memberTeamsUrl = `https://club.sportlink.com/navajo/entity/common/clubweb/member/team/MemberTeams?PublicPersonId=${encodeURIComponent(knvbId)}&ShowInactive=true`;
 
   logger.verbose(`  Navigating to ${membershipsUrl}...`);
   await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
   // Sportlink pages often keep background requests open; avoid strict networkidle waits.
   await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
 
-  // Click all "showInactive" toggles if present (some layouts render two toggles).
+  // Find the showInactive toggle. If the membership panel didn't render at all
+  // (some members have no memberships section), there's nothing to fetch.
   const inactiveToggles = await page.$$('input[name="showInactive"]');
+  if (inactiveToggles.length === 0) {
+    logger.verbose(`  No showInactive toggle present — treating as no memberships`);
+    return [];
+  }
+
+  // Direct requests to /navajo/entity/.../MemberTeams return 401 because they
+  // miss the SPA's auth header. Instead, set up a response intercept and let
+  // the SPA fire the request itself when we toggle showInactive — its native
+  // call carries the right credentials.
+  const responsePromise = page.waitForResponse(
+    resp =>
+      resp.url().includes('/navajo/entity/common/clubweb/member/team/MemberTeams') &&
+      resp.url().includes('ShowInactive=true') &&
+      resp.request().method() === 'GET',
+    { timeout: 30000 }
+  );
+
   for (const toggle of inactiveToggles) {
     try {
-      const checked = await toggle.isChecked();
-      if (!checked) {
+      if (!(await toggle.isChecked())) {
         await toggle.click({ force: true });
       }
     } catch (err) {
@@ -543,24 +559,25 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
     }
   }
 
-  // Explicitly request the same endpoint the UI calls, with ShowInactive=true.
-  const response = await page.request.get(memberTeamsUrl, {
-    headers: { Accept: 'application/json' },
-    timeout: 45000
-  });
+  let response;
+  try {
+    response = await responsePromise;
+  } catch (err) {
+    throw new Error(`MemberTeams request not captured: ${err.message}`);
+  }
+
   if (!response.ok()) {
     throw new Error(`MemberTeams request failed (${response.status()} ${response.statusText()})`);
   }
 
   const contentType = (response.headers()['content-type'] || '').toLowerCase();
-  const rawBody = await response.text();
   if (!contentType.includes('application/json')) {
     throw new Error(`MemberTeams returned non-JSON content-type (${contentType || 'unknown'})`);
   }
 
   let parsed;
   try {
-    parsed = JSON.parse(rawBody);
+    parsed = await response.json();
   } catch (err) {
     throw new Error(`MemberTeams JSON parse error: ${err.message}`);
   }
