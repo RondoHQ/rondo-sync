@@ -529,13 +529,16 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
   // Sportlink pages often keep background requests open; avoid strict networkidle waits.
   await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
 
-  // Find the showInactive toggle. If the membership panel didn't render at all
-  // (some members have no memberships section), there's nothing to fetch.
-  const inactiveToggles = await page.$$('input[name="showInactive"]');
-  if (inactiveToggles.length === 0) {
+  // The showInactive toggle is rendered asynchronously by the SPA after the
+  // load event fires, so wait for it before querying. If it never appears,
+  // the membership panel didn't render and there's nothing to fetch.
+  try {
+    await page.waitForSelector('input[name="showInactive"]', { timeout: 10000 });
+  } catch {
     logger.verbose(`  No showInactive toggle present — treating as no memberships`);
     return [];
   }
+  const inactiveToggles = await page.$$('input[name="showInactive"]');
 
   // Direct requests to /navajo/entity/.../MemberTeams return 401 because they
   // miss the SPA's auth header. Instead, set up a response intercept and let
