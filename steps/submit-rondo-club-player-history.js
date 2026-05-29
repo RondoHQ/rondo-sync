@@ -212,6 +212,8 @@ async function runSync(options = {}) {
     textFallback: 0,
     skippedDuplicate: 0,
     skippedUnchanged: 0,
+    skippedQuarantined: 0,
+    quarantined: [],
     errors: []
   };
 
@@ -254,6 +256,23 @@ async function runSync(options = {}) {
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
+
+      // Skip members explicitly quarantined via tools/player-history-quarantine.js.
+      // Used when Sportlink's /member-details/{id}/memberships endpoint is
+      // broken for a specific member (e.g. PKWR41Q since 2026-03-02) and we
+      // don't want every run to waste 45s + emit an error on them.
+      // --force does NOT lift the quarantine — that's an explicit human action.
+      if (member.player_history_skip_reason) {
+        result.skippedQuarantined++;
+        result.quarantined.push({
+          knvb_id: member.knvb_id,
+          reason: member.player_history_skip_reason
+        });
+        if (onProgress) {
+          onProgress({ current: i + 1, total: members.length, label: `${member.knvb_id} (quarantined)` });
+        }
+        continue;
+      }
 
       // Skip members whose current team-membership signature matches the
       // one stored at their last successful run. Sportlink historical data
@@ -348,6 +367,12 @@ async function runSync(options = {}) {
     logger.log(`  Work history rows created: ${result.created}`);
     if (result.skippedUnchanged > 0) {
       logger.log(`  Skipped (team data unchanged since last run): ${result.skippedUnchanged}`);
+    }
+    if (result.skippedQuarantined > 0) {
+      logger.log(`  Skipped (quarantined): ${result.skippedQuarantined}`);
+      for (const q of result.quarantined) {
+        logger.log(`    - ${q.knvb_id}: ${q.reason}`);
+      }
     }
     if (result.textFallback > 0) {
       logger.log(`  Rows written with text fallback (no Rondo team match): ${result.textFallback}`);
