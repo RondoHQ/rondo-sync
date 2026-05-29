@@ -144,6 +144,30 @@ The Sportlink SPA's data endpoints require an in-page auth header that Playwrigh
 
 The working pattern (used by every Sportlink fetch in the repo): trigger the SPA to make the request itself — navigate to the matching member-details URL, optionally interact with UI to drive parameters (e.g. click the "Show inactive" toggle), and intercept the response with `page.waitForResponse(url => url.includes('/navajo/.../EndpointName'))`. See `fetchMemberTeamMemberships`, `fetchMemberFunctions` in `steps/download-functions-from-sportlink.js` for canonical examples. **Don't try to call the endpoints directly** — you'll just waste a TOTP code chasing a 401 that has no auth-side fix.
 
+### Player-history quarantine — manual skip list for Sportlink-broken members
+
+Sportlink's `/member/member-details/{knvb_id}/memberships` SPA hangs forever for some members' data (verified against the Sportlink UI, not our code). Without intervention every player-history run wastes a 45s navigation timeout + a chained 45s relogin timeout on the affected member, every run, forever.
+
+Currently quarantined on prod:
+- **PKWR41Q** (Nic Stenssen, rondo_club_id=437) — Sportlink endpoint hangs; reported upstream 2026-05-29.
+
+Manage via `tools/player-history-quarantine.js`. **Always run as the `rondo` user on prod** so the SQLite write is owned correctly:
+
+```bash
+# List currently quarantined
+ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js list'
+
+# Add a quarantine (reason is required and stored verbatim — be specific)
+ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js add <KNVB_ID> "<reason>"'
+
+# Lift the quarantine — do this once Sportlink confirms the fix
+ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js remove PKWR41Q'
+```
+
+The data lives in the `player_history_skip_reason` column on `rondo_club_members`. `--force` on the pipeline does NOT lift quarantine — that's an explicit human action only.
+
+After lifting: the next player-history run will fully re-fetch the member (their `last_player_history_team_signature` is still NULL) and backfill the missing work-history rows.
+
 ### `upsertMembers(db, members)` reads `member.data` (object), NOT `member.data_json` (string)
 
 The function takes the prepared ACF blob as an OBJECT in the `data` field and computes `data_json` + `source_hash` internally. Passing `data_json: JSON.stringify(prepared.data)` silently leaves `member.data` undefined, so it defaults to `{}` and the row gets written with literal `"{}"` as data_json. The change detector then sees Rondo Club's real ACF differ from the empty stored mirror and re-flags every field as a "change" every cycle — the reverse-sync loop we kept hitting.
