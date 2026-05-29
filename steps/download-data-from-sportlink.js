@@ -1,8 +1,34 @@
 require('dotenv/config');
 
+const fs = require('fs/promises');
+const path = require('path');
 const { openDb, insertSportlinkRun } = require('../lib/laposta-db');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
+
+/**
+ * Save a screenshot + HTML snapshot of the current page to debug/, named with
+ * the supplied label and a UTC timestamp. Used when a selector wait fails so
+ * we can see what Sportlink actually rendered (e.g. a session-expired modal
+ * intercepting #btnShowMore). Returns the paths it wrote, or null on failure.
+ */
+async function captureSportlinkDebug(page, label, log) {
+  try {
+    const debugDir = path.join(process.cwd(), 'debug');
+    await fs.mkdir(debugDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const base = path.join(debugDir, `${label}-${ts}`);
+    const url = page.url();
+    await page.screenshot({ path: `${base}.png`, fullPage: true });
+    const html = await page.content();
+    await fs.writeFile(`${base}.html`, html, 'utf8');
+    log(`Saved Sportlink debug snapshot for ${label} at URL ${url}: ${base}.png + ${base}.html`);
+    return { png: `${base}.png`, html: `${base}.html`, url };
+  } catch (captureErr) {
+    log(`Could not save Sportlink debug snapshot for ${label}: ${captureErr.message}`);
+    return null;
+  }
+}
 
 /**
  * Download member data from Sportlink
@@ -49,7 +75,12 @@ async function runDownload(options = {}) {
       await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
 
       logDebug('Clicking show more button: #btnShowMore');
-      await page.waitForSelector('#btnShowMore', { timeout: 20000 });
+      try {
+        await page.waitForSelector('#btnShowMore', { timeout: 20000 });
+      } catch (waitErr) {
+        await captureSportlinkDebug(page, 'sportlink-btnShowMore-initial', logError);
+        throw waitErr;
+      }
       await page.click('#btnShowMore');
 
       logDebug('Checking union teams checkbox: #scFetchUnionTeams_input');
@@ -67,7 +98,12 @@ async function runDownload(options = {}) {
       const setupSearchPage = async () => {
         await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
         await page.waitForLoadState('networkidle');
-        await page.waitForSelector('#btnShowMore', { timeout: 20000 });
+        try {
+          await page.waitForSelector('#btnShowMore', { timeout: 20000 });
+        } catch (waitErr) {
+          await captureSportlinkDebug(page, 'sportlink-btnShowMore-recovery', logError);
+          throw waitErr;
+        }
         await page.click('#btnShowMore');
         await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
         await page.check('#scFetchUnionTeams_input');

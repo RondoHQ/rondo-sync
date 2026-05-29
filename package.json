@@ -1,6 +1,6 @@
 {
   "name": "rondo-sync",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Sync data from Sportlink Club to Rondo Club, Laposta, and FreeScout",
   "main": "steps/download-data-from-sportlink.js",
