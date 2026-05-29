@@ -3,7 +3,7 @@ require('dotenv/config');
 const fs = require('fs/promises');
 const path = require('path');
 const { openDb, insertSportlinkRun } = require('../lib/laposta-db');
-const { SportlinkSession } = require('../lib/sportlink-session');
+const { SportlinkSession, invalidateCachedSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -66,9 +66,30 @@ async function runDownload(options = {}) {
       }
 
       const memberSearchPageUrl = 'https://club.sportlink.com/member/search';
-      logDebug('Navigating to member search page:', memberSearchPageUrl);
-      await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle');
+
+      // Navigate to the member-search page, then verify we actually landed on
+      // it. A partially-valid cached session (cookies present but token scope
+      // insufficient) silently 30x-redirects to /dashboard, where the rest of
+      // this step waits 20s for a #btnShowMore that's not there.
+      // Diagnosed 2026-05-29: SportlinkSession._tryReuse only probes the root
+      // URL, so it doesn't catch this. If we detect the redirect, invalidate
+      // the cached state, force a fresh login, and try once more.
+      const navigateToSearch = async () => {
+        logDebug('Navigating to member search page:', memberSearchPageUrl);
+        await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForLoadState('networkidle');
+      };
+
+      await navigateToSearch();
+
+      if (!sharedPage && session && !page.url().includes('/member/search')) {
+        logError(`Sportlink redirected /member/search → ${page.url()} — cached session is stale. Invalidating and re-logging in.`);
+        await captureSportlinkDebug(page, 'sportlink-stale-session-pre-relogin', logError);
+        await invalidateCachedSession();
+        await session.relogin();
+        page = await session.getPage();
+        await navigateToSearch();
+      }
 
       const waitSeconds = Math.floor(Math.random() * 4) + 1; // Random between 1-5 seconds
       logDebug(`Waiting ${waitSeconds} seconds before clicking search button...`);
