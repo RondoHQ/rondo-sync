@@ -448,7 +448,7 @@ async function runSyncAll(options = {}) {
 
     // Step 1: Download from Sportlink (uses shared session)
     logger.verbose('Starting download from Sportlink...');
-    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage });
+    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage, session: sportlinkSession });
 
     if (!downloadResult.success) {
       const errorMsg = downloadResult.error || 'Download failed';

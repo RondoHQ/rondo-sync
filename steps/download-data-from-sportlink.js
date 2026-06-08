@@ -36,10 +36,12 @@ async function captureSportlinkDebug(page, label, log) {
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode (creates logger if not provided)
  * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
+ * @param {Object} [options.session] - The SportlinkSession that owns the shared page. Pass this alongside `page`
+ *   so the stale-session → /dashboard self-heal (relogin + retry) works on the pipeline path, not only standalone.
  * @returns {Promise<{success: boolean, memberCount: number, error?: string}>}
  */
 async function runDownload(options = {}) {
-  const { logger, verbose = false, page: sharedPage } = options;
+  const { logger, verbose = false, page: sharedPage, session: sharedSession } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
@@ -47,7 +49,9 @@ async function runDownload(options = {}) {
   // When a shared page is provided, skip browser launch and login.
   // Otherwise acquire an authenticated page from SportlinkSession, which
   // reuses a cached login across processes when possible.
-  let session;
+  // When a shared page is provided, the caller (pipeline) also owns the session;
+  // accept it via `sharedSession` so we can relogin on a stale-session redirect.
+  let session = sharedSession;
   try {
     let page;
     if (sharedPage) {
@@ -82,7 +86,14 @@ async function runDownload(options = {}) {
 
       await navigateToSearch();
 
-      if (!sharedPage && session && !page.url().includes('/member/search')) {
+      // A partially-valid cached session lands on /dashboard instead of
+      // /member/search. Self-heal by re-logging in — works on both the
+      // standalone path (session created above) and the pipeline path
+      // (session passed in via `sharedSession`). Previously gated behind
+      // `!sharedPage`, which left the 4x-daily people pipeline unable to
+      // recover and dying on a 20s #btnShowMore timeout (the first run of
+      // the day, when the cached session had gone stale overnight).
+      if (session && !page.url().includes('/member/search')) {
         logError(`Sportlink redirected /member/search → ${page.url()} — cached session is stale. Invalidating and re-logging in.`);
         await captureSportlinkDebug(page, 'sportlink-stale-session-pre-relogin', logError);
         await invalidateCachedSession();

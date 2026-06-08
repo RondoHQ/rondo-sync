@@ -219,7 +219,7 @@ async function runPeopleSync(options = {}) {
       logger.close();
       return { success: false, stats, error: errorMsg };
     }
-    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage });
+    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage, session: sportlinkSession });
 
     if (!downloadResult.success) {
       const errorMsg = downloadResult.error || 'Download failed';
