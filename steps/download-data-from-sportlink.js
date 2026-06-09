@@ -106,18 +106,38 @@ async function runDownload(options = {}) {
       logDebug(`Waiting ${waitSeconds} seconds before clicking search button...`);
       await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
 
-      logDebug('Clicking show more button: #btnShowMore');
-      try {
-        await page.waitForSelector('#btnShowMore', { timeout: 20000 });
-      } catch (waitErr) {
-        await captureSportlinkDebug(page, 'sportlink-btnShowMore-initial', logError);
-        throw waitErr;
-      }
-      await page.click('#btnShowMore');
+      // Open the advanced-search panel (#btnShowMore reveals the union-teams
+      // checkbox + search field). The button renders visible but occasionally
+      // stays `disabled` (data-test-disabled="true") for 30s+ while the
+      // member-search component initialises slowly — a plain click() then times
+      // out on "element is not enabled" and fails the whole download (seen
+      // 2026-04-24 and 2026-06-09). So gate on the *enabled* state, and on
+      // failure reload-retry, since a fresh page load clears the stuck state.
+      const openAdvancedSearch = async ({ renavigate = false } = {}) => {
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          try {
+            if (renavigate || attempt > 1) await navigateToSearch();
+            logDebug(`Opening advanced search (#btnShowMore), attempt ${attempt}/${MAX_ATTEMPTS}`);
+            // `:not([disabled])` only matches once the button is enabled, so
+            // waitForSelector blocks on enablement rather than mere visibility.
+            await page.waitForSelector('#btnShowMore:not([disabled])', { timeout: 20000 });
+            await page.click('#btnShowMore');
+            await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
+            await page.check('#scFetchUnionTeams_input');
+            return;
+          } catch (err) {
+            logError(`Advanced-search open attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err.message}`);
+            if (attempt === MAX_ATTEMPTS) {
+              await captureSportlinkDebug(page, 'sportlink-btnShowMore-initial', logError);
+              throw err;
+            }
+            await page.waitForTimeout(2000);
+          }
+        }
+      };
 
-      logDebug('Checking union teams checkbox: #scFetchUnionTeams_input');
-      await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
-      await page.check('#scFetchUnionTeams_input');
+      await openAdvancedSearch();
 
       // Sportlink returns 500 for empty searches, so search a-z and merge results.
       // If a single letter fails, expand it to letter+vowel combinations.
@@ -127,19 +147,9 @@ async function runDownload(options = {}) {
       let successCount = 0;
       let errorCount = 0;
 
-      const setupSearchPage = async () => {
-        await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle');
-        try {
-          await page.waitForSelector('#btnShowMore', { timeout: 20000 });
-        } catch (waitErr) {
-          await captureSportlinkDebug(page, 'sportlink-btnShowMore-recovery', logError);
-          throw waitErr;
-        }
-        await page.click('#btnShowMore');
-        await page.waitForSelector('#scFetchUnionTeams_input', { timeout: 20000 });
-        await page.check('#scFetchUnionTeams_input');
-      };
+      // Per-term recovery: re-navigate and re-open the advanced-search panel
+      // (same reload-retry + enabled-gating as the initial open).
+      const setupSearchPage = () => openAdvancedSearch({ renavigate: true });
 
       for (const term of terms) {
         try {
