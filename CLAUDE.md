@@ -138,6 +138,16 @@ These are defined as `RELATIONSHIP_TYPE` constants in `steps/submit-rondo-club-s
 
 Bypassing it (raw `chromium.launch + loginToSportlink`) re-introduces the per-process login burn AND the TOTP-collision class of bug that shows up as `Login failed: Could not find dashboard element` when multiple syncs overlap. Every existing step file uses it (`steps/download-*-from-sportlink.js`, `pipelines/sync-individual.js`, `pipelines/sync-former-members.js`, `steps/submit-rondo-club-player-history.js`). Stay consistent.
 
+### Stale-session self-heal — pass the `session` (not just the `page`) to `runDownload`
+
+A *partially*-valid cached session is the nastiest Sportlink failure mode: the cookies load `/` and `/dashboard` fine, so `SportlinkSession._tryReuse` (which only probes the root URL) accepts them — but navigating to `/member/search` silently 30x-redirects back to `/dashboard`, where the member download waits 20s for a `#btnShowMore` that isn't there and dies. `steps/download-data-from-sportlink.js` detects this (`page.url()` not on `/member/search` after navigation) and recovers via `invalidateCachedSession()` + `session.relogin()`. **For that recovery to fire on the pipeline path, the caller must pass `session: sportlinkSession` alongside `page:` — `runDownload` keys the self-heal off having a session handle.** `pipelines/sync-people.js` and `pipelines/sync-all.js` do this; a new pipeline that passes only `page:` silently loses the self-heal and will fail the 06:00 (first-of-day) run whenever the cached session goes stale overnight (diagnosed 2026-06-08).
+
+`session.relogin()` calls `this._context.clearCookies()` **before** `_login()`. This is load-bearing: `loginToSportlink` navigates to `/`, and with the stale cookies still present Sportlink stays "authenticated" and redirects to `/dashboard`, so the `#username` login form never renders (45s `waitForSelector` timeout). `invalidateCachedSession()` only deletes the on-disk `storageState` — it does NOT touch the live browser context. Don't remove the `clearCookies()` call.
+
+### `#btnShowMore` can load `disabled` — wait for enabled state, don't just click
+
+The advanced-search toggle (`#btnShowMore`) on `/member/search` opens the panel holding the union-teams checkbox + search field. It renders **visible but `disabled`** (`data-test-disabled="true"`) for 30s+ when Sportlink's member-search component initialises slowly. Waiting only for visibility (`waitForSelector('#btnShowMore')`) then `click()` makes Playwright burn its 30s actionability timeout on "element is not enabled" and aborts the whole download (0 members). Rare (seen 2026-04-24, 2026-06-09) but fatal to the run. `steps/download-data-from-sportlink.js:openAdvancedSearch` gates on `#btnShowMore:not([disabled])` (matches only once enabled) and reload-retries up to 3× — a fresh page load clears the stuck state. Both the initial open and per-term recovery (`setupSearchPage`) go through it; keep new call sites on that helper rather than re-adding a bare `click('#btnShowMore')`.
+
 ### `/navajo/entity/common/clubweb/*` endpoints reject direct `page.request.get()` calls with 401
 
 The Sportlink SPA's data endpoints require an in-page auth header that Playwright's `page.request.get(...)` doesn't carry. Direct fetches always return 401, even from a fully-logged-in browser context.
