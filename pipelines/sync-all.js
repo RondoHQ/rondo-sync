@@ -4,6 +4,7 @@ const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { runDownload } = require('../steps/download-data-from-sportlink');
 const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
@@ -964,14 +965,5 @@ if (require.main === module) {
 
   const { verbose, force, dryRun } = parseArgs(process.argv);
 
-  runSyncAll({ verbose, force, dryRun })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runSyncAll({ verbose, force, dryRun }));
 }

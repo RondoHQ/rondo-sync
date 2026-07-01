@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
 const { runSync: runTeamSync } = require('../steps/submit-rondo-club-teams');
 const { runSync: runWorkHistorySync } = require('../steps/submit-rondo-club-work-history');
@@ -288,14 +289,5 @@ if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
 
-  runTeamsSync({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runTeamsSync({ verbose, force }));
 }

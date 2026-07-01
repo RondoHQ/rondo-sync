@@ -234,12 +234,17 @@ EXIT_CODE=${PIPESTATUS[0]}
 
 # Healthchecks.io dead-man's switch (optional, per pipeline).
 # Set HEALTHCHECK_<PIPELINE>_URL in .env (e.g. HEALTHCHECK_PEOPLE_URL).
-# Pings always — even on failure — because failure emails are already covered
-# above; the dead-man only catches the "nothing ran at all" case.
+# The dead-man only catches a genuine failure ("nothing ran at all" / the pipeline
+# crashed), NOT a partial run. Pipeline exit codes:
+#   0 = success, 2 = partial (non-fatal per-item errors, e.g. one photo failed),
+#   1 (or any other non-zero) = fatal.
+# So exit 0 and 2 both ping the success URL (check stays green); only a fatal exit
+# pings /fail. Partial errors are still surfaced via the failure email below and the
+# dashboard — they just don't trip the dead-man switch.
 HC_VAR_NAME="HEALTHCHECK_$(echo "$SYNC_TYPE" | tr '[:lower:]-' '[:upper:]_')_URL"
 HC_URL="${!HC_VAR_NAME}"
 if [ -n "$HC_URL" ]; then
-    if [ $EXIT_CODE -eq 0 ]; then
+    if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
         curl -fsS -m 10 --retry 3 "$HC_URL" -o /dev/null 2>&1 || \
             echo "Warning: Healthcheck ping failed for $SYNC_TYPE" >&2
     else
@@ -248,7 +253,8 @@ if [ -n "$HC_URL" ]; then
     fi
 fi
 
-# Send failure alert if pipeline failed
+# Send alert email on any non-zero exit (partial=2 as well as fatal=1) so partial
+# runs stay visible in the operator inbox even though they no longer trip the dead-man.
 if [ $EXIT_CODE -ne 0 ]; then
     if [ -n "$LETTERMINT_API_TOKEN" ] && [ -n "$LETTERMINT_FROM_EMAIL" ] && [ -n "$OPERATOR_EMAIL" ]; then
         node "$PROJECT_DIR/lib/alert-email.js" send-failure-alert --pipeline "$SYNC_TYPE" || \

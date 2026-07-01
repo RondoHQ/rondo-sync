@@ -4,6 +4,7 @@ const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb: openRondoClubDb, bulkSetVolunteerStatus } = require('../lib/rondo-club-db');
@@ -562,14 +563,5 @@ if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
 
-  runPeopleSync({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runPeopleSync({ verbose, force }));
 }

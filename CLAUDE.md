@@ -109,7 +109,19 @@ logger.error('Error messages');
 
 - Graceful failures with detailed logging
 - Each pipeline step is non-critical (failures don't stop the pipeline)
-- Exit codes: 0 = success, 1 = errors occurred
+- Exit codes: **`0` = success, `2` = partial (non-fatal per-item errors, e.g. one photo
+  failed to download), `1` = fatal (download/prepare aborted, or the top-level catch).**
+  The CLI derives partial-vs-fatal from the pipeline result: a non-`success` result with
+  no `error` field is partial (`2`); one carrying `error` is fatal (`1`).
+- **`sync.sh` treats `2` like `0` for the Healthchecks.io dead-man switch** — a partial run
+  pings the success URL so the check stays green; only a fatal `1` pings `/fail`. This is
+  deliberate: before 2026-07-01 a single photo-download failure made a whole people run exit
+  `1`, which pinged `/fail` (Healthchecks "down") **and** sent a failure email even though
+  members/parents/Laposta/Rondo Club all synced fine. Partial runs still send the operator
+  alert email (any non-zero exit) and record `outcome='partial'` in the dashboard, so
+  per-item errors stay visible — they just no longer trip the dead-man. If you add a new
+  pipeline, mirror the `process.exitCode = result.error ? 1 : 2` pattern or it will
+  false-alarm Healthchecks on every partial.
 
 ## Rondo Club API Gotchas
 

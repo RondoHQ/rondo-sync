@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runSync: runPlayerHistorySync } = require('../steps/submit-rondo-club-player-history');
 
 function printSummary(logger, stats) {
@@ -129,12 +130,5 @@ module.exports = { runPlayerHistoryPipeline };
 if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
-  runPlayerHistoryPipeline({ verbose, force })
-    .then((result) => {
-      if (!result.success) process.exitCode = 1;
-    })
-    .catch((err) => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runPlayerHistoryPipeline({ verbose, force }));
 }
