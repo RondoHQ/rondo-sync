@@ -204,6 +204,18 @@ upsertMembers(db, [{
 }]);
 ```
 
+**Diagnosing "the sync re-syncs hundreds of members and runs for an hour" — rollover vs. a real churn loop.** Before assuming a hash bug, check the *eligible-pending* count right after a run completes: rows where the hash mismatches AND the row is actually syncable (`data_json != '{}'` — the vast majority of `rondo_club_members` rows are `'{}'` former-member sentinels that never sync, so an unfiltered mismatch count is meaningless and will look huge).
+
+```bash
+ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node -e "
+  const { openDb } = require(\"./lib/rondo-club-db\");
+  const db = openDb();
+  const c = db.prepare(\"SELECT COUNT(*) c FROM rondo_club_members WHERE (last_synced_hash IS NULL OR last_synced_hash != source_hash) AND data_json != char(123)||char(125)\").get().c;
+  console.log(\"eligible pending:\", c); db.close();"'
+```
+
+If eligible-pending is **0** after the run, the detector converged — the large batch was legitimate (e.g. the **July 1 season rollover**: memberships expire/renew, team assignments + age categories move club-wide, so hundreds of members genuinely change at once; a single day of admin edits also spikes it). A real churn loop would still be non-zero and would NOT settle on the next run — the giveaway is a spike that clears to 0 changes on subsequent runs (as the 2026-06-29 15:00 spike did across all of 06-30). Long duration on those days is throughput, not a bug: the forward sync does a sequential GET-then-PUT per member through Cloudflare (~8s each), so ~750 members ≈ ~100 min. Only chase a volatile-field hash bug if eligible-pending stays non-zero across consecutive runs with no real Sportlink change.
+
 ## Documentation Maintenance
 
 After functional changes, update:
