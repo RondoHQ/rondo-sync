@@ -49,6 +49,7 @@ Phase 2: Sync to Sportlink (when unsynced changes exist)
 1. Read `last_detection_at` from `reverse_sync_state` table
 2. Query Rondo Club API for members modified since that timestamp: `GET /wp/v2/people?modified_after=...`
 3. For each modified member:
+   - **Skip contacts** where `person_type == 'contact'`; contacts are local Rondo Club records and are never synced to Sportlink, even if stale data contains a KNVB ID
    - Look up local record in `rondo_club_members`
    - **Skip** if `sync_origin == 'sync_sportlink_to_rondo_club'` (avoids infinite loops — this change came from forward sync)
    - Compute SHA-256 hash of all tracked fields
