@@ -190,6 +190,6 @@ else
     echo "  View installed cron jobs:   crontab -l"
 fi
 echo "  View logs:                  ls -la $PROJECT_DIR/logs/cron/"
-echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|freescout|reverse|discipline|all}"
+echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|sponsit|freescout|reverse|discipline|all}"
 echo "  Remove all cron jobs:       crontab -r"
 echo ""

@@ -10,6 +10,7 @@
 #   sync.sh functions  # Daily: functions download + commissies + work history
 #   sync.sh invoice  # Monthly: functions + invoice data from /financial tab
 #   sync.sh nikki    # Daily: nikki contributions download + Rondo Club sync
+#   sync.sh sponsit  # Read-only: Sponsit contacts to local mirror
 #   sync.sh freescout # Daily: FreeScout customer sync
 #   sync.sh conversations # Daily: FreeScout conversations as activities
 #   sync.sh former-members  # Manual: import former members from Sportlink
@@ -54,16 +55,17 @@ if [ -z "$1" ]; then
     echo "  2) functions        Commissies + free fields (recent updates)"
     echo "  3) functions --all  Full commissie sync (all members)"
     echo "  4) nikki            Nikki contributions"
-    echo "  5) freescout        FreeScout customers"
-    echo "  6) teams            Team rosters + work history"
-    echo "  7) player-history   Historical team memberships -> work history"
-    echo "  8) discipline       Discipline cases"
-    echo "  9) invoice          Functions + invoice data"
-    echo " 10) former-members  Import former members from Sportlink"
-    echo " 11) all              Run all pipelines sequentially"
-    echo " 12) conversations    FreeScout conversations as activities"
+    echo "  5) sponsit          Sponsit contacts (read-only import)"
+    echo "  6) freescout        FreeScout customers"
+    echo "  7) teams            Team rosters + work history"
+    echo "  8) player-history   Historical team memberships -> work history"
+    echo "  9) discipline       Discipline cases"
+    echo " 10) invoice          Functions + invoice data"
+    echo " 11) former-members   Import former members from Sportlink"
+    echo " 12) all              Run all pipelines sequentially"
+    echo " 13) conversations    FreeScout conversations as activities"
     echo ""
-    printf "Choice [1-12]: "
+    printf "Choice [1-13]: "
     read -r CHOICE
 
     case "$CHOICE" in
@@ -71,14 +73,15 @@ if [ -z "$1" ]; then
         2) set -- "functions" ;;
         3) set -- "functions" "--all" ;;
         4) set -- "nikki" ;;
-        5) set -- "freescout" ;;
-        6) set -- "teams" ;;
-        7) set -- "player-history" ;;
-        8) set -- "discipline" ;;
-        9) set -- "invoice" ;;
-        10) set -- "former-members" ;;
-        11) set -- "all" ;;
-        12) set -- "conversations" ;;
+        5) set -- "sponsit" ;;
+        6) set -- "freescout" ;;
+        7) set -- "teams" ;;
+        8) set -- "player-history" ;;
+        9) set -- "discipline" ;;
+        10) set -- "invoice" ;;
+        11) set -- "former-members" ;;
+        12) set -- "all" ;;
+        13) set -- "conversations" ;;
         *)
             echo "Invalid choice." >&2
             exit 1
@@ -100,7 +103,7 @@ EXTRA_FLAGS="$*"
 
 # Validate sync type
 case "$SYNC_TYPE" in
-    people|photos|teams|player-history|functions|invoice|nikki|freescout|reverse|discipline|former-members|conversations|all)
+    people|photos|teams|player-history|functions|invoice|nikki|sponsit|freescout|reverse|discipline|former-members|conversations|all)
         ;;
     *)
         echo "Unknown sync type: $SYNC_TYPE" >&2
@@ -202,6 +205,9 @@ case "$SYNC_TYPE" in
         ;;
     nikki)
         SYNC_SCRIPT="sync-nikki.js"
+        ;;
+    sponsit)
+        SYNC_SCRIPT="sync-sponsit.js"
         ;;
     freescout)
         SYNC_SCRIPT="sync-freescout.js"

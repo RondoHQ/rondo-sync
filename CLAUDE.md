@@ -7,6 +7,7 @@ CLI tool that synchronizes member data from Sportlink Club to Laposta email mark
 ```bash
 scripts/sync.sh people           # 4x daily: members, parents, photos
 scripts/sync.sh nikki            # Daily: Nikki contributions to Rondo Club
+scripts/sync.sh sponsit          # Read-only: Sponsit contacts to local mirror
 scripts/sync.sh freescout        # Daily: FreeScout customer sync
 scripts/sync.sh teams            # Weekly: team sync + work history
 scripts/sync.sh functions        # 4x daily: commissies + free fields (recent updates)
@@ -64,12 +65,24 @@ FREESCOUT_API_KEY=           # FreeScout API key (optional)
 FREESCOUT_URL=               # FreeScout URL (optional)
 NIKKI_API_KEY=               # Nikki API key (optional)
 NIKKI_URL=                   # Nikki URL (optional)
+SPONSIT_URL=                 # Sponsit account URL
+SPONSIT_USERNAME=            # Sponsit login email
+SPONSIT_PASSWORD=            # Sponsit password
+LAPOSTA_SPONSIT_LIST=        # Dedicated Laposta list for active Sponsit contacts
 SYNC_API_KEY=                # API key for programmatic sync endpoints (used by Rondo Club)
 HEALTHCHECK_PEOPLE_URL=      # Optional: healthchecks.io ping URL for People sync dead-man's switch
                              # (add HEALTHCHECK_<PIPELINE>_URL per pipeline as needed)
 RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP request (default 45000ms).
                              # Applies to every call through lib/http-client.js (Rondo Club + FreeScout).
 ```
+
+## Sponsit sync
+
+`npm run sync-sponsit` refreshes the local encrypted-transport/0600 SQLite mirror only. Use `npm run preview-sponsit-rondo` and `npm run preview-sponsit-laposta` before their corresponding `sync-*` apply commands.
+
+Sponsorship is an independent Rondo role: existing Sportlink people remain `person_type=member` and receive `is_sponsor=true`; new external sponsors are created as `person_type=contact`. Matching prefers stable Sponsit IDs and otherwise requires a unique email plus matching identity. Shared emails are quarantined.
+
+The dedicated Laposta list must expose `voornaam`, `achternaam`, `businessclub`, `bedrijfsnaam`, `sponsorvariant`, `sponsitcontactid`, `sponsitpersoonid`, and `islid`. Never remove the opt-out protections: upserts use `suppress_reactivation`, cleaned/unsubscribed relations are skipped, and automatic unsubscription is limited to active relations carrying a Sponsit source ID.
 
 ## Directory Layout
 
