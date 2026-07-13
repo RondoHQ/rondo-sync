@@ -10,7 +10,7 @@
 #   sync.sh functions  # Daily: functions download + commissies + work history
 #   sync.sh invoice  # Monthly: functions + invoice data from /financial tab
 #   sync.sh nikki    # Daily: nikki contributions download + Rondo Club sync
-#   sync.sh sponsit  # Read-only: Sponsit contacts to local mirror
+#   sync.sh sponsit  # Weekly: Sponsit contacts to Rondo Club + Laposta
 #   sync.sh freescout # Daily: FreeScout customer sync
 #   sync.sh conversations # Daily: FreeScout conversations as activities
 #   sync.sh former-members  # Manual: import former members from Sportlink
@@ -28,6 +28,7 @@
 #   15 7 * * * /path/to/sync.sh functions       # daily
 #   0 8 * * * /path/to/sync.sh freescout        # daily
 #   0 6 * * 0 /path/to/sync.sh teams            # weekly Sunday
+#   0 10 * * 0 /path/to/sync.sh sponsit         # weekly Sunday
 #   0 3 1 * * /path/to/sync.sh player-history   # monthly
 #   0 3 1 * * /path/to/sync.sh invoice          # monthly 1st at 3am
 #   */5 * * * * /path/to/sync.sh reverse        # every 5 minutes
@@ -55,7 +56,7 @@ if [ -z "$1" ]; then
     echo "  2) functions        Commissies + free fields (recent updates)"
     echo "  3) functions --all  Full commissie sync (all members)"
     echo "  4) nikki            Nikki contributions"
-    echo "  5) sponsit          Sponsit contacts (read-only import)"
+    echo "  5) sponsit          Sponsit contacts -> Rondo Club + Laposta"
     echo "  6) freescout        FreeScout customers"
     echo "  7) teams            Team rosters + work history"
     echo "  8) player-history   Historical team memberships -> work history"

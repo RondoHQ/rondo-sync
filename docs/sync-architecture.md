@@ -56,6 +56,7 @@ All times are **Europe/Amsterdam** timezone.
 | Functions (full) | Weekly Sunday | `0 1 * * 0` | All members with `--all` |
 | FreeScout | Daily | `0 8 * * *` | Rondo Club members to FreeScout customers |
 | Teams | Weekly Sunday | `0 6 * * 0` | Team creation + work history |
+| Sponsit | Weekly Sunday | `0 10 * * 0` | Sponsor contacts to Rondo Club and Laposta |
 | Discipline | Weekly Monday | `30 23 * * 1` | Discipline cases |
 | Reverse Sync | Hourly | `0 * * * *` | Rondo Club changes back to Sportlink (**currently disabled**) |
 
@@ -75,6 +76,7 @@ All times are **Europe/Amsterdam** timezone.
 ```
  Sunday  01:00  Functions sync (full --all)
  Sunday  06:00  Teams sync
+ Sunday  10:00  Sponsit sync
  Monday  23:30  Discipline sync
 ```
 

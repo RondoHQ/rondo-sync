@@ -5,17 +5,20 @@ const { formatDuration, formatTimestamp, parseCliArgs } = require('../lib/utils'
 const { RunTracker } = require('../lib/run-tracker');
 const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runSponsitDownload } = require('../steps/download-sponsit-contacts');
+const { runSponsitRondoSync } = require('../steps/sync-sponsit-to-rondo-club');
+const { runSponsitLapostaSync } = require('../steps/sync-sponsit-to-laposta');
 
 function printSummary(logger, stats) {
-  logger.section('Sponsit contact import summary');
+  logger.section('Sponsit sync summary');
   logger.log(`Completed: ${stats.completedAt}`);
   logger.log(`Duration: ${stats.duration}`);
-  logger.log(`Contacts stored: ${stats.contacts}`);
-  logger.log(`Current sponsors: ${stats.activeSponsors}`);
-  logger.log(`Contact people: ${stats.people}`);
-  logger.log(`Proposed Rondo sponsor records: ${stats.rondoCandidates}`);
+  logger.log(`Contacts stored: ${stats.download.contacts}`);
+  logger.log(`Current sponsors: ${stats.download.activeSponsors}`);
+  logger.log(`Contact people: ${stats.download.people}`);
+  logger.log(`Rondo Club: ${stats.rondoClub.created} created, ${stats.rondoClub.updated} updated, ${stats.rondoClub.deactivated} deactivated, ${stats.rondoClub.unchanged} unchanged`);
+  logger.log(`Laposta: ${stats.laposta.created} created, ${stats.laposta.updated} updated, ${stats.laposta.unsubscribed} unsubscribed, ${stats.laposta.unchanged} unchanged, ${stats.laposta.skippedOptOut} opted out`);
+  logger.log(`Quarantined: ${stats.laposta.quarantined}`);
   if (stats.errors.length) logger.log(`Errors: ${stats.errors.length}`);
-  logger.log('Rondo writes: disabled (read-only import)');
 }
 
 async function runSponsitSync(options = {}) {
@@ -26,55 +29,135 @@ async function runSponsitSync(options = {}) {
   const stats = {
     completedAt: '',
     duration: '',
-    contacts: 0,
-    activeSponsors: 0,
-    people: 0,
-    rondoCandidates: 0,
+    download: {
+      contacts: 0,
+      activeSponsors: 0,
+      people: 0,
+      rondoCandidates: 0
+    },
+    rondoClub: {
+      candidates: 0,
+      created: 0,
+      updated: 0,
+      deactivated: 0,
+      unchanged: 0,
+      quarantined: 0
+    },
+    laposta: {
+      candidates: 0,
+      created: 0,
+      updated: 0,
+      unsubscribed: 0,
+      unchanged: 0,
+      skippedOptOut: 0,
+      quarantined: 0
+    },
     errors: []
   };
 
   tracker.startRun();
-  const stepId = tracker.startStep('sponsit-download');
 
   try {
+    const downloadStepId = tracker.startStep('sponsit-download');
     const result = await runSponsitDownload({
       logger,
       verbose,
       onProgress: (current, total) => {
-        tracker.updateStep(stepId, { current, total, label: 'contacts' });
+        tracker.updateStep(downloadStepId, { current, total, label: 'contacts' });
       }
     });
 
-    stats.contacts = result.count || 0;
-    stats.activeSponsors = result.activeSponsors || 0;
-    stats.people = result.people || 0;
-    stats.rondoCandidates = result.rondoCandidates || 0;
+    stats.download.contacts = result.count || 0;
+    stats.download.activeSponsors = result.activeSponsors || 0;
+    stats.download.people = result.people || 0;
+    stats.download.rondoCandidates = result.rondoCandidates || 0;
     if (!result.success) {
-      stats.errors.push({
-        message: result.error || 'Unknown Sponsit download error',
-        system: 'sponsit-download'
-      });
+      const error = { message: result.error || 'Unknown Sponsit download error', system: 'sponsit-download' };
+      stats.errors.push(error);
+      tracker.endStep(downloadStepId, { outcome: 'failure', failed: 1 });
+      tracker.recordErrors('sponsit-download', downloadStepId, [error]);
+      throw new Error(error.message);
     }
 
-    tracker.endStep(stepId, {
-      outcome: result.success ? 'success' : 'failure',
+    tracker.endStep(downloadStepId, {
+      outcome: 'success',
       created: result.snapshot?.contacts?.created || 0,
       updated: result.snapshot?.contacts?.updated || 0,
       skipped: result.snapshot?.contacts?.unchanged || 0,
-      failed: stats.errors.length,
       detail: {
-        contacts: stats.contacts,
-        people: stats.people,
-        activeSponsors: stats.activeSponsors,
-        rondoCandidates: stats.rondoCandidates
+        contacts: stats.download.contacts,
+        people: stats.download.people,
+        activeSponsors: stats.download.activeSponsors,
+        rondoCandidates: stats.download.rondoCandidates
       }
     });
-    tracker.recordErrors('sponsit-download', stepId, stats.errors);
+
+    const rondoStepId = tracker.startStep('rondo-club-sync');
+    try {
+      const rondoResult = await runSponsitRondoSync({ apply: true, verbose });
+      const summary = rondoResult.summary || {};
+      const applied = rondoResult.applied || {};
+      stats.rondoClub = {
+        candidates: summary.candidates || 0,
+        created: applied.created || 0,
+        updated: applied.updated || 0,
+        deactivated: applied.deactivated || 0,
+        unchanged: summary.unchanged || 0,
+        quarantined: summary.quarantined || 0
+      };
+      const errors = applied.errors || [];
+      stats.errors.push(...errors.map((error) => ({ ...error, system: 'rondo-club' })));
+      tracker.endStep(rondoStepId, {
+        outcome: errors.length ? 'failure' : 'success',
+        created: stats.rondoClub.created,
+        updated: stats.rondoClub.updated + stats.rondoClub.deactivated,
+        skipped: stats.rondoClub.unchanged + stats.rondoClub.quarantined,
+        failed: errors.length,
+        detail: { ...summary, deactivated: stats.rondoClub.deactivated }
+      });
+      tracker.recordErrors('rondo-club-sync', rondoStepId, errors);
+    } catch (error) {
+      const pipelineError = { message: error.message, system: 'rondo-club' };
+      stats.errors.push(pipelineError);
+      tracker.endStep(rondoStepId, { outcome: 'failure', failed: 1 });
+      tracker.recordErrors('rondo-club-sync', rondoStepId, [pipelineError]);
+    }
+
+    const lapostaStepId = tracker.startStep('laposta-sync');
+    try {
+      const lapostaResult = await runSponsitLapostaSync({ apply: true, verbose });
+      const summary = lapostaResult.summary || {};
+      const errors = lapostaResult.errors || [];
+      stats.laposta = {
+        candidates: summary.candidates || 0,
+        created: summary.create || 0,
+        updated: summary.update || 0,
+        unsubscribed: summary.unsubscribe || 0,
+        unchanged: summary.unchanged || 0,
+        skippedOptOut: summary.skipOptOut || 0,
+        quarantined: summary.quarantined || 0
+      };
+      stats.errors.push(...errors.map((error) => ({ ...error, system: 'laposta' })));
+      tracker.endStep(lapostaStepId, {
+        outcome: errors.length ? 'failure' : 'success',
+        created: stats.laposta.created,
+        updated: stats.laposta.updated + stats.laposta.unsubscribed,
+        skipped: stats.laposta.unchanged + stats.laposta.skippedOptOut + stats.laposta.quarantined,
+        failed: errors.length,
+        detail: summary
+      });
+      tracker.recordErrors('laposta-sync', lapostaStepId, errors);
+    } catch (error) {
+      const pipelineError = { message: error.message, system: 'laposta' };
+      stats.errors.push(pipelineError);
+      tracker.endStep(lapostaStepId, { outcome: 'failure', failed: 1 });
+      tracker.recordErrors('laposta-sync', lapostaStepId, [pipelineError]);
+    }
 
     stats.completedAt = formatTimestamp();
     stats.duration = formatDuration(Date.now() - startedAt);
     const success = stats.errors.length === 0;
-    tracker.endRun(success ? 'success' : 'failure', stats);
+    tracker.endRun(success ? 'success' : 'partial', stats);
     printSummary(logger, stats);
     logger.log(`Log file: ${logger.getLogPath()}`);
     logger.close();
@@ -82,18 +165,13 @@ async function runSponsitSync(options = {}) {
       ? { success: true, stats }
       : { success: false, stats, error: stats.errors[0].message };
   } catch (error) {
-    stats.errors.push({ message: error.message, system: 'sponsit-download' });
+    if (!stats.errors.some((item) => item.message === error.message)) {
+      stats.errors.push({ message: error.message, system: 'sponsit' });
+    }
     stats.completedAt = formatTimestamp();
     stats.duration = formatDuration(Date.now() - startedAt);
-    tracker.endStep(stepId, { outcome: 'failure', failed: 1 });
-    tracker.recordError({
-      stepName: 'sponsit-download',
-      stepId,
-      errorMessage: error.message,
-      errorStack: error.stack
-    });
     tracker.endRun('failure', stats);
-    logger.error(`Fatal Sponsit import error: ${error.message}`);
+    logger.error(`Fatal Sponsit sync error: ${error.message}`);
     printSummary(logger, stats);
     logger.close();
     return { success: false, stats, error: error.message };
