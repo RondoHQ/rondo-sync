@@ -1,7 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { validateSponsitUrl } = require('../lib/sponsit-session');
+const {
+  extractTotpSecret,
+  generateSponsitTotp,
+  validateSponsitUrl
+} = require('../lib/sponsit-session');
+
+test('extractTotpSecret accepts base32 values and otpauth URLs', () => {
+  assert.equal(extractTotpSecret('abcd efgh-2345'), 'ABCDEFGH2345');
+  assert.equal(
+    extractTotpSecret('otpauth://totp/Sponsit:test?secret=abcd2345&issuer=Sponsit'),
+    'ABCD2345'
+  );
+});
+
+test('generateSponsitTotp supports the shorter Base32 secrets issued by Sponsit', () => {
+  assert.match(generateSponsitTotp('JBSWY3DPEHPK3PXP'), /^\d{6}$/);
+});
 
 test('Sponsit credentials can only be submitted to an HTTPS origin', () => {
   assert.equal(

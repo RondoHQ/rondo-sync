@@ -68,6 +68,7 @@ NIKKI_URL=                   # Nikki URL (optional)
 SPONSIT_URL=                 # Sponsit account URL
 SPONSIT_USERNAME=            # Sponsit login email
 SPONSIT_PASSWORD=            # Sponsit password
+SPONSIT_OTP_SECRET=          # Base32 TOTP secret for unattended 2FA
 LAPOSTA_SPONSIT_LIST=        # Dedicated Laposta list for active Sponsit contacts
 SYNC_API_KEY=                # API key for programmatic sync endpoints (used by Rondo Club)
 HEALTHCHECK_PEOPLE_URL=      # Optional: healthchecks.io ping URL for People sync dead-man's switch
