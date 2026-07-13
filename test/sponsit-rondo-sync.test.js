@@ -26,6 +26,26 @@ test('new external sponsors are created as contacts', () => {
   assert.equal(plan.creates[0].candidate.createAcf.person_type, 'contact');
 });
 
+test('stable source matches with current sponsor fields are left unchanged', () => {
+  const person = {
+    id: 7,
+    acf: {
+      person_type: 'member',
+      first_name: 'Jan',
+      last_name: 'Jansen',
+      email_1: 'jan@example.test',
+      company_name: 'Example BV',
+      is_sponsor: true,
+      sponsor_pass_variant: 'awc_sponsor',
+      sponsit_contact_id: '10',
+      sponsit_person_id: '20'
+    }
+  };
+  const plan = planRondoSponsorSync([record()], [person]);
+  assert.equal(plan.updates.length, 0);
+  assert.equal(plan.unchanged.length, 1);
+});
+
 test('shared Sponsit emails are quarantined without a stable existing match', () => {
   const second = record({
     contact: { id: 11, type: 'company', name: 'Other BV', status: { code: 'sponsor' } },

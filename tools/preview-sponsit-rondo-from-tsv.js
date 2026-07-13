@@ -31,6 +31,7 @@ function main() {
       existingPeople: people.length,
       creates: plan.creates.length,
       updates: plan.updates.length,
+      unchanged: plan.unchanged.length,
       memberSponsorUpdates: plan.updates.filter((item) => (item.person.acf?.person_type || 'member') !== 'contact').length,
       contactSponsorUpdates: plan.updates.filter((item) => item.person.acf?.person_type === 'contact').length,
       deactivations: plan.deactivations.length,

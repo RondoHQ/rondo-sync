@@ -86,6 +86,7 @@ async function runSponsitRondoSync(options = {}) {
       existingPeople: people.length,
       creates: plan.creates.length,
       updates: plan.updates.length,
+      unchanged: plan.unchanged.length,
       memberSponsorUpdates: plan.updates.filter((item) => (item.person.acf?.person_type || 'member') !== 'contact').length,
       deactivations: plan.deactivations.length,
       quarantined: plan.quarantined.length,
