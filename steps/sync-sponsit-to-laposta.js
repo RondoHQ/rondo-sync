@@ -87,7 +87,14 @@ async function runSponsitLapostaSync(options = {}) {
           await updateMember(listId, item.member.member_id || memberEmail(item.member), { state: 'unsubscribed' });
         }
       } catch (error) {
-        errors.push({ type: item.type, email: item.member.email || memberEmail(item.member), message: error.message });
+        errors.push({
+          type: item.type,
+          email: item.member.email || memberEmail(item.member),
+          message: error.details?.error?.message || error.details?.message || error.message
+        });
+      }
+      if ((index + 1) % 25 === 0 || index === work.length - 1) {
+        console.log(`Laposta progress: ${index + 1}/${work.length} (${errors.length} errors)`);
       }
       if (index < work.length - 1) await waitForRateLimit();
     }
@@ -101,6 +108,16 @@ module.exports = { runSponsitLapostaSync };
 
 if (require.main === module) {
   runSponsitLapostaSync({ apply: process.argv.includes('--apply'), verbose: process.argv.includes('--verbose') })
-    .then((result) => { if (!result.success) process.exitCode = 2; })
+    .then((result) => {
+      if (!result.dryRun) {
+        const errorSummary = (result.errors || []).reduce((counts, error) => {
+          const key = `${error.type}: ${error.message}`;
+          counts[key] = (counts[key] || 0) + 1;
+          return counts;
+        }, {});
+        console.log(JSON.stringify({ errors: result.errors?.length || 0, errorSummary }, null, 2));
+      }
+      if (!result.success) process.exitCode = 2;
+    })
     .catch((error) => { console.error(error.message); process.exitCode = 1; });
 }
