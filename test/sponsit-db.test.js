@@ -7,7 +7,9 @@ const {
   initDb,
   replaceSnapshot,
   getSponsitStats,
-  getContactRecords
+  getContactRecords,
+  upsertLapostaSuppressions,
+  getLapostaSuppressedEmails
 } = require('../lib/sponsit-db');
 
 function makeDb() {
@@ -89,3 +91,16 @@ test('replaceSnapshot rejects duplicate stable IDs before touching the database'
   db.close();
 });
 
+test('Laposta opt-out suppressions persist independently of remote list state', () => {
+  const db = makeDb();
+  upsertLapostaSuppressions(db, 'list-1', [
+    'OPT@example.test',
+    ' opt@example.test ',
+    '',
+    null
+  ]);
+
+  assert.deepEqual(getLapostaSuppressedEmails(db, 'list-1'), ['opt@example.test']);
+  assert.deepEqual(getLapostaSuppressedEmails(db, 'list-2'), []);
+  db.close();
+});

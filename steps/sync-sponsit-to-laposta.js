@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 require('dotenv/config');
 
-const { openDb, getContactRecords } = require('../lib/sponsit-db');
+const {
+  openDb,
+  getContactRecords,
+  upsertLapostaSuppressions,
+  getLapostaSuppressedEmails
+} = require('../lib/sponsit-db');
 const { readEnv } = require('../lib/utils');
 const { fetchFields, fetchMembers, upsertMember, updateMember, waitForRateLimit } = require('../lib/laposta-client');
 const { fetchRondoPeople } = require('./sync-sponsit-to-rondo-club');
@@ -58,8 +63,16 @@ async function runSponsitLapostaSync(options = {}) {
       fetchMembers(listId, 'unsubscribed'),
       fetchMembers(listId, 'cleaned')
     ]);
-    const blocked = new Set([...unsubscribed, ...cleaned].map(memberEmail).filter(Boolean));
     const activeByEmail = new Map(active.map((member) => [memberEmail(member), member]));
+    const apiBlocked = new Set([...unsubscribed, ...cleaned].map(memberEmail).filter(Boolean));
+    if (options.apply && apiBlocked.size) {
+      upsertLapostaSuppressions(db, listId, apiBlocked);
+    }
+    const blocked = new Set([
+      ...apiBlocked,
+      ...getLapostaSuppressedEmails(db, listId)
+        .filter((email) => !activeByEmail.has(email))
+    ]);
     const desiredEmails = new Set(plan.members.map((member) => member.email));
     const actions = {
       create: plan.members.filter((member) => !blocked.has(member.email) && !activeByEmail.has(member.email)),
