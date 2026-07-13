@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   SPONSIT_LAPOSTA_FIELDS,
   buildSponsitLapostaPlan,
+  lapostaMemberMatches,
   validateLapostaFields
 } = require('../lib/sponsit-laposta');
 
@@ -21,6 +22,21 @@ test('builds the requested Businessclub and member fields', () => {
   assert.equal(plan.members[0].custom_fields.businessclub, 'Ja');
   assert.equal(plan.members[0].custom_fields.islid, 'Ja');
   assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Example BV');
+});
+
+test('detects already-current Laposta custom fields', () => {
+  const desired = {
+    email: 'jan@example.test',
+    custom_fields: { businessclub: 'Ja', islid: 'Ja' }
+  };
+  assert.equal(lapostaMemberMatches({
+    email: 'JAN@example.test',
+    custom_fields: { businessclub: 'Ja', islid: 'Ja' }
+  }, desired), true);
+  assert.equal(lapostaMemberMatches({
+    email: 'jan@example.test',
+    custom_fields: { businessclub: 'Nee', islid: 'Ja' }
+  }, desired), false);
 });
 
 test('quarantines duplicate shared email addresses', () => {

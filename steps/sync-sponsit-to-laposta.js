@@ -5,7 +5,12 @@ const { openDb, getContactRecords } = require('../lib/sponsit-db');
 const { readEnv } = require('../lib/utils');
 const { fetchFields, fetchMembers, upsertMember, updateMember, waitForRateLimit } = require('../lib/laposta-client');
 const { fetchRondoPeople } = require('./sync-sponsit-to-rondo-club');
-const { buildSponsitLapostaPlan, validateLapostaFields, getMemberCustomField } = require('../lib/sponsit-laposta');
+const {
+  buildSponsitLapostaPlan,
+  validateLapostaFields,
+  getMemberCustomField,
+  lapostaMemberMatches
+} = require('../lib/sponsit-laposta');
 
 function memberEmail(member) {
   return normalize(member.email || member.EmailAddress);
@@ -58,7 +63,14 @@ async function runSponsitLapostaSync(options = {}) {
     const desiredEmails = new Set(plan.members.map((member) => member.email));
     const actions = {
       create: plan.members.filter((member) => !blocked.has(member.email) && !activeByEmail.has(member.email)),
-      update: plan.members.filter((member) => !blocked.has(member.email) && activeByEmail.has(member.email)),
+      update: plan.members.filter((member) => {
+        if (blocked.has(member.email) || !activeByEmail.has(member.email)) return false;
+        return !lapostaMemberMatches(activeByEmail.get(member.email), member);
+      }),
+      unchanged: plan.members.filter((member) => {
+        if (blocked.has(member.email) || !activeByEmail.has(member.email)) return false;
+        return lapostaMemberMatches(activeByEmail.get(member.email), member);
+      }),
       skipOptOut: plan.members.filter((member) => blocked.has(member.email)),
       unsubscribe: active.filter((member) => {
         const email = memberEmail(member);
