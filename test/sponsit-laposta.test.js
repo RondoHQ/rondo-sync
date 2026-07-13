@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   SPONSIT_LAPOSTA_FIELDS,
   buildSponsitLapostaPlan,
+  isValidLapostaEmail,
   lapostaMemberMatches,
   validateLapostaFields
 } = require('../lib/sponsit-laposta');
@@ -22,6 +23,22 @@ test('builds the requested Businessclub and member fields', () => {
   assert.equal(plan.members[0].custom_fields.businessclub, 'Ja');
   assert.equal(plan.members[0].custom_fields.islid, 'Ja');
   assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Example BV');
+});
+
+test('uses the person name when the mandatory company field has no company', () => {
+  const personal = record();
+  personal.contact.type = 'person';
+  personal.contact.name = 'Jan Jansen';
+  const plan = buildSponsitLapostaPlan([personal]);
+  assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Jan Jansen');
+});
+
+test('quarantines addresses Laposta cannot accept', () => {
+  assert.equal(isValidLapostaEmail('valid@example.test'), true);
+  assert.equal(isValidLapostaEmail('invalid address@example.test'), false);
+  const plan = buildSponsitLapostaPlan([record('invalid-address')]);
+  assert.equal(plan.members.length, 0);
+  assert.equal(plan.quarantined[0].reason, 'invalid_email');
 });
 
 test('detects already-current Laposta custom fields', () => {
