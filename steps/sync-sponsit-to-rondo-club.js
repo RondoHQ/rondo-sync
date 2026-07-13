@@ -38,7 +38,7 @@ async function applyPlan(plan, options = {}) {
       }, options);
       result.updated += 1;
     } catch (error) {
-      result.errors.push({ sourceKey: item.candidate.sourceKey, action: 'update', message: error.message });
+      result.errors.push(buildApplyError(error, { sourceKey: item.candidate.sourceKey, action: 'update' }));
     }
   }
   for (const item of plan.creates) {
@@ -50,7 +50,7 @@ async function applyPlan(plan, options = {}) {
       }, options);
       result.created += 1;
     } catch (error) {
-      result.errors.push({ sourceKey: item.candidate.sourceKey, action: 'create', message: error.message });
+      result.errors.push(buildApplyError(error, { sourceKey: item.candidate.sourceKey, action: 'create' }));
     }
   }
   for (const person of plan.deactivations) {
@@ -60,10 +60,19 @@ async function applyPlan(plan, options = {}) {
       }, options);
       result.deactivated += 1;
     } catch (error) {
-      result.errors.push({ rondoId: person.id, action: 'deactivate', message: error.message });
+      result.errors.push(buildApplyError(error, { rondoId: person.id, action: 'deactivate' }));
     }
   }
   return result;
+}
+
+function buildApplyError(error, context) {
+  return {
+    ...context,
+    message: error.details?.message || error.message,
+    code: error.details?.code || null,
+    params: error.details?.data?.params || null
+  };
 }
 
 async function runSponsitRondoSync(options = {}) {

@@ -72,6 +72,9 @@ test('company-only contacts remain valid sponsor candidates', () => {
   assert.equal(candidate.sourceKey, 'sponsit:400:contact');
   assert.equal(candidate.sponsorAcf.company_name, 'Example BV');
   assert.equal(candidate.sponsorAcf.sponsor_pass_variant, 'awc_sponsor');
+  assert.equal('sponsit_person_id' in candidate.sponsorAcf, false);
+  assert.equal('gender' in candidate.createAcf, false);
+  assert.equal('birthdate' in candidate.createAcf, false);
 });
 
 test('business club custom field also selects the businessclub pass', () => {
