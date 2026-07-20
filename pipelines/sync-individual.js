@@ -321,10 +321,13 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
  * This keeps parent/sibling links fresh during individual member sync.
  */
 async function syncParentsForMember(knvbId, db, options = {}) {
-  const { verbose = false } = options;
+  const { verbose = false, freshMemberData = null } = options;
   const log = verbose ? console.log : () => {};
 
-  const prepared = await runPrepareParents({ verbose });
+  const prepared = await runPrepareParents({
+    verbose,
+    memberOverrides: freshMemberData ? [freshMemberData] : []
+  });
   if (!prepared.success) {
     return { synced: 0, created: 0, updated: 0, total: 0, errors: [{ message: prepared.error || 'Prepare parents failed' }] };
   }
@@ -573,7 +576,7 @@ async function syncIndividual(knvbId, options = {}) {
         }
 
         // Also sync linked parents so family relationships stay current.
-        const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+        const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose, freshMemberData });
         if (parentResult.errors.length > 0) {
           console.log(`  Parent sync errors: ${parentResult.errors.length}`);
           parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
@@ -645,7 +648,7 @@ async function syncIndividual(knvbId, options = {}) {
     }
 
     // Also sync linked parents so family relationships stay current.
-    const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+    const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose, freshMemberData });
     if (parentResult.errors.length > 0) {
       console.log(`  Parent sync errors: ${parentResult.errors.length}`);
       parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));

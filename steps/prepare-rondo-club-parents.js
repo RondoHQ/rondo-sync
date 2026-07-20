@@ -82,6 +82,79 @@ function prepareParent(email, data) {
 }
 
 /**
+ * Replace stale snapshot members with freshly fetched individual records.
+ * Other members remain available so shared parents keep all child links.
+ *
+ * @param {Array<Object>} members - Members from the latest full Sportlink snapshot
+ * @param {Array<Object>} memberOverrides - Freshly fetched individual member records
+ * @returns {Array<Object>}
+ */
+function mergeMemberOverrides(members, memberOverrides = []) {
+  const overrides = memberOverrides.filter(member => member?.PublicPersonId);
+  if (overrides.length === 0) return members;
+
+  const overrideIds = new Set(overrides.map(member => member.PublicPersonId));
+  return [
+    ...members.filter(member => !overrideIds.has(member.PublicPersonId)),
+    ...overrides
+  ];
+}
+
+/**
+ * Transform Sportlink member records into deduplicated Rondo parent records.
+ *
+ * @param {Array<Object>} members - Sportlink member records
+ * @returns {Array<Object>}
+ */
+function prepareParentsFromMembers(members) {
+  // Map to collect parent data: email -> { name, phones: Set, address, childKnvbIds: [] }
+  const parentDataMap = new Map();
+
+  members.forEach((member) => {
+    [1, 2].forEach((parentIndex) => {
+      const emailField = `EmailAddressParent${parentIndex}`;
+      const phoneField = `TelephoneParent${parentIndex}`;
+      const emailValue = member[emailField];
+
+      // Skip if no email (can't dedupe without email)
+      if (!isValidEmail(emailValue)) return;
+
+      const normalized = normalizeEmail(emailValue);
+      const phone = member[phoneField];
+
+      if (!parentDataMap.has(normalized)) {
+        // First time seeing this parent - capture name and address
+        const name = buildParentName(member, parentIndex);
+
+        // Skip parents without a name in Sportlink
+        if (!name) return;
+
+        parentDataMap.set(normalized, {
+          name: name,
+          phones: new Set(),
+          address: buildParentAddress(member), // Copy from child
+          childKnvbIds: []
+        });
+      }
+
+      const parentData = parentDataMap.get(normalized);
+
+      // Collect phone numbers (may have multiple from different children)
+      if (hasValue(phone)) {
+        parentData.phones.add(String(phone).trim());
+      }
+
+      // Track child KNVB ID for relationship linking (avoid duplicates if same email in both parent fields)
+      if (member.PublicPersonId && !parentData.childKnvbIds.includes(member.PublicPersonId)) {
+        parentData.childKnvbIds.push(member.PublicPersonId);
+      }
+    });
+  });
+
+  return Array.from(parentDataMap, ([email, data]) => prepareParent(email, data));
+}
+
+/**
  * Prepare Rondo Club parents from Sportlink data
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
@@ -89,7 +162,7 @@ function prepareParent(email, data) {
  * @returns {Promise<{success: boolean, parents: Array, skipped: number, error?: string}>}
  */
 async function runPrepare(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, memberOverrides = [] } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
 
@@ -109,61 +182,11 @@ async function runPrepare(options = {}) {
       db.close();
     }
 
-    const members = Array.isArray(sportlinkData.Members) ? sportlinkData.Members : [];
+    const snapshotMembers = Array.isArray(sportlinkData.Members) ? sportlinkData.Members : [];
+    const members = mergeMemberOverrides(snapshotMembers, memberOverrides);
     logVerbose(`Found ${members.length} Sportlink members in database`);
 
-    // Map to collect parent data: email -> { name, phones: Set, address, childKnvbIds: [] }
-    const parentDataMap = new Map();
-
-    members.forEach((member) => {
-      [1, 2].forEach((parentIndex) => {
-        const emailField = `EmailAddressParent${parentIndex}`;
-        const phoneField = `TelephoneParent${parentIndex}`;
-        const emailValue = member[emailField];
-
-        // Skip if no email (can't dedupe without email)
-        if (!isValidEmail(emailValue)) return;
-
-        const normalized = normalizeEmail(emailValue);
-        const phone = member[phoneField];
-
-        // Skip if no email AND no phone
-        if (!normalized && !hasValue(phone)) return;
-
-        if (!parentDataMap.has(normalized)) {
-          // First time seeing this parent - capture name and address
-          const name = buildParentName(member, parentIndex);
-
-          // Skip parents without a name in Sportlink
-          if (!name) return;
-
-          parentDataMap.set(normalized, {
-            name: name,
-            phones: new Set(),
-            address: buildParentAddress(member), // Copy from child
-            childKnvbIds: []
-          });
-        }
-
-        const parentData = parentDataMap.get(normalized);
-
-        // Collect phone numbers (may have multiple from different children)
-        if (hasValue(phone)) {
-          parentData.phones.add(String(phone).trim());
-        }
-
-        // Track child KNVB ID for relationship linking (avoid duplicates if same email in both parent fields)
-        if (member.PublicPersonId && !parentData.childKnvbIds.includes(member.PublicPersonId)) {
-          parentData.childKnvbIds.push(member.PublicPersonId);
-        }
-      });
-    });
-
-    // Convert Map to parent records
-    const parents = [];
-    parentDataMap.forEach((data, email) => {
-      parents.push(prepareParent(email, data));
-    });
+    const parents = prepareParentsFromMembers(members);
 
     logVerbose(`Prepared ${parents.length} parents for Rondo Club sync (deduplicated by email)`);
 
@@ -184,7 +207,7 @@ async function runPrepare(options = {}) {
   }
 }
 
-module.exports = { runPrepare };
+module.exports = { runPrepare, mergeMemberOverrides, prepareParentsFromMembers };
 
 // CLI entry point
 if (require.main === module) {
