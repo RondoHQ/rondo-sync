@@ -25,6 +25,7 @@ function printSummary(logger, stats) {
   logger.log(`Membership pages fetched: ${stats.history.downloaded}`);
   logger.log(`Members updated: ${stats.history.synced}`);
   logger.log(`Work history rows created: ${stats.history.created}`);
+  logger.log(`Work history rows reconciled: ${stats.history.reconciled}`);
   if (stats.history.skippedUnchanged > 0) {
     logger.log(`Skipped (team data unchanged since last run): ${stats.history.skippedUnchanged}`);
   }
@@ -63,6 +64,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       downloaded: 0,
       synced: 0,
       created: 0,
+      reconciled: 0,
       textFallback: 0,
       skippedDuplicate: 0,
       skippedUnchanged: 0,
@@ -81,6 +83,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       stats.history.downloaded = res.downloaded || 0;
       stats.history.synced = res.synced || 0;
       stats.history.created = res.created || 0;
+      stats.history.reconciled = res.reconciled || 0;
       stats.history.textFallback = res.textFallback || 0;
       stats.history.skippedDuplicate = res.skippedDuplicate || 0;
       stats.history.skippedUnchanged = res.skippedUnchanged || 0;
@@ -89,7 +92,7 @@ async function runPlayerHistoryPipeline(options = {}) {
       tracker.endStep(stepId, {
         outcome: res.success ? 'success' : 'failure',
         created: stats.history.created,
-        updated: stats.history.synced,
+        updated: stats.history.reconciled,
         skipped: stats.history.skippedDuplicate + stats.history.skippedUnchanged,
         failed: stats.history.errors.length
       });

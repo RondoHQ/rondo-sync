@@ -591,8 +591,8 @@ async function syncIndividual(knvbId, options = {}) {
         if (playerHistoryResult.errors.length > 0) {
           console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
           playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
-        } else if (playerHistoryResult.created > 0) {
-          console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+        } else if (playerHistoryResult.created > 0 || playerHistoryResult.reconciled > 0) {
+          console.log(`  Player history: ${playerHistoryResult.created || 0} added, ${playerHistoryResult.reconciled || 0} reconciled`);
         }
 
         // Photo upload (non-critical — failures logged but not propagated)
@@ -663,8 +663,8 @@ async function syncIndividual(knvbId, options = {}) {
     if (playerHistoryResult.errors.length > 0) {
       console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
       playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
-    } else if (playerHistoryResult.created > 0) {
-      console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+    } else if (playerHistoryResult.created > 0 || playerHistoryResult.reconciled > 0) {
+      console.log(`  Player history: ${playerHistoryResult.created || 0} added, ${playerHistoryResult.reconciled || 0} reconciled`);
     }
 
     // Photo upload (non-critical — failures logged but not propagated)

@@ -11,17 +11,34 @@ const {
   updateWorkHistorySyncState,
   deleteWorkHistory,
   getTeamMemberRole,
-  resolveTeamForMember
+  getAllCurrentTeamAssignments,
+  resolveTeamForMember,
+  getWorkHistoryByMember,
+  getAllTrackedMembers,
+  computeWorkHistoryHash
 } = require('../lib/rondo-club-db');
 
-/**
- * Check if a team name is valid
- * @param {string} teamName - Team name to validate
- * @returns {boolean} - True if valid team name
- */
 function isValidTeamName(teamName) {
-  if (!teamName) return false;
-  return true;
+  return Boolean(teamName);
+}
+
+/**
+ * Extract the current team-presence snapshot from the member search export.
+ * This is retained as a safety net when one individual roster request times
+ * out: a partial roster download must never end a whole team's assignments.
+ */
+function extractMemberTeams(sportlinkMember) {
+  const teamSet = new Set();
+  for (const value of [sportlinkMember.UnionTeams, sportlinkMember.ClubTeams]) {
+    const teamValue = String(value || '').trim();
+    if (!teamValue) continue;
+    teamValue
+      .split(',')
+      .map(team => team.trim())
+      .filter(isValidTeamName)
+      .forEach(team => teamSet.add(team));
+  }
+  return Array.from(teamSet);
 }
 
 /**
@@ -42,33 +59,6 @@ function lookupTeamRondoClubId(teamCode, teamMap, db, knvbId) {
     return resolveTeamForMember(db, knvbId, teamCode) || undefined;
   }
   return undefined;
-}
-
-/**
- * Extract teams for a member from Sportlink data.
- * Priority: UnionTeams first, ClubTeams fallback.
- * Splits comma-separated values and filters invalid names.
- * Returns array of team names (member can be in multiple teams).
- * @param {Object} sportlinkMember - Sportlink member record
- * @returns {Array<string>} - Team names
- */
-function extractMemberTeams(sportlinkMember) {
-  const teamSet = new Set();
-
-  // UnionTeams (priority)
-  const unionTeam = (sportlinkMember.UnionTeams || '').trim();
-  if (unionTeam) {
-    // Split comma-separated and filter invalid
-    unionTeam.split(',').map(t => t.trim()).filter(isValidTeamName).forEach(t => teamSet.add(t));
-  }
-
-  // ClubTeams (additional, not fallback - member can be in both)
-  const clubTeam = (sportlinkMember.ClubTeams || '').trim();
-  if (clubTeam) {
-    clubTeam.split(',').map(t => t.trim()).filter(isValidTeamName).forEach(t => teamSet.add(t));
-  }
-
-  return Array.from(teamSet);
 }
 
 /**
@@ -93,6 +83,35 @@ function formatDateForACF(date) {
  */
 function getJobTitleForTeam(db, knvbId, teamName) {
   return getTeamMemberRole(db, knvbId, teamName);
+}
+
+function sameId(left, right) {
+  return left !== null && left !== undefined && right !== null && right !== undefined && String(left) === String(right);
+}
+
+/**
+ * Find the actual ACF row for a team assignment. Work-history is a shared
+ * repeater: player-history and commissie syncs can insert rows and invalidate
+ * the array index stored in SQLite. Treat the stored index as a hint only.
+ */
+function findTeamWorkHistoryIndex(workHistory, expectedIndex, teamRondoClubId) {
+  if (!teamRondoClubId) return -1;
+
+  if (
+    Number.isInteger(expectedIndex) &&
+    expectedIndex >= 0 &&
+    expectedIndex < workHistory.length &&
+    sameId(workHistory[expectedIndex]?.team, teamRondoClubId) &&
+    workHistory[expectedIndex]?.is_current !== false
+  ) {
+    return expectedIndex;
+  }
+
+  const currentIndex = workHistory.findIndex(entry => (
+    sameId(entry?.team, teamRondoClubId) && entry?.is_current !== false
+  ));
+  if (currentIndex >= 0) return currentIndex;
+  return -1;
 }
 
 /**
@@ -124,7 +143,9 @@ function detectTeamChanges(db, knvbId, currentTeams) {
   const trackedHistory = getMemberWorkHistory(db, knvbId);
   const trackedTeams = trackedHistory.map(h => ({
     team_name: h.team_name,
-    rondo_club_work_history_id: h.rondo_club_work_history_id
+    rondo_club_work_history_id: h.rondo_club_work_history_id,
+    source_hash: h.source_hash,
+    last_synced_hash: h.last_synced_hash
   }));
 
   // Build map of tracked team names with their sync status
@@ -153,7 +174,12 @@ function detectTeamChanges(db, knvbId, currentTeams) {
     return rondoClubWorkHistoryId !== null && rondoClubWorkHistoryId !== undefined; // Tracked and synced
   });
 
-  return { added, removed, unchanged };
+  const updated = unchanged.filter(teamName => {
+    const tracked = trackedHistory.find(history => history.team_name === teamName);
+    return tracked && tracked.source_hash !== tracked.last_synced_hash;
+  });
+
+  return { added, removed, unchanged, updated };
 }
 
 /**
@@ -179,7 +205,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
 
   // Detect changes
   const changes = detectTeamChanges(db, knvb_id, currentTeams);
-  logVerbose(`Member ${knvb_id}: ${changes.added.length} added, ${changes.removed.length} removed, ${changes.unchanged.length} unchanged`);
+  logVerbose(`Member ${knvb_id}: ${changes.added.length} added, ${changes.removed.length} removed, ${changes.updated.length} role-updated, ${changes.unchanged.length} unchanged`);
 
   // Fetch existing data from WordPress
   let existingWorkHistory = [];
@@ -198,32 +224,34 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
   let endedCount = 0;
   let updatedCount = 0;
   let modified = false;
+  const trackingDeletes = [];
+  const trackingUpdates = [];
 
   // Build new work_history array
   const newWorkHistory = [...existingWorkHistory];
 
-  // Handle removed teams (only sync-created entries)
+  // Handle removed teams. Resolve by team identity because the saved repeater
+  // index can drift whenever another pipeline inserts work-history rows.
   for (const removed of changes.removed) {
-    if (removed.rondo_club_work_history_id !== null && removed.rondo_club_work_history_id !== undefined) {
-      // This is a sync-created entry, we can modify it
-      const index = removed.rondo_club_work_history_id;
-      if (index < newWorkHistory.length) {
-        newWorkHistory[index] = {
-          ...newWorkHistory[index],
-          is_current: false,
-          end_date: formatDateForACF(new Date())
-        };
-        endedCount++;
-        modified = true;
-      }
-      // Delete from tracking
-      deleteWorkHistory(db, knvb_id, removed.team_name);
+    const teamRondoClubId = lookupTeamRondoClubId(removed.team_name, teamMap, db, knvb_id);
+    const index = findTeamWorkHistoryIndex(
+      newWorkHistory,
+      removed.rondo_club_work_history_id,
+      teamRondoClubId
+    );
+    if (index >= 0) {
+      newWorkHistory[index] = {
+        ...newWorkHistory[index],
+        is_current: false,
+        end_date: formatDateForACF(new Date())
+      };
+      endedCount++;
+      modified = true;
       logVerbose(`Ended work_history for team ${removed.team_name} (index ${index})`);
     } else {
-      // Manual entry, don't modify but remove from tracking
-      deleteWorkHistory(db, knvb_id, removed.team_name);
-      logVerbose(`Removed tracking for manual entry: ${removed.team_name}`);
+      logVerbose(`Could not find a current ACF row for removed team ${removed.team_name}; clearing stale tracking only`);
     }
+    trackingDeletes.push(removed.team_name);
   }
 
   // Handle added teams
@@ -241,24 +269,34 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       logVerbose(`Warning: No role description for ${knvb_id} in team ${teamName}, skipping`);
       continue;
     }
-    const entry = buildWorkHistoryEntry(teamStadionId, isBackfill, jobTitle);
-    logVerbose(`  Using job title: ${jobTitle} for team ${teamName}`);
-    const newIndex = newWorkHistory.length;
-    newWorkHistory.push(entry);
+    const existingIndex = findTeamWorkHistoryIndex(newWorkHistory, null, teamStadionId);
+    const newIndex = existingIndex >= 0 ? existingIndex : newWorkHistory.length;
+    if (existingIndex >= 0) {
+      newWorkHistory[existingIndex] = {
+        ...newWorkHistory[existingIndex],
+        job_title: jobTitle,
+        is_current: true,
+        end_date: '',
+        team: teamStadionId
+      };
+      updatedCount++;
+    } else {
+      newWorkHistory.push(buildWorkHistoryEntry(teamStadionId, isBackfill, jobTitle));
+      addedCount++;
+    }
 
-    // Update tracking with rondo_club_work_history_id
-    const sourceHash = require('../lib/rondo-club-db').computeWorkHistoryHash(knvb_id, teamName);
-    updateWorkHistorySyncState(db, knvb_id, teamName, sourceHash, newIndex);
-
-    addedCount++;
+    const sourceHash = computeWorkHistoryHash(knvb_id, teamName, jobTitle);
+    trackingUpdates.push({ teamName, sourceHash, index: newIndex });
     modified = true;
     logVerbose(`Added work_history for team ${teamName} (index ${newIndex})`);
   }
 
-  // Handle unchanged teams when force is true (update or create)
-  if (force) {
+  // Refresh unchanged teams during a force run, and automatically update rows
+  // whose role description changed in Sportlink.
+  const teamsToRefresh = force ? changes.unchanged : changes.updated;
+  if (teamsToRefresh.length > 0) {
     const trackedHistory = getMemberWorkHistory(db, knvb_id);
-    for (const teamName of changes.unchanged) {
+    for (const teamName of teamsToRefresh) {
       const teamStadionId = lookupTeamRondoClubId(teamName, teamMap, db, knvb_id);
       if (!teamStadionId) {
         logVerbose(`Warning: Team "${teamName}" not found in Rondo Club, skipping`);
@@ -272,47 +310,39 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       }
       const tracked = trackedHistory.find(h => h.team_name === teamName);
 
-      if (tracked && tracked.rondo_club_work_history_id !== null && tracked.rondo_club_work_history_id !== undefined) {
-        // We have a tracked index - update that entry
-        const index = tracked.rondo_club_work_history_id;
-        if (index < newWorkHistory.length) {
-          newWorkHistory[index] = {
-            ...newWorkHistory[index],
-            job_title: jobTitle,
-            team: teamStadionId
-          };
-          updatedCount++;
-          modified = true;
-          logVerbose(`Updated work_history for team ${teamName} (index ${index}) with job_title: ${jobTitle}`);
-        }
+      const index = findTeamWorkHistoryIndex(
+        newWorkHistory,
+        tracked?.rondo_club_work_history_id,
+        teamStadionId
+      );
+      if (index >= 0) {
+        newWorkHistory[index] = {
+          ...newWorkHistory[index],
+          job_title: jobTitle,
+          is_current: true,
+          end_date: '',
+          team: teamStadionId
+        };
+        updatedCount++;
+        modified = true;
+        trackingUpdates.push({
+          teamName,
+          sourceHash: computeWorkHistoryHash(knvb_id, teamName, jobTitle),
+          index
+        });
+        logVerbose(`Updated work_history for team ${teamName} (index ${index}) with job_title: ${jobTitle}`);
       } else {
-        // No tracked index - find existing entry by team or create new
-        const existingIndex = newWorkHistory.findIndex(e => e.team === teamStadionId);
-        if (existingIndex >= 0) {
-          // Update existing WordPress entry
-          newWorkHistory[existingIndex] = {
-            ...newWorkHistory[existingIndex],
-            job_title: jobTitle
-          };
-          // Update tracking with the found index
-          const sourceHash = require('../lib/rondo-club-db').computeWorkHistoryHash(knvb_id, teamName);
-          updateWorkHistorySyncState(db, knvb_id, teamName, sourceHash, existingIndex);
-          updatedCount++;
-          modified = true;
-          logVerbose(`Updated existing work_history for team ${teamName} (index ${existingIndex}) with job_title: ${jobTitle}`);
-        } else {
-          // Create new entry
-          const isBackfill = !trackedHistory.some(h => h.last_synced_at);
-          const entry = buildWorkHistoryEntry(teamStadionId, isBackfill, jobTitle);
-          const newIndex = newWorkHistory.length;
-          newWorkHistory.push(entry);
-          // Update tracking
-          const sourceHash = require('../lib/rondo-club-db').computeWorkHistoryHash(knvb_id, teamName);
-          updateWorkHistorySyncState(db, knvb_id, teamName, sourceHash, newIndex);
-          addedCount++;
-          modified = true;
-          logVerbose(`Created work_history for team ${teamName} (index ${newIndex}) with job_title: ${jobTitle}`);
-        }
+        const isBackfill = !trackedHistory.some(h => h.last_synced_at);
+        const newIndex = newWorkHistory.length;
+        newWorkHistory.push(buildWorkHistoryEntry(teamStadionId, isBackfill, jobTitle));
+        trackingUpdates.push({
+          teamName,
+          sourceHash: computeWorkHistoryHash(knvb_id, teamName, jobTitle),
+          index: newIndex
+        });
+        addedCount++;
+        modified = true;
+        logVerbose(`Created work_history for team ${teamName} (index ${newIndex}) with job_title: ${jobTitle}`);
       }
     }
   }
@@ -326,6 +356,12 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
         { acf: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
         options
       );
+      for (const teamName of trackingDeletes) {
+        deleteWorkHistory(db, knvb_id, teamName);
+      }
+      for (const update of trackingUpdates) {
+        updateWorkHistorySyncState(db, knvb_id, update.teamName, update.sourceHash, update.index);
+      }
     } catch (error) {
       logVerbose(`Error updating work_history for ${knvb_id}:`, error.message);
       if (error.details) {
@@ -335,6 +371,10 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       throw error;
     }
     return { action: 'updated', added: addedCount, ended: endedCount, updated: updatedCount };
+  }
+
+  for (const teamName of trackingDeletes) {
+    deleteWorkHistory(db, knvb_id, teamName);
   }
 
   return { action: 'unchanged', added: 0, ended: 0, updated: 0 };
@@ -403,27 +443,38 @@ async function runSync(options = {}) {
       }
       logVerbose(`Loaded ${teams.length} teams from Rondo Club (${teamMap.size} lookup entries)`);
 
-      // Build work history records for all members
+      // Build current presence from both the member-search export and the team
+      // rosters downloaded immediately before this step. The former prevents
+      // false removals after a partial roster timeout; the latter supplies the
+      // canonical team name and exact role description.
       const workHistoryRecords = [];
-      const memberTeams = new Map(); // Map<knvb_id, { teams: [], kernelGameActivities: string }>
+      const memberTeams = new Map(); // Map<knvb_id, { teams: [] }>
 
       for (const member of members) {
         const knvbId = member.PublicPersonId;
         if (!knvbId) continue;
+        memberTeams.set(knvbId, { teams: extractMemberTeams(member) });
+      }
 
-        const teams = extractMemberTeams(member);
-        if (teams.length === 0) continue;
+      const seenAssignments = new Set();
+      for (const assignment of getAllCurrentTeamAssignments(rondoClubDb)) {
+        const key = `${assignment.knvb_id}\u0000${assignment.team_name}`;
+        if (seenAssignments.has(key)) continue;
+        seenAssignments.add(key);
 
-        const kernelGameActivities = member.KernelGameActivities || '';
-        memberTeams.set(knvbId, { teams, kernelGameActivities });
-
-        for (const teamName of teams) {
-          workHistoryRecords.push({
-            knvb_id: knvbId,
-            team_name: teamName,
-            is_backfill: backfillOnly
-          });
+        if (!memberTeams.has(assignment.knvb_id)) {
+          memberTeams.set(assignment.knvb_id, { teams: [] });
         }
+        const currentTeams = memberTeams.get(assignment.knvb_id).teams;
+        if (!currentTeams.includes(assignment.team_name)) {
+          currentTeams.push(assignment.team_name);
+        }
+        workHistoryRecords.push({
+          knvb_id: assignment.knvb_id,
+          team_name: assignment.team_name,
+          role_description: assignment.role_description,
+          is_backfill: backfillOnly
+        });
       }
 
       logVerbose(`Extracted ${workHistoryRecords.length} work history records`);
@@ -451,6 +502,29 @@ async function runSync(options = {}) {
         memberMap.get(record.knvb_id).teams.push(record.team_name);
       }
 
+      // A disappearance creates no new source row, so it cannot show up in
+      // the hash query above. Explicitly queue members whose current Sportlink
+      // team set differs from the set tracked in SQLite, including people who
+      // now have no team at all or disappeared from the latest member export.
+      if (!backfillOnly) {
+        const trackedByMember = getWorkHistoryByMember(rondoClubDb);
+        const trackedMembers = new Map(getAllTrackedMembers(rondoClubDb).map(row => [row.knvb_id, row]));
+        for (const [knvbId, trackedTeams] of trackedByMember) {
+          const currentTeams = new Set(memberTeams.get(knvbId)?.teams || []);
+          const differs = trackedTeams.size !== currentTeams.size ||
+            Array.from(trackedTeams).some(teamName => !currentTeams.has(teamName));
+          if (!differs || memberMap.has(knvbId)) continue;
+
+          const trackedMember = trackedMembers.get(knvbId);
+          if (!trackedMember?.rondo_club_id) continue;
+          memberMap.set(knvbId, {
+            knvb_id: knvbId,
+            rondo_club_id: trackedMember.rondo_club_id,
+            teams: []
+          });
+        }
+      }
+
       const membersToSync = Array.from(memberMap.values());
       result.total = membersToSync.length;
       logVerbose(`${result.total} members need work history sync`);
@@ -458,9 +532,8 @@ async function runSync(options = {}) {
       // Sync each member
       for (let i = 0; i < membersToSync.length; i++) {
         const member = membersToSync[i];
-        const memberData = memberTeams.get(member.knvb_id) || { teams: [], kernelGameActivities: '' };
+        const memberData = memberTeams.get(member.knvb_id) || { teams: [] };
         const currentTeams = memberData.teams;
-        const kernelGameActivities = memberData.kernelGameActivities;
         logVerbose(`Syncing ${i + 1}/${result.total}: ${member.knvb_id}`);
 
         try {
@@ -503,7 +576,11 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync };
+module.exports = {
+  runSync,
+  detectTeamChanges,
+  findTeamWorkHistoryIndex
+};
 
 // CLI entry point
 if (require.main === module) {

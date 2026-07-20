@@ -230,6 +230,8 @@ ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node -e "
 
 If eligible-pending is **0** after the run, the detector converged — the large batch was legitimate (e.g. the **July 1 season rollover**: memberships expire/renew, team assignments + age categories move club-wide, so hundreds of members genuinely change at once; a single day of admin edits also spikes it). A real churn loop would still be non-zero and would NOT settle on the next run — the giveaway is a spike that clears to 0 changes on subsequent runs (as the 2026-06-29 15:00 spike did across all of 06-30). Long duration on those days is throughput, not a bug: the forward sync does a sequential GET-then-PUT per member through Cloudflare (~8s each), so ~750 members ≈ ~100 min. Only chase a volatile-field hash bug if eligible-pending stays non-zero across consecutive runs with no real Sportlink change.
 
+**Team work-history indexes are hints, not identities.** The `work_history` ACF repeater is shared by team, player-history, and commissie syncs, so another pipeline can insert rows and shift every later array index. Team cleanup must verify `rondo_club_work_history_id` against the expected Rondo team ID and fall back to finding the current row by team ID. Player-history must reconcile a newly ended Sportlink relation with an existing current row; an append-only merge recreates the stale-role bug by adding an ended duplicate while leaving the old row current. Disappearance-only team changes also need explicit set comparison because they create no new source row/hash mismatch.
+
 ## Documentation Maintenance
 
 After functional changes, update:
