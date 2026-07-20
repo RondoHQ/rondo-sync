@@ -22,6 +22,7 @@ const {
 const { resolveFieldConflicts, generateConflictSummary } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
+const { normalizePersonEmailMatches, selectParentEmailMatch } = require('../lib/parent-person-resolution');
 
 /**
  * Build a readable error message with API code/details for logs and summaries.
@@ -391,9 +392,9 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
  * Search for an existing person in Rondo Club by email address
  * @param {string} email - Email to search for
  * @param {Object} options - Logger and verbose options
- * @returns {Promise<number|null>} - Rondo Club person ID if found, null otherwise
+ * @returns {Promise<Array<{id: number, status: string}>>} Exact matches
  */
-async function findPersonByEmail(email, options) {
+async function findPeopleByEmail(email, options) {
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
 
   try {
@@ -405,16 +406,31 @@ async function findPersonByEmail(email, options) {
       options
     );
 
-    const personId = response.body?.id;
-    if (personId) {
-      logVerbose(`Found existing person ${personId} with email ${email}`);
-      return personId;
+    const matches = normalizePersonEmailMatches(response.body);
+    if (matches.length > 0) {
+      logVerbose(`Found ${matches.length} existing person match(es) with email ${email}`);
     }
-    return null;
+    return matches;
   } catch (error) {
     logVerbose(`Email lookup failed: ${error.message}`);
-    return null;
+    return [];
   }
+}
+
+/**
+ * Restore a trashed person through the standard WordPress REST controller.
+ *
+ * @param {number} personId - Rondo Club person ID
+ * @param {Object} options - Logger and verbose options
+ * @returns {Promise<Object>} REST response
+ */
+async function restorePerson(personId, options) {
+  return rondoClubRequest(
+    `wp/v2/people/${personId}`,
+    'PUT',
+    { status: 'publish' },
+    options
+  );
 }
 
 /**
@@ -461,21 +477,21 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     if (nonChildMatch) {
       logVerbose(`Parent ${email} found as member in local DB (person ${nonChildMatch.rondo_club_id}), will merge`);
       rondo_club_id = nonChildMatch.rondo_club_id;
-    } else if (memberMatches.length === 0) {
-      // No member match at all — check WordPress API as fallback
-      const existingId = await findPersonByEmail(email, options);
-      if (existingId) {
-        // Verify the API match isn't a known child (own or sibling-by-shared-email)
-        const isChild = knownChildRondoClubIds.has(existingId);
-        if (!isChild) {
-          logVerbose(`Parent ${email} already exists as person ${existingId}, will merge`);
-          rondo_club_id = existingId;
-        } else {
-          logVerbose(`Parent ${email} found person ${existingId} but it's a known child, will create separate`);
-        }
-      }
     } else {
-      logVerbose(`Parent ${email} only matches known children in local DB, will create separate`);
+      // Local matches may all be children sharing the family inbox. Ask Rondo
+      // for every exact match, including trash, and let the child guard decide.
+      const emailMatches = await findPeopleByEmail(email, options);
+      const existingMatch = selectParentEmailMatch(emailMatches, knownChildRondoClubIds);
+      if (existingMatch) {
+        if (existingMatch.status === 'trash') {
+          await restorePerson(existingMatch.id, options);
+          logVerbose(`Restored parent ${existingMatch.id} from trash for ${email}`);
+        }
+        logVerbose(`Parent ${email} already exists as person ${existingMatch.id}, will merge`);
+        rondo_club_id = existingMatch.id;
+      } else if (memberMatches.length > 0 || emailMatches.length > 0) {
+        logVerbose(`Parent ${email} only matches known children, will create separate`);
+      }
     }
   }
 
@@ -495,11 +511,21 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       existingLastName = existing.body.acf?.last_name || '';
       existingKnvbId = existing.body.acf?.['knvb-id'] || null;
     } catch (e) {
-      // Person was deleted from WordPress - reset tracking state and create fresh
+      // A tracked parent can be in trash because every child temporarily left
+      // the club. Restore that exact record before considering a new person.
       if (e.message && e.message.includes('404')) {
-        logVerbose(`Person ${rondo_club_id} no longer exists (404) - will create fresh`);
-        updateParentSyncState(db, email, null, null); // Clear rondo_club_id and hash
-        rondo_club_id = null; // Trigger create path below
+        try {
+          const restored = await restorePerson(rondo_club_id, options);
+          existingRelationships = restored.body.acf?.relationships || [];
+          existingFirstName = restored.body.acf?.first_name || '';
+          existingLastName = restored.body.acf?.last_name || '';
+          existingKnvbId = restored.body.acf?.['knvb-id'] || null;
+          logVerbose(`Restored tracked parent ${rondo_club_id} from trash`);
+        } catch (restoreError) {
+          logVerbose(`Person ${rondo_club_id} could not be restored; will create fresh`);
+          updateParentSyncState(db, email, null, null);
+          rondo_club_id = null;
+        }
       } else {
         logVerbose(`Could not fetch existing person: ${e.message}`);
       }
