@@ -22,7 +22,11 @@ const {
 const { resolveFieldConflicts, generateConflictSummary } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
-const { normalizePersonEmailMatches, selectParentEmailMatch } = require('../lib/parent-person-resolution');
+const {
+  normalizePersonEmailMatches,
+  selectParentEmailMatch,
+  shouldPreserveParentProfile
+} = require('../lib/parent-person-resolution');
 
 /**
  * Build a readable error message with API code/details for logs and summaries.
@@ -526,23 +530,25 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     let existingRelationships = [];
     let existingFirstName = '';
     let existingLastName = '';
-    let existingKnvbId = null;
+    let preserveExistingProfile = false;
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      existingRelationships = existing.body.acf?.relationships || [];
-      existingFirstName = existing.body.acf?.first_name || '';
-      existingLastName = existing.body.acf?.last_name || '';
-      existingKnvbId = existing.body.acf?.['knvb-id'] || null;
+      const existingAcf = existing.body.acf || {};
+      existingRelationships = existingAcf.relationships || [];
+      existingFirstName = existingAcf.first_name || '';
+      existingLastName = existingAcf.last_name || '';
+      preserveExistingProfile = shouldPreserveParentProfile(existingAcf);
     } catch (e) {
       // A tracked parent can be in trash because every child temporarily left
       // the club. Restore that exact record before considering a new person.
       if (e.message && e.message.includes('404')) {
         try {
           const restored = await restorePerson(rondo_club_id, options);
-          existingRelationships = restored.body.acf?.relationships || [];
-          existingFirstName = restored.body.acf?.first_name || '';
-          existingLastName = restored.body.acf?.last_name || '';
-          existingKnvbId = restored.body.acf?.['knvb-id'] || null;
+          const restoredAcf = restored.body.acf || {};
+          existingRelationships = restoredAcf.relationships || [];
+          existingFirstName = restoredAcf.first_name || '';
+          existingLastName = restoredAcf.last_name || '';
+          preserveExistingProfile = shouldPreserveParentProfile(restoredAcf);
           logVerbose(`Restored tracked parent ${rondo_club_id} from trash`);
         } catch (restoreError) {
           logVerbose(`Person ${rondo_club_id} could not be restored; will create fresh`);
@@ -567,16 +573,15 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       const mergedRelationships = [...nonChildRelationships, ...newChildRelationships];
 
       // Determine name to use:
-      // - If person has KNVB ID, they're a member - preserve their properly-split name
-      // - If no KNVB ID, they're a pure parent - update name from Sportlink
-      const isMember = !!existingKnvbId;
-      const firstName = isMember ? existingFirstName : (data.acf.first_name || existingFirstName);
-      const lastName = isMember ? existingLastName : (data.acf.last_name || existingLastName);
+      // - Members, contacts, and sponsors keep their existing managed profile.
+      // - Standalone parent records are updated from Sportlink.
+      const firstName = preserveExistingProfile ? existingFirstName : (data.acf.first_name || existingFirstName);
+      const lastName = preserveExistingProfile ? existingLastName : (data.acf.last_name || existingLastName);
       const fixedContactFields = {};
 
       // Pure parent records are managed by Sportlink. Keep their fixed ACF
-      // contact fields current, but never overwrite a member's own contacts.
-      if (!isMember) {
+      // contact fields current, but never overwrite another managed profile.
+      if (!preserveExistingProfile) {
         for (const field of ['email_1', 'email_2', 'mobile_1', 'mobile_2', 'telephone_1', 'telephone_2']) {
           if (Object.prototype.hasOwnProperty.call(data.acf, field)) {
             fixedContactFields[field] = data.acf[field];
@@ -584,7 +589,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
         }
       }
 
-      if (!isMember) {
+      if (!preserveExistingProfile) {
         logVerbose(`Pure parent - updating name from Sportlink: "${firstName} ${lastName}"`);
       }
 
