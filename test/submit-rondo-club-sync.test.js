@@ -3,7 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isTrackedParentKnownChild } = require('../steps/submit-rondo-club-sync');
+const {
+  isTrackedParentKnownChild,
+  mergeParentChildRelationships
+} = require('../steps/submit-rondo-club-sync');
 
 test('recognizes a stale parent mapping to one of its own children', () => {
   const knownChildIds = new Set([491, 572, 573]);
@@ -24,4 +27,46 @@ test('keeps a genuine separate parent mapping', () => {
 
   assert.equal(isTrackedParentKnownChild(9001, knownChildIds), false);
   assert.equal(isTrackedParentKnownChild(null, knownChildIds), false);
+});
+
+test('preserves manually linked former children while refreshing current children', () => {
+  const existing = [
+    { related_person: 4893, relationship_type: [3], relationship_label: '' },
+    { related_person: 4894, relationship_type: [9], relationship_label: '' },
+    { related_person: 708, relationship_type: [3], relationship_label: '' },
+    { related_person: 9000, relationship_type: [4], relationship_label: '' }
+  ];
+  const current = [
+    { related_person: 708, relationship_type: [3], relationship_label: '' },
+    { related_person: 707, relationship_type: [3], relationship_label: '' }
+  ];
+
+  assert.deepEqual(
+    mergeParentChildRelationships(existing, current, new Set([707, 708]), 8604),
+    [
+      { related_person: 4893, relationship_type: [3], relationship_label: '' },
+      { related_person: 4894, relationship_type: [3], relationship_label: '' },
+      { related_person: 9000, relationship_type: [4], relationship_label: '' },
+      { related_person: 708, relationship_type: [3], relationship_label: '' },
+      { related_person: 707, relationship_type: [3], relationship_label: '' }
+    ]
+  );
+});
+
+test('drops stale links for current children and prevents a parent self-link', () => {
+  const existing = [
+    { related_person: 708, relationship_type: [9], relationship_label: '' },
+    { related_person: 8604, relationship_type: [3], relationship_label: '' }
+  ];
+  const current = [
+    { related_person: 708, relationship_type: [3], relationship_label: '' },
+    { related_person: 8604, relationship_type: [3], relationship_label: '' }
+  ];
+
+  assert.deepEqual(
+    mergeParentChildRelationships(existing, current, new Set([708]), 8604),
+    [
+      { related_person: 708, relationship_type: [3], relationship_label: '' }
+    ]
+  );
 });

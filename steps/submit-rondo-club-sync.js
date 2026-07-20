@@ -356,6 +356,48 @@ function isTrackedParentKnownChild(rondoClubId, knownChildRondoClubIds) {
 }
 
 /**
+ * Replace Sportlink-managed child links while preserving manually linked
+ * former children that no longer occur in the current parent feed.
+ *
+ * @param {Array<Object>} existingRelationships
+ * @param {Array<Object>} currentChildRelationships
+ * @param {Set<number>} knownCurrentChildIds
+ * @param {number|null} parentId
+ * @returns {Array<Object>}
+ */
+function mergeParentChildRelationships(
+  existingRelationships,
+  currentChildRelationships,
+  knownCurrentChildIds,
+  parentId = null
+) {
+  const currentIds = knownCurrentChildIds instanceof Set
+    ? knownCurrentChildIds
+    : new Set(knownCurrentChildIds || []);
+
+  const preservedRelationships = existingRelationships
+    .filter((relationship) => {
+      if (!hasRelationshipType(relationship, RELATIONSHIP_TYPE.CHILD) && !hasRelationshipType(relationship, 9)) {
+        return true;
+      }
+
+      const relatedPersonId = Number(relationship.related_person);
+      return relatedPersonId > 0 && relatedPersonId !== Number(parentId) && !currentIds.has(relatedPersonId);
+    })
+    .map((relationship) => (
+      hasRelationshipType(relationship, RELATIONSHIP_TYPE.CHILD) || hasRelationshipType(relationship, 9)
+        ? { ...relationship, relationship_type: [RELATIONSHIP_TYPE.CHILD] }
+        : relationship
+    ));
+
+  const currentRelationships = currentChildRelationships.filter(
+    relationship => Number(relationship.related_person) !== Number(parentId)
+  );
+
+  return [...preservedRelationships, ...currentRelationships];
+}
+
+/**
  * Update children's parents relationship field (bidirectional linking)
  * Preserves existing parent links, adds new one
  */
@@ -562,15 +604,14 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
 
     // Only proceed with update if person still exists (rondo_club_id not cleared by 404)
     if (rondo_club_id) {
-      // Merge: keep all existing non-child relationships, replace child relationships with fresh correct ones.
-      // This replaces any old wrong-typed child relations (e.g. old type 9 instead of correct type 3).
-      const nonChildRelationships = existingRelationships.filter(r =>
-        !hasRelationshipType(r, RELATIONSHIP_TYPE.CHILD) && !hasRelationshipType(r, 9) // 9 = old wrong type
+      // Replace links for current Sportlink children, but keep manually linked
+      // former children that no longer occur in the parent feed.
+      const mergedRelationships = mergeParentChildRelationships(
+        existingRelationships,
+        childRelationships,
+        knownChildRondoClubIds,
+        rondo_club_id
       );
-      const newChildRelationships = childRelationships.filter(r =>
-        r.related_person !== rondo_club_id // Prevent self-referential relationships
-      );
-      const mergedRelationships = [...nonChildRelationships, ...newChildRelationships];
 
       // Determine name to use:
       // - Members, contacts, and sponsors keep their existing managed profile.
@@ -1081,7 +1122,13 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncParent, logFinancialBlockActivity, isTrackedParentKnownChild };
+module.exports = {
+  runSync,
+  syncParent,
+  logFinancialBlockActivity,
+  isTrackedParentKnownChild,
+  mergeParentChildRelationships
+};
 
 // CLI entry point
 if (require.main === module) {
