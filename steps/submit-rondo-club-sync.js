@@ -339,6 +339,19 @@ function hasRelationshipType(relationship, typeId) {
 }
 
 /**
+ * Check whether a tracked parent post is actually one of the known children.
+ * This catches stale mappings created before the shared-family-email guards
+ * were added; those mappings must be cleared before normal discovery runs.
+ *
+ * @param {number|null} rondoClubId - Tracked Rondo Club parent post ID
+ * @param {Set<number>} knownChildRondoClubIds - All known child post IDs
+ * @returns {boolean}
+ */
+function isTrackedParentKnownChild(rondoClubId, knownChildRondoClubIds) {
+  return Boolean(rondoClubId && knownChildRondoClubIds.has(rondoClubId));
+}
+
+/**
  * Update children's parents relationship field (bidirectional linking)
  * Preserves existing parent links, adds new one
  */
@@ -461,6 +474,18 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     relationship_label: ''
   }));
 
+  const knownChildKnvbIds = siblingGuard.allChildKnvbIds || new Set(childKnvbIds);
+  const knownChildRondoClubIds = siblingGuard.allChildRondoClubIds || new Set(childRondoClubIds);
+
+  // Older sync runs may already have stored a child post as this parent's ID.
+  // The discovery guard below only protects unmapped parents, so self-heal the
+  // stale mapping first and let the normal create/merge path resolve it again.
+  if (isTrackedParentKnownChild(rondo_club_id, knownChildRondoClubIds)) {
+    logVerbose(`Parent ${email} is incorrectly tracked as known child ${rondo_club_id}; clearing stale mapping`);
+    updateParentSyncState(db, email, null, null);
+    rondo_club_id = null;
+  }
+
   // If no rondo_club_id yet, check if person already exists by email (e.g., they're also a member)
   // Check local database first (reliable and fast), then WordPress API as fallback
   // Important: exclude any known child — in youth clubs, multiple siblings often share
@@ -468,8 +493,6 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
   // We exclude both this parent's direct children AND any sibling registered as a child
   // of any other parent record (sibling-by-shared-email guard).
   if (!rondo_club_id) {
-    const knownChildKnvbIds = siblingGuard.allChildKnvbIds || new Set(childKnvbIds);
-    const knownChildRondoClubIds = siblingGuard.allChildRondoClubIds || new Set(childRondoClubIds);
     const memberMatches = db.prepare(
       'SELECT knvb_id, rondo_club_id FROM rondo_club_members WHERE LOWER(email) = LOWER(?) AND rondo_club_id IS NOT NULL'
     ).all(email);
@@ -735,10 +758,18 @@ async function parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, optio
 /**
  * Find hash-unchanged parents that still need sync because child relationships drifted.
  */
-async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options) {
+async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options, knownChildRondoClubIds = new Set()) {
   const unchangedParents = getUnchangedParents(db);
   const stale = [];
   for (const parent of unchangedParents) {
+    // A historical email match may have stored one of the children as the
+    // parent post. Force that unchanged row through syncParent so its mapping
+    // is cleared before it can keep writing parent/child relationships.
+    if (isTrackedParentKnownChild(parent.rondo_club_id, knownChildRondoClubIds)) {
+      stale.push(parent);
+      continue;
+    }
+
     if (await parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, options)) {
       stale.push(parent);
     }
@@ -801,7 +832,12 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
 
   // Guard against stale links when child person IDs changed while parent source data did not.
   if (!force) {
-    const staleRelationshipParents = await getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options);
+    const staleRelationshipParents = await getParentsWithStaleRelationships(
+      db,
+      knvbIdToRondoClubId,
+      options,
+      allChildRondoClubIds
+    );
     if (staleRelationshipParents.length > 0) {
       const byEmail = new Map(needsSync.map(parent => [parent.email, parent]));
       for (const parent of staleRelationshipParents) {
@@ -1033,7 +1069,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncParent, logFinancialBlockActivity };
+module.exports = { runSync, syncParent, logFinancialBlockActivity, isTrackedParentKnownChild };
 
 // CLI entry point
 if (require.main === module) {
