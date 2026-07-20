@@ -3,6 +3,7 @@ require('dotenv/config');
 const { openDb, getLatestSportlinkResults } = require('../lib/laposta-db');
 const { normalizeEmail, isValidEmail, buildChildFullName, hasValue } = require('../lib/parent-dedupe');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { normalizePhone } = require('../lib/phone-normalizer');
 
 /**
  * Build parent name from Sportlink NameParent field
@@ -45,18 +46,23 @@ function buildParentAddress(member) {
 }
 
 /**
- * Build contact info array for parent
+ * Build fixed ACF contact fields for a parent.
  * @param {string} email - Parent email
  * @param {Set} phones - Set of phone numbers
- * @returns {Array<{contact_type: string, contact_label: string, contact_value: string}>}
+ * @returns {Object}
  */
-function buildParentContactInfo(email, phones) {
-  const contacts = [];
-  if (email) contacts.push({ contact_type: 'email', contact_label: '', contact_value: email });
-  phones.forEach(phone => {
-    if (phone) contacts.push({ contact_type: 'phone', contact_label: '', contact_value: phone });
-  });
-  return contacts;
+function buildParentContactFields(email, phones) {
+  const normalizedPhones = [...phones]
+    .map(phone => normalizePhone(String(phone).trim()))
+    .filter(Boolean)
+    .filter((phone, index, values) => values.indexOf(phone) === index)
+    .slice(0, 2);
+
+  return {
+    ...(email ? { email_1: email } : {}),
+    ...(normalizedPhones[0] ? { telephone_1: normalizedPhones[0] } : {}),
+    ...(normalizedPhones[1] ? { telephone_2: normalizedPhones[1] } : {})
+  };
 }
 
 /**
@@ -74,7 +80,7 @@ function prepareParent(email, data) {
       acf: {
         first_name: data.name.first_name,
         last_name: data.name.last_name,
-        contact_info: buildParentContactInfo(email, data.phones),
+        ...buildParentContactFields(email, data.phones),
         addresses: data.address ? [data.address] : []
       }
     }
@@ -207,7 +213,7 @@ async function runPrepare(options = {}) {
   }
 }
 
-module.exports = { runPrepare, mergeMemberOverrides, prepareParentsFromMembers };
+module.exports = { runPrepare, mergeMemberOverrides, prepareParentsFromMembers, buildParentContactFields };
 
 // CLI entry point
 if (require.main === module) {

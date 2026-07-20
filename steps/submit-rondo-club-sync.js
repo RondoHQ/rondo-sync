@@ -523,6 +523,17 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       const isMember = !!existingKnvbId;
       const firstName = isMember ? existingFirstName : (data.acf.first_name || existingFirstName);
       const lastName = isMember ? existingLastName : (data.acf.last_name || existingLastName);
+      const fixedContactFields = {};
+
+      // Pure parent records are managed by Sportlink. Keep their fixed ACF
+      // contact fields current, but never overwrite a member's own contacts.
+      if (!isMember) {
+        for (const field of ['email_1', 'email_2', 'mobile_1', 'mobile_2', 'telephone_1', 'telephone_2']) {
+          if (Object.prototype.hasOwnProperty.call(data.acf, field)) {
+            fixedContactFields[field] = data.acf[field];
+          }
+        }
+      }
 
       if (!isMember) {
         logVerbose(`Pure parent - updating name from Sportlink: "${firstName} ${lastName}"`);
@@ -532,6 +543,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
         acf: {
           first_name: firstName,
           last_name: lastName,
+          ...fixedContactFields,
           relationships: mergedRelationships
         }
       };
