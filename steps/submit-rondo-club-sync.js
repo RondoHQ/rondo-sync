@@ -25,7 +25,7 @@ const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const {
   normalizePersonEmailMatches,
   selectParentEmailMatch,
-  shouldPreserveParentProfile
+  getParentProfileOwnership
 } = require('../lib/parent-person-resolution');
 
 /**
@@ -530,14 +530,14 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     let existingRelationships = [];
     let existingFirstName = '';
     let existingLastName = '';
-    let preserveExistingProfile = false;
+    let profileOwnership = { preserveIdentity: false, preserveContact: false };
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
       const existingAcf = existing.body.acf || {};
       existingRelationships = existingAcf.relationships || [];
       existingFirstName = existingAcf.first_name || '';
       existingLastName = existingAcf.last_name || '';
-      preserveExistingProfile = shouldPreserveParentProfile(existingAcf);
+      profileOwnership = getParentProfileOwnership(existingAcf);
     } catch (e) {
       // A tracked parent can be in trash because every child temporarily left
       // the club. Restore that exact record before considering a new person.
@@ -548,7 +548,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
           existingRelationships = restoredAcf.relationships || [];
           existingFirstName = restoredAcf.first_name || '';
           existingLastName = restoredAcf.last_name || '';
-          preserveExistingProfile = shouldPreserveParentProfile(restoredAcf);
+          profileOwnership = getParentProfileOwnership(restoredAcf);
           logVerbose(`Restored tracked parent ${rondo_club_id} from trash`);
         } catch (restoreError) {
           logVerbose(`Person ${rondo_club_id} could not be restored; will create fresh`);
@@ -575,29 +575,36 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       // Determine name to use:
       // - Members, contacts, and sponsors keep their existing managed profile.
       // - Standalone parent records are updated from Sportlink.
-      const firstName = preserveExistingProfile ? existingFirstName : (data.acf.first_name || existingFirstName);
-      const lastName = preserveExistingProfile ? existingLastName : (data.acf.last_name || existingLastName);
-      const fixedContactFields = {};
+      const firstName = profileOwnership.preserveIdentity ? existingFirstName : (data.acf.first_name || existingFirstName);
+      const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.acf.last_name || existingLastName);
+      const parentManagedFields = {};
 
       // Pure parent records are managed by Sportlink. Keep their fixed ACF
-      // contact fields current, but never overwrite another managed profile.
-      if (!preserveExistingProfile) {
+      // contact fields current. Former members also receive these current
+      // parent details, while their historical member identity remains intact.
+      if (!profileOwnership.preserveContact) {
         for (const field of ['email_1', 'email_2', 'mobile_1', 'mobile_2', 'telephone_1', 'telephone_2']) {
           if (Object.prototype.hasOwnProperty.call(data.acf, field)) {
-            fixedContactFields[field] = data.acf[field];
+            parentManagedFields[field] = data.acf[field];
           }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data.acf, 'addresses')) {
+          parentManagedFields.addresses = data.acf.addresses;
         }
       }
 
-      if (!preserveExistingProfile) {
+      if (!profileOwnership.preserveIdentity) {
         logVerbose(`Pure parent - updating name from Sportlink: "${firstName} ${lastName}"`);
+      } else if (!profileOwnership.preserveContact) {
+        logVerbose(`Former member parent - preserving identity and updating current parent contact data`);
       }
 
       const updateData = {
         acf: {
           first_name: firstName,
           last_name: lastName,
-          ...fixedContactFields,
+          ...parentManagedFields,
           relationships: mergedRelationships
         }
       };
