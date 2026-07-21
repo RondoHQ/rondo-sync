@@ -66,7 +66,7 @@ test('makeRequest rejects with ERR_REQUEST_DEADLINE when server never responds',
 
 test('makeRequest still resolves normal responses without firing the deadline', async () => {
   const server = http.createServer((_req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'X-WP-TotalPages': '3' });
     res.end(JSON.stringify({ ok: true }));
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -81,6 +81,7 @@ test('makeRequest still resolves normal responses without firing the deadline', 
     });
     assert.equal(result.status, 200);
     assert.deepEqual(result.body, { ok: true });
+    assert.equal(result.headers['x-wp-totalpages'], '3');
   } finally {
     await new Promise((r) => server.close(r));
   }

@@ -31,9 +31,10 @@ async function fetchRondoPeople(options = {}) {
 
 async function applyPlan(plan, options = {}) {
   const result = { created: 0, updated: 0, deactivated: 0, errors: [] };
+  const request = options.request || rondoClubRequestWithRetry;
   for (const item of plan.updates) {
     try {
-      await rondoClubRequestWithRetry(`wp/v2/people/${item.person.id}`, 'PATCH', {
+      await request(`wp/v2/people/${item.person.id}`, 'PATCH', {
         acf: item.candidate.sponsorAcf
       }, options);
       result.updated += 1;
@@ -43,7 +44,7 @@ async function applyPlan(plan, options = {}) {
   }
   for (const item of plan.creates) {
     try {
-      await rondoClubRequestWithRetry('wp/v2/people', 'POST', {
+      await request('wp/v2/people', 'POST', {
         title: item.candidate.displayName || item.candidate.createAcf.company_name || 'Sponsor',
         status: 'publish',
         acf: item.candidate.createAcf
@@ -55,8 +56,8 @@ async function applyPlan(plan, options = {}) {
   }
   for (const person of plan.deactivations) {
     try {
-      await rondoClubRequestWithRetry(`wp/v2/people/${person.id}`, 'PATCH', {
-        acf: { is_sponsor: false, sponsor_pass_variant: '' }
+      await request(`wp/v2/people/${person.id}`, 'PATCH', {
+        acf: { is_sponsor: false, sponsor_pass_variant: null }
       }, options);
       result.deactivated += 1;
     } catch (error) {

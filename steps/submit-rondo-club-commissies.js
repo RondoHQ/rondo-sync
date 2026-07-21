@@ -49,20 +49,17 @@ async function fetchAllWordPressCommissies(options) {
   let page = 1;
 
   while (true) {
-    try {
-      const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
-      const pageCommissies = response.body;
-      if (pageCommissies.length === 0) break;
-      commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
-      logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
-      page++;
-    } catch (error) {
-      // End of pages (400 error) or other error
-      if (error.details?.code === 'rest_post_invalid_page_number') {
-        break;
-      }
-      throw error;
-    }
+    const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
+    const pageCommissies = Array.isArray(response.body) ? response.body : [];
+    commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
+    logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
+
+    const totalPages = Number.parseInt(
+      response.headers?.['x-wp-totalpages'] || response.headers?.['X-WP-TotalPages'] || '0',
+      10
+    );
+    if (pageCommissies.length < 100 || (totalPages > 0 && page >= totalPages)) break;
+    page++;
   }
 
   return commissies;
@@ -313,7 +310,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync };
+module.exports = { fetchAllWordPressCommissies, runSync };
 
 // CLI entry point
 if (require.main === module) {

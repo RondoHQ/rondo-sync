@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { planRondoSponsorSync } = require('../lib/sponsit-rondo-sync');
+const { applyPlan } = require('../steps/sync-sponsit-to-rondo-club');
 
 function record(overrides = {}) {
   return {
@@ -61,4 +62,21 @@ test('only Sponsit-owned inactive sponsors are deactivated', () => {
   const manual = { id: 2, acf: { is_sponsor: true } };
   const plan = planRondoSponsorSync([record()], [owned, manual]);
   assert.deepEqual(plan.deactivations.map((person) => person.id), [1]);
+});
+
+test('deactivation clears the ACF select field with null', async () => {
+  const requests = [];
+  const plan = { updates: [], creates: [], deactivations: [{ id: 42 }] };
+
+  const result = await applyPlan(plan, {
+    request: async (endpoint, method, body) => requests.push([endpoint, method, body])
+  });
+
+  assert.equal(result.deactivated, 1);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(requests[0], [
+    'wp/v2/people/42',
+    'PATCH',
+    { acf: { is_sponsor: false, sponsor_pass_variant: null } }
+  ]);
 });
