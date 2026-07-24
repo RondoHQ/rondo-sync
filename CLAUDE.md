@@ -137,6 +137,76 @@ logger.error('Error messages');
   pipeline, mirror the `process.exitCode = result.error ? 1 : 2` pattern or it will
   false-alarm Healthchecks on every partial.
 
+## Run Tracking + Self-Heal Watchdog
+
+### Adding a pipeline means touching three places, not one
+
+A new pipeline needs `new RunTracker('<name>')`, a `sync.sh` case, **and** an entry in
+`ALL_PIPELINES` + `rerun_args_for()` in `scripts/heal-sync.sh`. Miss the third and the
+pipeline runs completely unwatched — that is how `reverse`, `discipline`, `freescout`,
+`freescout-conversations` and `sponsit` ended up outside the watchdog while it reported
+"all healthy" on the three it did know about (found 2026-07-23).
+
+**The dashboard name is not always the sync.sh argument.** `freescout-conversations`
+records under that name but is invoked as `sync.sh conversations`; `functions-full` is
+`sync.sh functions --all --with-invoice`. `rerun_args_for()` is the only mapping — do not
+assume the strings match, or the heal will re-run the wrong thing (or nothing).
+
+```bash
+scripts/heal-sync.sh --all      # sweep every known pipeline (what the hourly routine runs)
+scripts/heal-sync.sh --list     # print known pipelines
+scripts/heal-sync.sh people     # single pipeline
+```
+
+### Staleness: outcome-checking cannot see a pipeline that stopped running
+
+Checking the latest run's *outcome* is blind to a pipeline that never runs at all — no run
+means no row, and "no row" looks exactly like a healthy idle pipeline. That is how `nikki`
+sat dead for eight weeks (2026-05-29 → 2026-07-23) with a live crontab entry and zero
+alerts: a **root-owned `.sync-nikki.lock`** made `sync.sh` die at `exec 200>"$LOCKFILE"`
+with "Permission denied" *before* `RunTracker` opened, so there was never anything to fail.
+
+**If a pipeline goes silent, check lockfile ownership first:** `ls -la /home/rondo/.sync-*.lock`.
+Every lock must be `rondo:rondo`. One `sync.sh <pipeline>` run as root (instead of
+`sudo -u rondo`) permanently wedges that pipeline's cron.
+
+`heal-sync.sh` now compares each pipeline's newest `started_at` against a per-pipeline
+`stale_after_hours_for()` budget (longest crontab gap, roughly doubled) and prints a
+`STALE` line plus a single summary line:
+
+```
+heal[nikki]: STALE — newest run started 55d ago, expected one within 30h
+heal: STALE PIPELINES (2): nikki(55d) teams(12d)
+```
+
+Staleness **never triggers a heal** — a pipeline that has not run has not failed, and
+re-running it could be wrong (deliberately disabled, host maintenance). It reports; a human
+decides. Exit codes are unchanged so the hourly routine's parsing keeps working.
+
+Keep `stale_after_hours_for()` in sync with crontab — a cadence change there without a
+change here yields either false alarms or a blind spot.
+
+### Retention is tiered — a flat age cutoff cannot serve both ends of the cadence range
+
+`lib/run-tracker.js` `_cleanup()` (called on every `startRun`) keeps a run if **any** of:
+it is newer than `RETENTION_RECENT_DAYS` (3); it is a `failure`/`partial` newer than
+`RETENTION_FAILURE_DAYS` (90); or it is among the newest `RETENTION_KEEP_PER_PIPELINE` (25)
+for its own pipeline. `running` rows are never swept here — `_markStaleRunning()` owns those.
+
+The per-pipeline floor is load-bearing, for two reasons:
+1. **Sparse pipelines stay watchable.** Under the old flat 3-day sweep the weekly
+   `functions-full` row was deleted ~4 days before its next run, so `heal-sync.sh` read
+   "no runs recorded yet" most of the week and its effective heal window was 3 days, not 7.
+2. **It prevents a stale-failure re-heal.** Keeping failures for 90 days while sweeping
+   successes at 3 would let an old failure become the *latest* row once the newer success
+   aged out — and the watchdog would re-heal an episode that already recovered. The floor
+   guarantees the newer success outlives the older failure. `test/run-tracker-retention.test.js`
+   pins this case specifically.
+
+Note `lib/dashboard-db.js` resolves `data/dashboard.sqlite` from `process.cwd()` **once at
+require time** — that is why the retention test chdirs before its requires and shares one
+temp DB across cases.
+
 ## Rondo Club API Gotchas
 
 **Required fields on ACF updates:** When updating a person via PUT, `first_name` and `last_name` are always required, even for single-field updates. Partial ACF updates require a GET first.
