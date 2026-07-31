@@ -103,7 +103,7 @@ function applyMappedFreeFields(payload, freeFields, freeFieldMappings) {
     const value = freeFields[rowKey];
     const converted = convertMappedValue(value, mapping.value_type || 'string');
     if (converted !== null) {
-      const scope = mapping.target_scope === 'meta' ? 'meta' : 'acf';
+      const scope = mapping.target_scope === 'meta' ? 'meta' : 'fields';
       if (!payload[scope]) payload[scope] = {};
       payload[scope][targetField] = converted;
     }
@@ -228,7 +228,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const acf = {
     first_name: name.first_name,
     last_name: name.last_name,
-    'knvb-id': sportlinkMember.PublicPersonId,
+    'knvb_id': sportlinkMember.PublicPersonId,
     addresses: buildAddresses(sportlinkMember)
   };
 
@@ -240,7 +240,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     }
   }
   const payload = {
-    acf: acf,
+    fields: acf,
     meta: {
       team: teams || ''
     }
@@ -265,13 +265,13 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
   const tooltip = (sportlinkMember.Tooltip || '').trim();
 
-  if (memberSince) acf['lid-sinds'] = memberSince;
+  if (memberSince) acf['lid_sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
-  acf['lid-tot'] = relationEnd || '';
-  if (dateOfPassing) acf['datum-overlijden'] = dateOfPassing;
+  acf['lid_tot'] = relationEnd || '';
+  if (dateOfPassing) acf['datum_overlijden'] = dateOfPassing;
   if (ageClass) acf['leeftijdsgroep'] = ageClass;
-  if (personImageDate) acf['datum-foto'] = personImageDate;
-  if (memberType) acf['type-lid'] = memberType;
+  if (personImageDate) acf['datum_foto'] = personImageDate;
+  if (memberType) acf['type_lid'] = memberType;
   if (gameActivities) acf['spelactiviteit'] = gameActivities;
 
   // Sportlink Tooltip "Actie van een ander (overschrijving)" marks members who
@@ -287,7 +287,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     // Financial block status (convert SQLite INTEGER 0/1 to boolean)
     // Explicitly check for 1 to treat null/undefined/0 as "not blocked"
     if (freeFields.has_financial_block !== undefined) {
-      acf['financiele-blokkade'] = (freeFields.has_financial_block === 1);
+      acf['financiele_blokkade'] = (freeFields.has_financial_block === 1);
     }
   }
 
@@ -306,11 +306,11 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     }
     // Invoice email (always include if present)
     if (invoiceData.invoice_email) {
-      acf['factuur-email'] = invoiceData.invoice_email;
+      acf.factuur_email = invoiceData.invoice_email;
     }
     // External invoice code/reference (always include if present)
     if (invoiceData.invoice_external_code) {
-      acf['factuur-referentie'] = invoiceData.invoice_external_code;
+      acf.factuur_referentie = invoiceData.invoice_external_code;
     }
   }
 

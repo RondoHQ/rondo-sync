@@ -64,7 +64,7 @@ async function findOrphanDates(options = {}) {
   const orphanedDates = [];
 
   for (const date of dates) {
-    const relatedPeople = date.acf?.related_people || [];
+    const relatedPeople = date.fields?.related_people || [];
 
     // Check if ALL related people are gone (orphaned)
     // A date is orphaned if it has related_people but none of them exist anymore
@@ -74,7 +74,7 @@ async function findOrphanDates(options = {}) {
         orphanedDates.push({
           id: date.id,
           title: date.title?.rendered || 'Untitled',
-          date_value: date.acf?.date_value || 'Unknown',
+          date_value: date.fields?.date_value || 'Unknown',
           related_people: relatedPeople
         });
       }

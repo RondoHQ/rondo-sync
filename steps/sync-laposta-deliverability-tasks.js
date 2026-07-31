@@ -66,7 +66,7 @@ function isOlderThanDays(value, days) {
 function parseMemberName(dataJson, knvbId) {
   try {
     const data = JSON.parse(dataJson || '{}');
-    const acf = data.acf || {};
+    const acf = data.fields || {};
     const fullName = [acf.first_name, acf.infix, acf.last_name].filter(Boolean).join(' ').trim();
     return fullName || knvbId;
   } catch {

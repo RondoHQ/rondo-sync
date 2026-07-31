@@ -11,7 +11,7 @@ const CHILD_TYPE_ID = 3;
 const OLD_CHILD_TYPE_ID = 9;
 
 function hasRelationshipType(relationship, typeId) {
-  const type = relationship.relationship_type;
+  const type = relationship.relationship_type_id;
   if (Array.isArray(type)) {
     return type.includes(typeId);
   }
@@ -103,8 +103,8 @@ async function runUnmerge(options = {}) {
     for (const p of parents) {
       const data = JSON.parse(p.data_json);
       const childKnvbIds = data.childKnvbIds || [];
-      const parentFirst = normalizeName(data.data?.acf?.first_name);
-      const parentLast = normalizeName(data.data?.acf?.last_name);
+      const parentFirst = normalizeName(data.data?.fields?.first_name);
+      const parentLast = normalizeName(data.data?.fields?.last_name);
 
       // Look up the member, if any, whose WP post equals this parent's rondo_club_id.
       const matchedMember = db.prepare(
@@ -115,8 +115,8 @@ async function runUnmerge(options = {}) {
 
       // Decide if this is a false merge.
       const memberData = JSON.parse(matchedMember.data_json || '{}');
-      const memberFirst = normalizeName(memberData.acf?.first_name);
-      const memberLast = normalizeName(memberData.acf?.last_name);
+      const memberFirst = normalizeName(memberData.fields?.first_name);
+      const memberLast = normalizeName(memberData.fields?.last_name);
       const namesMatch = parentFirst && parentLast && parentFirst === memberFirst && parentLast === memberLast;
 
       const isOwnChild = childKnvbIds.includes(matchedMember.knvb_id);
@@ -137,7 +137,7 @@ async function runUnmerge(options = {}) {
 
       toFix.push({
         email: p.email,
-        parentName: [data.data?.acf?.first_name, data.data?.acf?.last_name].filter(Boolean).join(' ') || p.email,
+        parentName: [data.data?.fields?.first_name, data.data?.fields?.last_name].filter(Boolean).join(' ') || p.email,
         wrongRondoClubId: p.rondo_club_id,
         wrongMemberKnvbId: matchedMember.knvb_id,
         childRondoClubIds,
@@ -174,24 +174,24 @@ async function runUnmerge(options = {}) {
         // 2. Scrub wrong "Child" relationships on the falsely-merged post.
         try {
           const wrongPost = await rondoClubRequest(`wp/v2/people/${fix.wrongRondoClubId}`);
-          const relationships = wrongPost.acf?.relationships || [];
+          const relationships = wrongPost.fields?.relationships || [];
 
           // Remove:
           //  - self-referential rows (legacy own-child pattern)
           //  - "Child" relationships pointing to this parent's children
           const childIdSet = new Set(fix.childRondoClubIds);
           const cleanedRels = relationships.filter(r => {
-            if (r.related_person === fix.wrongRondoClubId) return false;
+            if (r.related_person_id === fix.wrongRondoClubId) return false;
             const isChildType = hasRelationshipType(r, CHILD_TYPE_ID) || hasRelationshipType(r, OLD_CHILD_TYPE_ID);
-            if (isChildType && childIdSet.has(r.related_person)) return false;
+            if (isChildType && childIdSet.has(r.related_person_id)) return false;
             return true;
           });
 
           if (cleanedRels.length < relationships.length) {
             await rondoClubRequest(`wp/v2/people/${fix.wrongRondoClubId}`, 'PUT', {
-              acf: {
-                first_name: wrongPost.acf?.first_name || '',
-                last_name: wrongPost.acf?.last_name || '',
+              fields: {
+                first_name: wrongPost.fields?.first_name || '',
+                last_name: wrongPost.fields?.last_name || '',
                 relationships: cleanedRels
               }
             });
@@ -206,16 +206,16 @@ async function runUnmerge(options = {}) {
         for (const childId of fix.childRondoClubIds) {
           try {
             const childPost = await rondoClubRequest(`wp/v2/people/${childId}`);
-            const relationships = childPost.acf?.relationships || [];
+            const relationships = childPost.fields?.relationships || [];
             const cleanedRels = relationships.filter(r => !(
-              r.related_person === fix.wrongRondoClubId && hasRelationshipType(r, PARENT_TYPE_ID)
+              r.related_person_id === fix.wrongRondoClubId && hasRelationshipType(r, PARENT_TYPE_ID)
             ));
 
             if (cleanedRels.length < relationships.length) {
               await rondoClubRequest(`wp/v2/people/${childId}`, 'PUT', {
-                acf: {
-                  first_name: childPost.acf?.first_name || '',
-                  last_name: childPost.acf?.last_name || '',
+                fields: {
+                  first_name: childPost.fields?.first_name || '',
+                  last_name: childPost.fields?.last_name || '',
                   relationships: cleanedRels
                 }
               });

@@ -25,12 +25,12 @@ async function clearWorkHistory() {
     try {
       // Get existing data
       const resp = await rondoClubRequest(`wp/v2/people/${rondoClubId}`, 'GET', null, {});
-      const firstName = resp.body.acf?.first_name || '';
-      const lastName = resp.body.acf?.last_name || '';
+      const firstName = resp.body.fields?.first_name || '';
+      const lastName = resp.body.fields?.last_name || '';
 
       // Clear work_history
       await rondoClubRequest(`wp/v2/people/${rondoClubId}`, 'PUT', {
-        acf: { first_name: firstName, last_name: lastName, work_history: [] }
+        fields: { first_name: firstName, last_name: lastName, work_history: [] }
       }, {});
       count++;
       if (count % 50 === 0) console.log('Cleared', count, 'members...');

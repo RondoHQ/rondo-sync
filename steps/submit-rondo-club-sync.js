@@ -21,6 +21,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { resolveFieldConflicts, generateConflictSummary } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
+const { applyCanonicalResolution } = require('../lib/canonical-fields');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const {
   normalizePersonEmailMatches,
@@ -84,57 +85,13 @@ function applyResolutions(originalData, resolutions) {
   // Deep clone to avoid modifying original
   const resolvedData = JSON.parse(JSON.stringify(originalData));
 
-  if (!resolvedData.acf) {
-    resolvedData.acf = {};
+  if (!resolvedData.fields) {
+    resolvedData.fields = {};
   }
 
   // Apply each resolution
   for (const [field, resolution] of resolutions.entries()) {
-    const value = resolution.value;
-
-    // Convert field names: underscores to hyphens for ACF
-    // Contact fields need to be in contact_info array
-    if (['email', 'email2', 'mobile', 'phone'].includes(field)) {
-      if (!resolvedData.acf.contact_info) {
-        resolvedData.acf.contact_info = [];
-      }
-
-      const contactInfo = resolvedData.acf.contact_info;
-
-      if (field === 'email') {
-        const existing = contactInfo.findIndex(c => c.contact_type === 'email');
-        if (existing >= 0) {
-          contactInfo[existing].contact_value = value;
-        } else if (value !== null) {
-          contactInfo.push({ contact_type: 'email', contact_value: value });
-        }
-      } else if (field === 'email2') {
-        const existing = contactInfo.findIndex(c => c.contact_type === 'email2');
-        if (existing >= 0) {
-          contactInfo[existing].contact_value = value;
-        } else if (value !== null) {
-          contactInfo.push({ contact_type: 'email2', contact_value: value });
-        }
-      } else if (field === 'mobile') {
-        const existing = contactInfo.findIndex(c => c.contact_type === 'mobile');
-        if (existing >= 0) {
-          contactInfo[existing].contact_value = value;
-        } else if (value !== null) {
-          contactInfo.push({ contact_type: 'mobile', contact_value: value });
-        }
-      } else if (field === 'phone') {
-        const existing = contactInfo.findIndex(c => c.contact_type === 'phone');
-        if (existing >= 0) {
-          contactInfo[existing].contact_value = value;
-        } else if (value !== null) {
-          contactInfo.push({ contact_type: 'phone', contact_value: value });
-        }
-      }
-    } else {
-      // Direct ACF fields - convert underscores to hyphens
-      const acfFieldName = field.replace(/_/g, '-');
-      resolvedData.acf[acfFieldName] = value;
-    }
+    applyCanonicalResolution(resolvedData.fields, field, resolution.value);
   }
 
   return resolvedData;
@@ -200,7 +157,7 @@ async function syncPerson(member, db, options) {
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
       existingData = existing.body;
-      previousBlockStatus = existingData.acf?.['financiele-blokkade'] || false;
+      previousBlockStatus = existingData.fields?.['financiele_blokkade'] || false;
     } catch (fetchError) {
       // If we can't fetch, continue with update but skip activity comparison
       if (fetchError.message && fetchError.message.includes('404')) {
@@ -249,11 +206,11 @@ async function syncPerson(member, db, options) {
         updateSyncState(db, knvb_id, source_hash, rondo_club_id);
 
         // Capture volunteer status from Rondo Club
-        const volunteerStatus = existingData.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+        const volunteerStatus = existingData.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
         updateVolunteerStatus(db, knvb_id, volunteerStatus);
 
         // Compare financial block status and log activity if changed
-        const newBlockStatus = updateData.acf?.['financiele-blokkade'] || false;
+        const newBlockStatus = updateData.fields?.['financiele_blokkade'] || false;
         if (previousBlockStatus !== newBlockStatus) {
           await logFinancialBlockActivity(rondo_club_id, newBlockStatus, options);
         }
@@ -292,11 +249,11 @@ async function syncPerson(member, db, options) {
     updateSyncState(db, knvb_id, source_hash, newId);
 
     // Capture volunteer status from Rondo Club (newly created person defaults)
-    const createVolunteerStatus = response.body.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+    const createVolunteerStatus = response.body.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
     updateVolunteerStatus(db, knvb_id, createVolunteerStatus);
 
     // Log initial block status for newly created persons
-    const newBlockStatus = data.acf?.['financiele-blokkade'] || false;
+    const newBlockStatus = data.fields?.['financiele_blokkade'] || false;
     if (newBlockStatus) {
       await logFinancialBlockActivity(newId, true, options);
     }
@@ -318,7 +275,7 @@ async function syncPerson(member, db, options) {
 }
 
 /**
- * Relationship type term IDs in the WordPress relationship_type taxonomy.
+ * Relationship type term IDs in the WordPress relationship_type_id taxonomy.
  * These must match the actual term IDs in the database.
  */
 const RELATIONSHIP_TYPE = {
@@ -330,12 +287,12 @@ const RELATIONSHIP_TYPE = {
 /**
  * Check if a relationship has a specific type.
  * Handles both array format (what we write: [3]) and integer format (what API returns: 3).
- * @param {Object} relationship - Relationship object with relationship_type
+ * @param {Object} relationship - Relationship object with relationship_type_id
  * @param {number} typeId - Relationship type ID to check for
  * @returns {boolean}
  */
 function hasRelationshipType(relationship, typeId) {
-  const type = relationship.relationship_type;
+  const type = relationship.relationship_type_id;
   if (Array.isArray(type)) {
     return type.includes(typeId);
   }
@@ -381,17 +338,17 @@ function mergeParentChildRelationships(
         return true;
       }
 
-      const relatedPersonId = Number(relationship.related_person);
+      const relatedPersonId = Number(relationship.related_person_id);
       return relatedPersonId > 0 && relatedPersonId !== Number(parentId) && !currentIds.has(relatedPersonId);
     })
     .map((relationship) => (
       hasRelationshipType(relationship, RELATIONSHIP_TYPE.CHILD) || hasRelationshipType(relationship, 9)
-        ? { ...relationship, relationship_type: [RELATIONSHIP_TYPE.CHILD] }
+        ? { ...relationship, relationship_type_id: RELATIONSHIP_TYPE.CHILD }
         : relationship
     ));
 
   const currentRelationships = currentChildRelationships.filter(
-    relationship => Number(relationship.related_person) !== Number(parentId)
+    relationship => Number(relationship.related_person_id) !== Number(parentId)
   );
 
   return [...preservedRelationships, ...currentRelationships];
@@ -420,22 +377,22 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
         options
       );
 
-      const existingRelationships = childResponse.body.acf?.relationships || [];
+      const existingRelationships = childResponse.body.fields?.relationships || [];
       const hasParentLink = existingRelationships.some(r =>
-        r.related_person === parentId && hasRelationshipType(r, RELATIONSHIP_TYPE.PARENT)
+        r.related_person_id === parentId && hasRelationshipType(r, RELATIONSHIP_TYPE.PARENT)
       );
 
       if (!hasParentLink) {
         const newRelationship = {
-          related_person: parentId,
-          relationship_type: [RELATIONSHIP_TYPE.PARENT],
+          related_person_id: parentId,
+          relationship_type_id: RELATIONSHIP_TYPE.PARENT,
           relationship_label: ''
         };
         const mergedRelationships = [...existingRelationships, newRelationship];
         await rondoClubRequest(
           `wp/v2/people/${childId}`,
           'PUT',
-          { acf: { relationships: mergedRelationships } },
+          { fields: { relationships: mergedRelationships } },
           options
         );
         logVerbose(`Linked parent ${parentId} to child ${childId}`);
@@ -515,8 +472,8 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
 
   // Build relationships array for children
   const childRelationships = childRondoClubIds.map(childId => ({
-    related_person: childId,
-    relationship_type: [RELATIONSHIP_TYPE.CHILD],
+    related_person_id: childId,
+    relationship_type_id: RELATIONSHIP_TYPE.CHILD,
     relationship_label: ''
   }));
 
@@ -575,7 +532,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     let profileOwnership = { preserveIdentity: false, preserveContact: false };
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      const existingAcf = existing.body.acf || {};
+      const existingAcf = existing.body.fields || {};
       existingRelationships = existingAcf.relationships || [];
       existingFirstName = existingAcf.first_name || '';
       existingLastName = existingAcf.last_name || '';
@@ -586,7 +543,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       if (e.message && e.message.includes('404')) {
         try {
           const restored = await restorePerson(rondo_club_id, options);
-          const restoredAcf = restored.body.acf || {};
+          const restoredAcf = restored.body.fields || {};
           existingRelationships = restoredAcf.relationships || [];
           existingFirstName = restoredAcf.first_name || '';
           existingLastName = restoredAcf.last_name || '';
@@ -616,8 +573,8 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       // Determine name to use:
       // - Members, contacts, and sponsors keep their existing managed profile.
       // - Standalone parent records are updated from Sportlink.
-      const firstName = profileOwnership.preserveIdentity ? existingFirstName : (data.acf.first_name || existingFirstName);
-      const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.acf.last_name || existingLastName);
+      const firstName = profileOwnership.preserveIdentity ? existingFirstName : (data.fields.first_name || existingFirstName);
+      const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.fields.last_name || existingLastName);
       const parentManagedFields = {};
 
       // Pure parent records are managed by Sportlink. Keep their fixed ACF
@@ -625,13 +582,13 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       // parent details, while their historical member identity remains intact.
       if (!profileOwnership.preserveContact) {
         for (const field of ['email_1', 'email_2', 'mobile_1', 'mobile_2', 'telephone_1', 'telephone_2']) {
-          if (Object.prototype.hasOwnProperty.call(data.acf, field)) {
-            parentManagedFields[field] = data.acf[field];
+          if (Object.prototype.hasOwnProperty.call(data.fields, field)) {
+            parentManagedFields[field] = data.fields[field];
           }
         }
 
-        if (Object.prototype.hasOwnProperty.call(data.acf, 'addresses')) {
-          parentManagedFields.addresses = data.acf.addresses;
+        if (Object.prototype.hasOwnProperty.call(data.fields, 'addresses')) {
+          parentManagedFields.addresses = data.fields.addresses;
         }
       }
 
@@ -642,7 +599,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       }
 
       const updateData = {
-        acf: {
+        fields: {
           first_name: firstName,
           last_name: lastName,
           ...parentManagedFields,
@@ -670,8 +627,8 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     logVerbose(`Creating new parent: ${email}`);
     const createData = {
       ...data,
-      acf: {
-        ...data.acf,
+      fields: {
+        ...data.fields,
         relationships: childRelationships
       }
     };
@@ -777,11 +734,11 @@ async function parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, optio
 
   try {
     const existing = await rondoClubRequest(`wp/v2/people/${parent.rondo_club_id}`, 'GET', null, options);
-    const existingRelationships = existing.body?.acf?.relationships || [];
+    const existingRelationships = existing.body?.fields?.relationships || [];
     const existingChildIds = new Set(
       existingRelationships
         .filter(r => hasRelationshipType(r, RELATIONSHIP_TYPE.CHILD) || hasRelationshipType(r, 9))
-        .map(r => r.related_person)
+        .map(r => r.related_person_id)
         .filter(Boolean)
         .filter(id => id !== parent.rondo_club_id)
     );
@@ -964,8 +921,8 @@ async function markFormerMembers(db, currentKnvbIds, options) {
     let lastName = '';
     try {
       const data = JSON.parse(member.data_json || '{}');
-      firstName = data.acf?.first_name || '';
-      lastName = data.acf?.last_name || '';
+      firstName = data.fields?.first_name || '';
+      lastName = data.fields?.last_name || '';
     } catch (e) { /* ignore parse errors */ }
 
     logVerbose(`Marking as former member: ${member.knvb_id} (${firstName} ${lastName}, Rondo Club ID: ${member.rondo_club_id})`);
@@ -973,7 +930,7 @@ async function markFormerMembers(db, currentKnvbIds, options) {
       await rondoClubRequest(
         `wp/v2/people/${member.rondo_club_id}`,
         'PUT',
-        { acf: { first_name: firstName, last_name: lastName, former_member: true } },
+        { fields: { first_name: firstName, last_name: lastName, former_member: true } },
         options
       );
       // Keep member in tracking DB so we can detect if they rejoin,

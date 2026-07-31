@@ -6,7 +6,7 @@ const { isRondoClubContact } = require('../lib/detect-rondo-club-changes');
 test('explicit contacts are excluded from reverse sync even with a KNVB ID', () => {
   assert.equal(isRondoClubContact({
     person_type: 'contact',
-    'knvb-id': 'STALE123'
+    'knvb_id': 'STALE123'
   }), true);
 });
 

@@ -50,7 +50,7 @@ async function runSyncFreescoutIdsToRondoClub(options = {}) {
       }
 
       const data = JSON.parse(member.data_json || '{}');
-      const acf = data.acf || {};
+      const acf = data.fields || {};
       const firstName = acf.first_name || '';
       const lastName = acf.last_name || '';
 
@@ -67,10 +67,10 @@ async function runSyncFreescoutIdsToRondoClub(options = {}) {
           `wp/v2/people/${member.rondo_club_id}`,
           'PUT',
           {
-            acf: {
+            fields: {
               first_name: firstName,
               last_name: lastName,
-              'freescout-id': freescout_id
+              'freescout_id': freescout_id
             }
           },
           { logger, verbose }

@@ -52,7 +52,7 @@ async function runCleanup(options = {}) {
     const byKnvb = {};
     const noKnvb = [];
     for (const p of allFormer) {
-      const knvbId = p.acf?.['knvb-id'];
+      const knvbId = p.fields?.['knvb_id'];
       if (!knvbId) {
         noKnvb.push(p);
         continue;
@@ -139,7 +139,7 @@ async function runCleanup(options = {}) {
     for (const post of nameMatched) {
       const match = nameToKnvbPost[post.title?.rendered];
       if (verbose) {
-        console.log(`  Name "${post.title?.rendered}": delete ${post.id} (no KNVB), keep ${match.id} (KNVB: ${match.acf?.['knvb-id']})`);
+        console.log(`  Name "${post.title?.rendered}": delete ${post.id} (no KNVB), keep ${match.id} (KNVB: ${match.fields?.['knvb_id']})`);
       }
 
       if (!dryRun) {

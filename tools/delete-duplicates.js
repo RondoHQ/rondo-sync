@@ -27,7 +27,7 @@ async function getAllPeople() {
   while (true) {
     const auth = Buffer.from(`${RONDO_USERNAME}:${RONDO_APP_PASSWORD}`).toString('base64');
     const response = await fetch(
-      `${RONDO_URL}/wp-json/wp/v2/people?per_page=100&page=${page}&_fields=id,date,acf`,
+      `${RONDO_URL}/wp-json/wp/v2/people?per_page=100&page=${page}&_fields=id,date,fields`,
       { headers: { 'Authorization': `Basic ${auth}` } }
     );
 
@@ -53,7 +53,7 @@ function findDuplicates(people) {
   const byKnvbId = new Map();
 
   for (const person of people) {
-    const knvbId = person.acf?.['knvb-id'];
+    const knvbId = person.fields?.['knvb_id'];
     if (!knvbId) continue; // Skip parents (no KNVB ID)
 
     if (!byKnvbId.has(knvbId)) {

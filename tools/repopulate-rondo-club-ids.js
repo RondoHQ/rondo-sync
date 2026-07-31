@@ -21,7 +21,7 @@ async function fetchAllPeopleFromRondoClub(options) {
     let response;
     try {
       response = await rondoClubRequest(
-        `wp/v2/people?_fields=id,acf.knvb-id&per_page=100&page=${page}`,
+        `wp/v2/people?_fields=id,fields.knvb_id&per_page=100&page=${page}`,
         'GET',
         null,
         options
@@ -44,7 +44,7 @@ async function fetchAllPeopleFromRondoClub(options) {
     const people = response.body;
 
     for (const person of people) {
-      const knvbId = person.acf?.['knvb-id'];
+      const knvbId = person.fields?.['knvb_id'];
       if (knvbId) {
         knvbToRondoClub.set(knvbId, person.id);
       }

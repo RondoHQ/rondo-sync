@@ -91,7 +91,7 @@ async function createImportantDate(rondoClubPersonId, dateValue, birthdayTermId,
       status: 'publish',
       title: 'Birthday',
       date_type: [birthdayTermId],
-      acf: {
+      fields: {
         date_value: dateValue,
         related_people: [rondoClubPersonId],
         year_unknown: false,
@@ -117,7 +117,7 @@ async function updateImportantDate(rondoClubDateId, rondoClubPersonId, dateValue
     `wp/v2/important-dates/${rondoClubDateId}`,
     'PUT',
     {
-      acf: {
+      fields: {
         date_value: dateValue,
         related_people: [rondoClubPersonId]
       }

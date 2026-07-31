@@ -119,10 +119,10 @@ async function runCleanup(options = {}) {
   const parentsByEmail = new Map(); // email -> [records without KNVB ID]
 
   for (const person of rondoClubPeople) {
-    const knvbId = person.acf?.['knvb-id'] || null;
-    const email = (person.acf?.contact_info?.find(c => c.contact_type === 'email')?.contact_value || '').toLowerCase().trim();
-    const firstName = (person.acf?.first_name || '').trim();
-    const lastName = (person.acf?.last_name || '').trim();
+    const knvbId = person.fields?.['knvb_id'] || null;
+    const email = (person.fields?.email_1 || person.fields?.email_2 || '').toLowerCase().trim();
+    const firstName = (person.fields?.first_name || '').trim();
+    const lastName = (person.fields?.last_name || '').trim();
     const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
     const record = { id: person.id, knvbId, email, fullName };

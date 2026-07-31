@@ -150,7 +150,7 @@ async function runImport(options = {}) {
     const prepared = preparePerson(member);
 
     // Override former_member flag to true (preparePerson sets it to false for active members)
-    prepared.data.acf.former_member = true;
+    prepared.data.fields.former_member = true;
 
     toSync.push({
       knvb_id: knvbId,

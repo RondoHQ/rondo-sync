@@ -13,7 +13,7 @@ function record(overrides = {}) {
 }
 
 test('matches an existing member by unique email and identity without changing its person type', () => {
-  const member = { id: 7, acf: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'JAN@example.test' } };
+  const member = { id: 7, fields: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'JAN@example.test' } };
   const plan = planRondoSponsorSync([record()], [member]);
   assert.equal(plan.updates.length, 1);
   assert.equal(plan.updates[0].strategy, 'email_and_identity');
@@ -30,7 +30,7 @@ test('new external sponsors are created as contacts', () => {
 test('stable source matches with current sponsor fields are left unchanged', () => {
   const person = {
     id: 7,
-    acf: {
+    fields: {
       person_type: 'member',
       first_name: 'Jan',
       last_name: 'Jansen',
@@ -58,8 +58,8 @@ test('shared Sponsit emails are quarantined without a stable existing match', ()
 });
 
 test('only Sponsit-owned inactive sponsors are deactivated', () => {
-  const owned = { id: 1, acf: { is_sponsor: true, sponsit_person_id: '99' } };
-  const manual = { id: 2, acf: { is_sponsor: true } };
+  const owned = { id: 1, fields: { is_sponsor: true, sponsit_person_id: '99' } };
+  const manual = { id: 2, fields: { is_sponsor: true } };
   const plan = planRondoSponsorSync([record()], [owned, manual]);
   assert.deepEqual(plan.deactivations.map((person) => person.id), [1]);
 });
@@ -77,6 +77,6 @@ test('deactivation clears the ACF select field with null', async () => {
   assert.deepEqual(requests[0], [
     'wp/v2/people/42',
     'PATCH',
-    { acf: { is_sponsor: false, sponsor_pass_variant: null } }
+    { fields: { is_sponsor: false, sponsor_pass_variant: null } }
   ]);
 });

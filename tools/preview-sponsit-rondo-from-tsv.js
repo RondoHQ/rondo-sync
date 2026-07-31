@@ -15,7 +15,7 @@ function parsePeople(input) {
     const row = Object.fromEntries(columns.map((column, index) => [column, values[index] || '']));
     return {
       id: Number(row.id),
-      acf: Object.fromEntries(columns.slice(1).map((column) => [column, row[column]]))
+      fields: Object.fromEntries(columns.slice(1).map((column) => [column, row[column]]))
     };
   });
 }
@@ -32,8 +32,8 @@ function main() {
       creates: plan.creates.length,
       updates: plan.updates.length,
       unchanged: plan.unchanged.length,
-      memberSponsorUpdates: plan.updates.filter((item) => (item.person.acf?.person_type || 'member') !== 'contact').length,
-      contactSponsorUpdates: plan.updates.filter((item) => item.person.acf?.person_type === 'contact').length,
+      memberSponsorUpdates: plan.updates.filter((item) => (item.person.fields?.person_type || 'member') !== 'contact').length,
+      contactSponsorUpdates: plan.updates.filter((item) => item.person.fields?.person_type === 'contact').length,
       deactivations: plan.deactivations.length,
       quarantined: plan.quarantined.length,
       quarantineReasons: plan.quarantined.reduce((counts, item) => {

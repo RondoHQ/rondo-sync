@@ -66,11 +66,11 @@ function lookupTeamRondoClubId(teamCode, teamMap, db, knvbId) {
  * @param {Date} date - Date object
  * @returns {string} - ACF date string
  */
-function formatDateForACF(date) {
+function formatDateForFields(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -101,14 +101,14 @@ function findTeamWorkHistoryIndex(workHistory, expectedIndex, teamRondoClubId) {
     Number.isInteger(expectedIndex) &&
     expectedIndex >= 0 &&
     expectedIndex < workHistory.length &&
-    sameId(workHistory[expectedIndex]?.team, teamRondoClubId) &&
+    sameId(workHistory[expectedIndex]?.team_id, teamRondoClubId) &&
     workHistory[expectedIndex]?.is_current !== false
   ) {
     return expectedIndex;
   }
 
   const currentIndex = workHistory.findIndex(entry => (
-    sameId(entry?.team, teamRondoClubId) && entry?.is_current !== false
+    sameId(entry?.team_id, teamRondoClubId) && entry?.is_current !== false
   ));
   if (currentIndex >= 0) return currentIndex;
   return -1;
@@ -125,9 +125,9 @@ function buildWorkHistoryEntry(teamRondoClubId, isBackfill, jobTitle) {
   return {
     job_title: jobTitle,
     is_current: true,
-    start_date: isBackfill ? '' : formatDateForACF(new Date()),
-    end_date: '',
-    team: teamRondoClubId
+    start_date: isBackfill ? null : formatDateForFields(new Date()),
+    end_date: null,
+    team_id: teamRondoClubId
   };
 }
 
@@ -213,9 +213,9 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
   let existingLastName = '';
   try {
     const response = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-    existingWorkHistory = response.body.acf?.work_history || [];
-    existingFirstName = response.body.acf?.first_name || '';
-    existingLastName = response.body.acf?.last_name || '';
+    existingWorkHistory = response.body.fields?.work_history || [];
+    existingFirstName = response.body.fields?.first_name || '';
+    existingLastName = response.body.fields?.last_name || '';
   } catch (error) {
     logVerbose(`Could not fetch existing data for ${knvb_id}: ${error.message}`);
   }
@@ -243,7 +243,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       newWorkHistory[index] = {
         ...newWorkHistory[index],
         is_current: false,
-        end_date: formatDateForACF(new Date())
+        end_date: formatDateForFields(new Date())
       };
       endedCount++;
       modified = true;
@@ -277,7 +277,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
         job_title: jobTitle,
         is_current: true,
         end_date: '',
-        team: teamStadionId
+        team_id: teamStadionId
       };
       updatedCount++;
     } else {
@@ -321,7 +321,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
           job_title: jobTitle,
           is_current: true,
           end_date: '',
-          team: teamStadionId
+          team_id: teamStadionId
         };
         updatedCount++;
         modified = true;
@@ -353,7 +353,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       await rondoClubRequest(
         `wp/v2/people/${rondo_club_id}`,
         'PUT',
-        { acf: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
+        { fields: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
         options
       );
       for (const teamName of trackingDeletes) {

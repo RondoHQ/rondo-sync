@@ -106,19 +106,19 @@ async function runNikkiRondoClubSync(options = {}) {
 
       try {
         const response = await rondoClubRequestWithRetry(
-          `wp/v2/people/${rondoClubId}?_fields=acf`,
+          `wp/v2/people/${rondoClubId}?_fields=fields`,
           'GET',
           null,
           { verbose: false }
         );
 
-        existingFirstName = response.body?.acf?.first_name || '';
-        existingLastName = response.body?.acf?.last_name || '';
+        existingFirstName = response.body?.fields?.first_name || '';
+        existingLastName = response.body?.fields?.last_name || '';
 
         // Check if we need to update (only if not forcing)
         if (!force) {
           // Extract existing per-year fields from response for comparison
-          const existingAcf = response.body?.acf || {};
+          const existingAcf = response.body?.fields || {};
           const existingPerYearFields = {};
           for (const key of Object.keys(perYearFields)) {
             existingPerYearFields[key] = existingAcf[key] ?? null;
@@ -157,7 +157,7 @@ async function runNikkiRondoClubSync(options = {}) {
           `wp/v2/people/${rondoClubId}`,
           'PUT',
           {
-            acf: {
+            fields: {
               first_name: existingFirstName,
               last_name: existingLastName,
               ...perYearFields

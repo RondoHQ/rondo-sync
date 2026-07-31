@@ -27,7 +27,7 @@ const ENTITIES = {
     idColumn: 'rondo_club_id',
     keyColumn: 'knvb_id',
     endpoint: 'wp/v2/people',
-    acfKeyField: 'knvb-id',
+    acfKeyField: 'knvb_id',
     label: 'Members'
   },
   parents: {

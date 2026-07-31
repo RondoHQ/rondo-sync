@@ -31,42 +31,42 @@ test('keeps a genuine separate parent mapping', () => {
 
 test('preserves manually linked former children while refreshing current children', () => {
   const existing = [
-    { related_person: 4893, relationship_type: [3], relationship_label: '' },
-    { related_person: 4894, relationship_type: [9], relationship_label: '' },
-    { related_person: 708, relationship_type: [3], relationship_label: '' },
-    { related_person: 9000, relationship_type: [4], relationship_label: '' }
+    { related_person_id: 4893, relationship_type_id: 3, relationship_label: '' },
+    { related_person_id: 4894, relationship_type_id: 9, relationship_label: '' },
+    { related_person_id: 708, relationship_type_id: 3, relationship_label: '' },
+    { related_person_id: 9000, relationship_type_id: 4, relationship_label: '' }
   ];
   const current = [
-    { related_person: 708, relationship_type: [3], relationship_label: '' },
-    { related_person: 707, relationship_type: [3], relationship_label: '' }
+    { related_person_id: 708, relationship_type_id: 3, relationship_label: '' },
+    { related_person_id: 707, relationship_type_id: 3, relationship_label: '' }
   ];
 
   assert.deepEqual(
     mergeParentChildRelationships(existing, current, new Set([707, 708]), 8604),
     [
-      { related_person: 4893, relationship_type: [3], relationship_label: '' },
-      { related_person: 4894, relationship_type: [3], relationship_label: '' },
-      { related_person: 9000, relationship_type: [4], relationship_label: '' },
-      { related_person: 708, relationship_type: [3], relationship_label: '' },
-      { related_person: 707, relationship_type: [3], relationship_label: '' }
+      { related_person_id: 4893, relationship_type_id: 3, relationship_label: '' },
+      { related_person_id: 4894, relationship_type_id: 3, relationship_label: '' },
+      { related_person_id: 9000, relationship_type_id: 4, relationship_label: '' },
+      { related_person_id: 708, relationship_type_id: 3, relationship_label: '' },
+      { related_person_id: 707, relationship_type_id: 3, relationship_label: '' }
     ]
   );
 });
 
 test('drops stale links for current children and prevents a parent self-link', () => {
   const existing = [
-    { related_person: 708, relationship_type: [9], relationship_label: '' },
-    { related_person: 8604, relationship_type: [3], relationship_label: '' }
+    { related_person_id: 708, relationship_type_id: 9, relationship_label: '' },
+    { related_person_id: 8604, relationship_type_id: 3, relationship_label: '' }
   ];
   const current = [
-    { related_person: 708, relationship_type: [3], relationship_label: '' },
-    { related_person: 8604, relationship_type: [3], relationship_label: '' }
+    { related_person_id: 708, relationship_type_id: 3, relationship_label: '' },
+    { related_person_id: 8604, relationship_type_id: 3, relationship_label: '' }
   ];
 
   assert.deepEqual(
     mergeParentChildRelationships(existing, current, new Set([708]), 8604),
     [
-      { related_person: 708, relationship_type: [3], relationship_label: '' }
+      { related_person_id: 708, relationship_type_id: 3, relationship_label: '' }
     ]
   );
 });

@@ -76,7 +76,7 @@ async function syncTeam(team, db, options) {
     const payload = {
       title: team_name,
       status: 'publish',
-      acf: acfFields
+      fields: acfFields
     };
     const endpoint = `wp/v2/teams/${rondo_club_id}`;
     logVerbose(`Updating existing team: ${rondo_club_id} - ${team_name}`);
@@ -113,7 +113,7 @@ async function syncTeam(team, db, options) {
     const payload = {
       title: team_name,
       status: 'publish',
-      acf: acfFields
+      fields: acfFields
     };
     const endpoint = 'wp/v2/teams';
     logVerbose(`Creating new team: ${team_name}`);

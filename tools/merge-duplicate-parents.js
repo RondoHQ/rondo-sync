@@ -2,7 +2,7 @@ require('dotenv/config');
 
 const { openDb } = require('../lib/rondo-club-db');
 
-// Relationship type term IDs in the WordPress relationship_type taxonomy.
+// Relationship type term IDs in the WordPress relationship_type_id taxonomy.
 const RELATIONSHIP_TYPE = {
   PARENT: 2,  // "Parent" - the related person is a parent
   CHILD: 3,   // "Child" - the related person is a child
@@ -99,7 +99,7 @@ async function runMerge(options = {}) {
         let parentRelationships = [];
         try {
           const parentPost = await rondoClubRequest(`wp/v2/people/${parent_sid}`);
-          parentRelationships = parentPost.acf?.relationships || [];
+          parentRelationships = parentPost.fields?.relationships || [];
         } catch (e) {
           if (e.message.includes('404')) {
             if (verbose) console.log(`  Parent post ${parent_sid} already deleted, updating tracking`);
@@ -112,21 +112,21 @@ async function runMerge(options = {}) {
 
         // Fetch member post to get its existing relationships
         const memberPost = await rondoClubRequest(`wp/v2/people/${member_sid}`);
-        const memberRelationships = memberPost.acf?.relationships || [];
+        const memberRelationships = memberPost.fields?.relationships || [];
 
         // Merge: add child relationships from parent that aren't already on the member
-        const existingRelatedIds = new Set(memberRelationships.map(r => r.related_person));
+        const existingRelatedIds = new Set(memberRelationships.map(r => r.related_person_id));
         const newRelationships = parentRelationships.filter(r =>
-          r.related_person !== member_sid && // No self-reference
-          !existingRelatedIds.has(r.related_person)
+          r.related_person_id !== member_sid && // No self-reference
+          !existingRelatedIds.has(r.related_person_id)
         );
 
         if (newRelationships.length > 0 || memberRelationships.length > 0) {
           const mergedRelationships = [...memberRelationships, ...newRelationships];
           await rondoClubRequest(`wp/v2/people/${member_sid}`, 'PUT', {
-            acf: {
-              first_name: memberPost.acf?.first_name || '',
-              last_name: memberPost.acf?.last_name || '',
+            fields: {
+              first_name: memberPost.fields?.first_name || '',
+              last_name: memberPost.fields?.last_name || '',
               relationships: mergedRelationships
             }
           });
@@ -138,33 +138,33 @@ async function runMerge(options = {}) {
         // Repoint: find all people that reference the parent post and update to member post
         // This handles children that have "parent" relationship pointing to the duplicate
         const childRelationships = parentRelationships.filter(r => {
-          const type = r.relationship_type;
+          const type = r.relationship_type_id;
           // Child type (array or integer)
           return Array.isArray(type) ? type.includes(RELATIONSHIP_TYPE.CHILD) : type === RELATIONSHIP_TYPE.CHILD;
         });
 
         for (const childRel of childRelationships) {
-          const childId = childRel.related_person;
+          const childId = childRel.related_person_id;
           if (!childId || childId === member_sid) continue;
 
           try {
             const childPost = await rondoClubRequest(`wp/v2/people/${childId}`);
-            const childRels = childPost.acf?.relationships || [];
+            const childRels = childPost.fields?.relationships || [];
             let changed = false;
 
             const updatedRels = childRels.map(r => {
-              if (r.related_person === parent_sid) {
+              if (r.related_person_id === parent_sid) {
                 changed = true;
-                return { ...r, related_person: member_sid };
+                return { ...r, related_person_id: member_sid };
               }
               return r;
             });
 
             if (changed) {
               await rondoClubRequest(`wp/v2/people/${childId}`, 'PUT', {
-                acf: {
-                  first_name: childPost.acf?.first_name || '',
-                  last_name: childPost.acf?.last_name || '',
+                fields: {
+                  first_name: childPost.fields?.first_name || '',
+                  last_name: childPost.fields?.last_name || '',
                   relationships: updatedRels
                 }
               });
