@@ -1,10 +1,10 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
-const { openDb, getAllTrackedMembers, getAllTeams } = require('../lib/rondo-club-db');
+const { openDb, getAllTrackedMembers, getAllTeams, computeMemberTeamSignature, updateMemberPlayerHistorySignature } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
-const { loginToSportlink, fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
+const { SportlinkSession } = require('../lib/sportlink-session');
+const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
 
 function formatDateForACF(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return '';
@@ -36,11 +36,98 @@ function buildJobTitle(teamRow) {
 }
 
 function buildSignature(entry) {
-  const team = String(entry.team || '');
+  const teamKey = entry.team
+    ? `id:${entry.team}`
+    : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
   const start = String(entry.start_date || '');
   const end = String(entry.end_date || '');
   const title = String(entry.job_title || '').trim().toLowerCase();
-  return `${team}|${start}|${end}|${title}`;
+  return `${teamKey}|${start}|${end}|${title}`;
+}
+
+function buildAssignmentKey(entry) {
+  const teamKey = entry.team
+    ? `id:${entry.team}`
+    : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
+  const title = String(entry.job_title || '').trim().toLowerCase();
+  return `${teamKey}|${title}`;
+}
+
+/**
+ * Reconcile Sportlink membership history with the shared ACF repeater.
+ * The old append-only merge added a second ended row when RelationEnd
+ * appeared, leaving the original assignment incorrectly marked current.
+ */
+function reconcilePlayerHistory(existingWorkHistory, sourceEntries) {
+  const workHistory = existingWorkHistory.map(entry => ({ ...entry }));
+  const currentSourceKeys = new Set(
+    sourceEntries.filter(entry => entry.is_current).map(buildAssignmentKey)
+  );
+  const latestEndedByKey = new Map();
+
+  for (const entry of sourceEntries) {
+    if (entry.is_current || !entry.end_date) continue;
+    const key = buildAssignmentKey(entry);
+    const previous = latestEndedByKey.get(key);
+    if (!previous || String(previous.end_date) < String(entry.end_date)) {
+      latestEndedByKey.set(key, entry);
+    }
+  }
+
+  let created = 0;
+  let reconciled = 0;
+
+  for (const sourceEntry of sourceEntries) {
+    const signature = buildSignature(sourceEntry);
+    if (workHistory.some(entry => buildSignature(entry) === signature)) continue;
+
+    const key = buildAssignmentKey(sourceEntry);
+    let index = workHistory.findIndex(entry => (
+      buildAssignmentKey(entry) === key &&
+      String(entry.start_date || '') === String(sourceEntry.start_date || '')
+    ));
+
+    if (index < 0 && (sourceEntry.is_current || !currentSourceKeys.has(key))) {
+      index = workHistory.findIndex(entry => (
+        buildAssignmentKey(entry) === key && entry.is_current !== false
+      ));
+    }
+
+    if (index >= 0) {
+      workHistory[index] = { ...workHistory[index], ...sourceEntry };
+      reconciled++;
+    } else {
+      workHistory.push(sourceEntry);
+      created++;
+    }
+  }
+
+  // Also close a legacy current duplicate when the exact ended source row
+  // already existed and therefore needed no in-place update above.
+  for (let index = 0; index < workHistory.length; index++) {
+    const entry = workHistory[index];
+    if (entry.is_current === false) continue;
+    const key = buildAssignmentKey(entry);
+    if (currentSourceKeys.has(key)) continue;
+
+    const endedSource = latestEndedByKey.get(key);
+    if (!endedSource) continue;
+    workHistory[index] = {
+      ...entry,
+      is_current: false,
+      end_date: endedSource.end_date
+    };
+    reconciled++;
+  }
+
+  return { workHistory, created, reconciled };
+}
+
+function buildHistoricalTeamName(teamRow) {
+  const baseName = buildFallbackTeamName(teamRow);
+  const season = String(teamRow.SeasonDescription || '').trim();
+  if (baseName && season) return `${baseName} (${season})`;
+  return baseName || season || 'Onbekend team';
 }
 
 function resolveTeamRondoClubId(teamRow, teamBySportlinkId, teamByName) {
@@ -68,7 +155,8 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   const result = {
     synced: false,
     created: 0,
-    skippedNoTeam: 0,
+    reconciled: 0,
+    textFallback: 0,
     skippedDuplicate: 0
   };
 
@@ -80,36 +168,42 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   const person = response.body || {};
   const existingWorkHistory = Array.isArray(person.acf?.work_history) ? person.acf.work_history : [];
 
-  const signatures = new Set(existingWorkHistory.map(buildSignature));
-  const newWorkHistory = [...existingWorkHistory];
+  const sourceEntries = [];
+  const sourceSignatures = new Set();
 
   for (const row of teamRows) {
     const teamRondoClubId = resolveTeamRondoClubId(row, teamBySportlinkId, teamByName);
-    if (!teamRondoClubId) {
-      result.skippedNoTeam++;
-      continue;
-    }
 
     const entry = {
       job_title: buildJobTitle(row),
       is_current: !row.RelationEnd,
       start_date: formatDateForACF(row.RelationStart),
-      end_date: formatDateForACF(row.RelationEnd),
-      team: teamRondoClubId
+      end_date: formatDateForACF(row.RelationEnd)
     };
 
+    if (teamRondoClubId) {
+      entry.team = teamRondoClubId;
+    } else {
+      entry.team_name_text = buildHistoricalTeamName(row);
+      entry.entity_type = 'external_team';
+      result.textFallback++;
+    }
+
     const signature = buildSignature(entry);
-    if (signatures.has(signature)) {
+    if (sourceSignatures.has(signature)) {
       result.skippedDuplicate++;
       continue;
     }
 
-    signatures.add(signature);
-    newWorkHistory.push(entry);
-    result.created++;
+    sourceSignatures.add(signature);
+    sourceEntries.push(entry);
   }
 
-  if (result.created === 0) {
+  const reconciliation = reconcilePlayerHistory(existingWorkHistory, sourceEntries);
+  result.created = reconciliation.created;
+  result.reconciled = reconciliation.reconciled;
+
+  if (result.created === 0 && result.reconciled === 0) {
     return result;
   }
 
@@ -120,14 +214,14 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
       acf: {
         first_name: person.acf?.first_name || '',
         last_name: person.acf?.last_name || '',
-        work_history: newWorkHistory
+        work_history: reconciliation.workHistory
       }
     },
     { logger, verbose }
   );
 
   result.synced = true;
-  logVerbose(`  Added ${result.created} work history row(s) for ${member.knvb_id}`);
+  logVerbose(`  Added ${result.created} and reconciled ${result.reconciled} work history row(s) for ${member.knvb_id}`);
   return result;
 }
 
@@ -170,7 +264,8 @@ async function syncSingleMember(options = {}) {
       success: true,
       synced: res.synced ? 1 : 0,
       created: res.created || 0,
-      skippedNoTeamMatch: res.skippedNoTeam || 0,
+      reconciled: res.reconciled || 0,
+      textFallback: res.textFallback || 0,
       skippedDuplicate: res.skippedDuplicate || 0,
       errors: []
     };
@@ -179,7 +274,8 @@ async function syncSingleMember(options = {}) {
       success: false,
       synced: 0,
       created: 0,
-      skippedNoTeamMatch: 0,
+      reconciled: 0,
+      textFallback: 0,
       skippedDuplicate: 0,
       errors: [{ knvb_id: knvbId, message: error.message }]
     };
@@ -187,7 +283,7 @@ async function syncSingleMember(options = {}) {
 }
 
 async function runSync(options = {}) {
-  const { verbose = false, knvbIds = null, page: sharedPage } = options;
+  const { verbose = false, knvbIds = null, page: sharedPage, onProgress = null, force = false } = options;
   const createdLogger = !options.logger;
   const logger = options.logger || createSyncLogger({ verbose, prefix: 'player-history' });
 
@@ -197,13 +293,17 @@ async function runSync(options = {}) {
     downloaded: 0,
     synced: 0,
     created: 0,
-    skippedNoTeamMatch: 0,
+    reconciled: 0,
+    textFallback: 0,
     skippedDuplicate: 0,
+    skippedUnchanged: 0,
+    skippedQuarantined: 0,
+    quarantined: [],
     errors: []
   };
 
   const db = openDb();
-  let browser;
+  let session;
 
   try {
     let members = getAllTrackedMembers(db);
@@ -224,13 +324,8 @@ async function runSync(options = {}) {
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-      });
-      page = await context.newPage();
-
-      await loginToSportlink(page, { logger });
+      session = new SportlinkSession({ logger });
+      page = await session.getPage();
     }
 
     const shouldRetryAfterRelogin = (error) => {
@@ -246,8 +341,51 @@ async function runSync(options = {}) {
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
-      logger.verbose(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
 
+      // Skip members explicitly quarantined via tools/player-history-quarantine.js.
+      // Used when Sportlink's /member-details/{id}/memberships endpoint is
+      // broken for a specific member (e.g. PKWR41Q since 2026-03-02) and we
+      // don't want every run to waste 45s + emit an error on them.
+      // --force does NOT lift the quarantine — that's an explicit human action.
+      if (member.player_history_skip_reason) {
+        result.skippedQuarantined++;
+        result.quarantined.push({
+          knvb_id: member.knvb_id,
+          reason: member.player_history_skip_reason
+        });
+        if (onProgress) {
+          onProgress({ current: i + 1, total: members.length, label: `${member.knvb_id} (quarantined)` });
+        }
+        continue;
+      }
+
+      // Skip members whose current team-membership signature matches the
+      // one stored at their last successful run. Sportlink historical data
+      // is immutable, so if current team-relations haven't changed since
+      // last time, the Sportlink fetch + GET/PUT round-trip cycle would
+      // be pure no-op work. Skip the Sportlink fetch entirely.
+      // --force / force=true bypasses this for one-off backfills or to
+      // recover from a suspected Sportlink historical correction.
+      const currentSignature = computeMemberTeamSignature(db, member.knvb_id);
+      if (
+        !force &&
+        member.last_player_history_team_signature !== null &&
+        member.last_player_history_team_signature !== undefined &&
+        member.last_player_history_team_signature === currentSignature
+      ) {
+        result.skippedUnchanged++;
+        if (onProgress) {
+          onProgress({ current: i + 1, total: members.length, label: `${member.knvb_id} (unchanged)` });
+        }
+        continue;
+      }
+
+      logger.log(`Processing ${i + 1}/${members.length}: ${member.knvb_id}`);
+      if (onProgress) {
+        onProgress({ current: i + 1, total: members.length, label: member.knvb_id });
+      }
+
+      let memberSucceeded = false;
       try {
         let teamRows;
         try {
@@ -257,12 +395,19 @@ async function runSync(options = {}) {
             throw error;
           }
           logger.verbose(`  Membership fetch failed for ${member.knvb_id}, re-authenticating and retrying once...`);
-          await loginToSportlink(page, { logger });
+          if (session) {
+            await session.relogin();
+          }
           teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
         }
         result.downloaded++;
 
-        if (!teamRows || teamRows.length === 0) continue;
+        if (!teamRows || teamRows.length === 0) {
+          // Member has no Sportlink team data — record that we checked so
+          // future runs with the same (empty) signature skip them.
+          memberSucceeded = true;
+          continue;
+        }
 
         const syncResult = await syncMemberPlayerHistory(
           member,
@@ -274,13 +419,23 @@ async function runSync(options = {}) {
 
         if (syncResult.synced) result.synced++;
         result.created += syncResult.created;
-        result.skippedNoTeamMatch += syncResult.skippedNoTeam;
+        result.reconciled += syncResult.reconciled;
+        result.textFallback += syncResult.textFallback;
         result.skippedDuplicate += syncResult.skippedDuplicate;
+        memberSucceeded = true;
       } catch (error) {
         result.errors.push({
           knvb_id: member.knvb_id,
           message: error.message
         });
+      } finally {
+        if (memberSucceeded) {
+          try {
+            updateMemberPlayerHistorySignature(db, member.knvb_id, currentSignature);
+          } catch (sigErr) {
+            logger.verbose(`  Failed to update player-history signature for ${member.knvb_id}: ${sigErr.message}`);
+          }
+        }
       }
 
       if (i < members.length - 1) {
@@ -296,8 +451,18 @@ async function runSync(options = {}) {
     logger.log(`Player history fetched for ${result.downloaded}/${result.total} member(s)`);
     logger.log(`  Members updated: ${result.synced}`);
     logger.log(`  Work history rows created: ${result.created}`);
-    if (result.skippedNoTeamMatch > 0) {
-      logger.log(`  Rows skipped (unknown team mapping): ${result.skippedNoTeamMatch}`);
+    logger.log(`  Work history rows reconciled: ${result.reconciled}`);
+    if (result.skippedUnchanged > 0) {
+      logger.log(`  Skipped (team data unchanged since last run): ${result.skippedUnchanged}`);
+    }
+    if (result.skippedQuarantined > 0) {
+      logger.log(`  Skipped (quarantined): ${result.skippedQuarantined}`);
+      for (const q of result.quarantined) {
+        logger.log(`    - ${q.knvb_id}: ${q.reason}`);
+      }
+    }
+    if (result.textFallback > 0) {
+      logger.log(`  Rows written with text fallback (no Rondo team match): ${result.textFallback}`);
     }
     if (result.skippedDuplicate > 0) {
       logger.log(`  Rows skipped (already present): ${result.skippedDuplicate}`);
@@ -308,8 +473,8 @@ async function runSync(options = {}) {
 
     return result;
   } finally {
-    if (!sharedPage && browser) {
-      await browser.close();
+    if (session) {
+      await session.close();
     }
     db.close();
     if (createdLogger && typeof logger.close === 'function') {
@@ -323,17 +488,19 @@ module.exports = {
   syncSingleMember,
   syncMemberPlayerHistory,
   formatDateForACF,
-  buildFallbackTeamName
+  buildFallbackTeamName,
+  reconcilePlayerHistory
 };
 
 if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
+  const force = process.argv.includes('--force');
   const knvbIdx = process.argv.indexOf('--knvb-id');
   const knvbIds = knvbIdx >= 0 && process.argv[knvbIdx + 1]
     ? process.argv[knvbIdx + 1].split(',').map(id => id.trim()).filter(Boolean)
     : null;
 
-  runSync({ verbose, knvbIds })
+  runSync({ verbose, knvbIds, force })
     .then((res) => {
       if (!res.success) process.exitCode = 1;
     })

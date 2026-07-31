@@ -260,7 +260,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
  * @returns {Promise<Object>} - Sync result
  */
 async function runSync(options = {}) {
-  const { logger, verbose = false, force = false } = options;
+  const { logger, verbose = false, force = false, onProgress = null } = options;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
   const logError = logger?.error.bind(logger) || console.error;
 
@@ -371,6 +371,9 @@ async function runSync(options = {}) {
         const member = membersToSync[i];
         const currentCommissies = memberCommissies.get(member.knvb_id) || [];
         logVerbose(`Syncing ${i + 1}/${result.total}: ${member.knvb_id}`);
+        if (onProgress) {
+          onProgress({ current: i + 1, total: membersToSync.length, label: member.knvb_id });
+        }
 
         try {
           const syncResult = await syncCommissieWorkHistoryForMember(

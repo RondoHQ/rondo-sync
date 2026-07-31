@@ -4,6 +4,7 @@ const { requireProductionServer } = require('../lib/server-check');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb: openRondoClubDb, bulkSetVolunteerStatus } = require('../lib/rondo-club-db');
@@ -212,10 +213,14 @@ async function runPeopleSync(options = {}) {
       stats.completedAt = formatTimestamp();
       stats.duration = formatDuration(Date.now() - startTime);
       printSummary(logger, stats);
+      // Close any partially-initialized browser session so the Node process can exit.
+      // Without this, the Chromium subprocess keeps the event loop alive and the
+      // .sync-people.lock flock is held indefinitely, blocking every subsequent cron run.
+      await sportlinkSession.close();
       logger.close();
       return { success: false, stats, error: errorMsg };
     }
-    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage });
+    const downloadResult = await runDownload({ logger, verbose, page: sportlinkPage, session: sportlinkSession });
 
     if (!downloadResult.success) {
       const errorMsg = downloadResult.error || 'Download failed';
@@ -558,14 +563,5 @@ if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
 
-  runPeopleSync({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runPeopleSync({ verbose, force }));
 }

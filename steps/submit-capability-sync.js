@@ -13,7 +13,7 @@ const { createSyncLogger } = require('../lib/logger');
  * response — counted as skipped, not errors.
  */
 async function runCapabilitySync(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, onProgress = null } = options;
   const log = logger || createSyncLogger({ verbose, prefix: 'capability-sync' });
   const result = { success: true, total: 0, synced: 0, skipped: 0, errors: [] };
 
@@ -32,8 +32,12 @@ async function runCapabilitySync(options = {}) {
     result.total = members.length;
     log.verbose(`Syncing capabilities for ${members.length} members...`);
 
-    for (const member of members) {
+    for (let i = 0; i < members.length; i++) {
+      const member = members[i];
       const functies = functiesByKnvb[member.knvb_id] || [];
+      if (onProgress) {
+        onProgress({ current: i + 1, total: members.length, label: member.knvb_id });
+      }
       try {
         const response = await rondoClubRequestWithRetry(
           'rondo/v1/capability-sync',

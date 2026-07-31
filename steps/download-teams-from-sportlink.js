@@ -1,13 +1,12 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const {
   openDb,
   upsertTeamsWithMetadata,
   upsertTeamMembers,
   clearTeamMembers
 } = require('../lib/rondo-club-db');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -24,28 +23,22 @@ async function runTeamDownload(options = {}) {
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
-  const ownsBrowser = !sharedPage;
-  let browser;
+  let session;
   try {
     let page;
     if (sharedPage) {
       page = sharedPage;
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      session = new SportlinkSession({
+        logger: { log, verbose: logVerbose, error: logError }
       });
-      page = await context.newPage();
+      page = await session.getPage();
     }
 
     try {
       if (!sharedPage && isDebugEnabled()) {
         page.on('request', r => logDebug('>>', r.method(), r.url()));
         page.on('response', r => logDebug('<<', r.status(), r.url()));
-      }
-
-      if (!sharedPage) {
-        await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
       }
 
       // Step 1: Navigate to union teams page and capture teams list
@@ -253,8 +246,8 @@ async function runTeamDownload(options = {}) {
       log(`Downloaded ${teamRecords.length} teams with ${totalMemberCount} team members from Sportlink`);
       return { success: true, teamCount: teamRecords.length, memberCount: totalMemberCount };
     } finally {
-      if (ownsBrowser && browser) {
-        await browser.close();
+      if (session) {
+        await session.close();
       }
     }
   } catch (err) {

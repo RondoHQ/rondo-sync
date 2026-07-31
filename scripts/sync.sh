@@ -10,6 +10,7 @@
 #   sync.sh functions  # Daily: functions download + commissies + work history
 #   sync.sh invoice  # Monthly: functions + invoice data from /financial tab
 #   sync.sh nikki    # Daily: nikki contributions download + Rondo Club sync
+#   sync.sh sponsit  # Weekly: Sponsit contacts to Rondo Club + Laposta
 #   sync.sh freescout # Daily: FreeScout customer sync
 #   sync.sh conversations # Daily: FreeScout conversations as activities
 #   sync.sh former-members  # Manual: import former members from Sportlink
@@ -27,6 +28,7 @@
 #   15 7 * * * /path/to/sync.sh functions       # daily
 #   0 8 * * * /path/to/sync.sh freescout        # daily
 #   0 6 * * 0 /path/to/sync.sh teams            # weekly Sunday
+#   0 10 * * 0 /path/to/sync.sh sponsit         # weekly Sunday
 #   0 3 1 * * /path/to/sync.sh player-history   # monthly
 #   0 3 1 * * /path/to/sync.sh invoice          # monthly 1st at 3am
 #   */5 * * * * /path/to/sync.sh reverse        # every 5 minutes
@@ -54,16 +56,17 @@ if [ -z "$1" ]; then
     echo "  2) functions        Commissies + free fields (recent updates)"
     echo "  3) functions --all  Full commissie sync (all members)"
     echo "  4) nikki            Nikki contributions"
-    echo "  5) freescout        FreeScout customers"
-    echo "  6) teams            Team rosters + work history"
-    echo "  7) player-history   Historical team memberships -> work history"
-    echo "  8) discipline       Discipline cases"
-    echo "  9) invoice          Functions + invoice data"
-    echo " 10) former-members  Import former members from Sportlink"
-    echo " 11) all              Run all pipelines sequentially"
-    echo " 12) conversations    FreeScout conversations as activities"
+    echo "  5) sponsit          Sponsit contacts -> Rondo Club + Laposta"
+    echo "  6) freescout        FreeScout customers"
+    echo "  7) teams            Team rosters + work history"
+    echo "  8) player-history   Historical team memberships -> work history"
+    echo "  9) discipline       Discipline cases"
+    echo " 10) invoice          Functions + invoice data"
+    echo " 11) former-members   Import former members from Sportlink"
+    echo " 12) all              Run all pipelines sequentially"
+    echo " 13) conversations    FreeScout conversations as activities"
     echo ""
-    printf "Choice [1-12]: "
+    printf "Choice [1-13]: "
     read -r CHOICE
 
     case "$CHOICE" in
@@ -71,14 +74,15 @@ if [ -z "$1" ]; then
         2) set -- "functions" ;;
         3) set -- "functions" "--all" ;;
         4) set -- "nikki" ;;
-        5) set -- "freescout" ;;
-        6) set -- "teams" ;;
-        7) set -- "player-history" ;;
-        8) set -- "discipline" ;;
-        9) set -- "invoice" ;;
-        10) set -- "former-members" ;;
-        11) set -- "all" ;;
-        12) set -- "conversations" ;;
+        5) set -- "sponsit" ;;
+        6) set -- "freescout" ;;
+        7) set -- "teams" ;;
+        8) set -- "player-history" ;;
+        9) set -- "discipline" ;;
+        10) set -- "invoice" ;;
+        11) set -- "former-members" ;;
+        12) set -- "all" ;;
+        13) set -- "conversations" ;;
         *)
             echo "Invalid choice." >&2
             exit 1
@@ -100,7 +104,7 @@ EXTRA_FLAGS="$*"
 
 # Validate sync type
 case "$SYNC_TYPE" in
-    people|photos|teams|player-history|functions|invoice|nikki|freescout|reverse|discipline|former-members|conversations|all)
+    people|photos|teams|player-history|functions|invoice|nikki|sponsit|freescout|reverse|discipline|former-members|conversations|all)
         ;;
     *)
         echo "Unknown sync type: $SYNC_TYPE" >&2
@@ -109,15 +113,54 @@ case "$SYNC_TYPE" in
         ;;
 esac
 
-# Create logs directory
+# Create logs directories (cron-run logs + per-pipeline daily log)
 LOG_DIR="$PROJECT_DIR/logs/cron"
+DAILY_LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
+
+# Compute log paths up-front so the lock-contention path can write to them
+DATE=$(date +%Y-%m-%d_%H-%M-%S)
+LOG_FILE="$LOG_DIR/sync-${SYNC_TYPE}-${DATE}.log"
+DAILY_LOG_FILE="$DAILY_LOG_DIR/sync-${SYNC_TYPE}-$(date +%Y-%m-%d).log"
 
 # Flock-based locking (per sync type to allow parallel different syncs)
 LOCKFILE="$PROJECT_DIR/.sync-${SYNC_TYPE}.lock"
 exec 200>"$LOCKFILE"
 if ! flock -n 200; then
-    echo "Another $SYNC_TYPE sync is running. Exiting." >&2
+    # Identify the process currently holding the lock — usually a hung previous run.
+    # lsof prints "p<pid>" lines when called with -F p; fall back to fuser if unavailable.
+    HOLDER_PID=$(lsof -F p "$LOCKFILE" 2>/dev/null | awk '/^p/{sub(/^p/,""); print; exit}')
+    if [ -z "$HOLDER_PID" ]; then
+        HOLDER_PID=$(fuser "$LOCKFILE" 2>/dev/null | awk '{print $1}')
+    fi
+
+    HOLDER_INFO="unknown"
+    HOLDER_AGE_S=""
+    if [ -n "$HOLDER_PID" ] && [ -d "/proc/$HOLDER_PID" ]; then
+        HOLDER_AGE_S=$(ps -o etimes= -p "$HOLDER_PID" 2>/dev/null | tr -d ' ')
+        HOLDER_CMD=$(ps -o args= -p "$HOLDER_PID" 2>/dev/null | head -c 200)
+        HOLDER_INFO="pid=$HOLDER_PID age=${HOLDER_AGE_S}s cmd=\"$HOLDER_CMD\""
+    fi
+
+    # ISO-8601 timestamp matching lib/logger.js format (without milliseconds — close enough).
+    TS=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+    MSG="Another $SYNC_TYPE sync is already running ($HOLDER_INFO). Skipping this run."
+    LINE="[$TS] [ERROR] $MSG"
+
+    # Stderr (so cron mail still flags it) + cron run log + daily pipeline log
+    echo "$MSG" >&2
+    echo "$LINE" >> "$LOG_FILE" 2>/dev/null || true
+    echo "$LINE" >> "$DAILY_LOG_FILE" 2>/dev/null || true
+
+    # Loud signal when the holder is older than 1 hour — almost certainly hung.
+    # People takes ~15 min, functions ~5 min, reverse ~5 min, weekly jobs ~30 min.
+    if [ -n "$HOLDER_AGE_S" ] && [ "$HOLDER_AGE_S" -gt 3600 ]; then
+        STALE_MSG="WARNING: lock holder pid=$HOLDER_PID has been running ${HOLDER_AGE_S}s (>1h) — likely hung. Investigate and kill manually."
+        echo "$STALE_MSG" >&2
+        echo "[$TS] [ERROR] $STALE_MSG" >> "$LOG_FILE" 2>/dev/null || true
+        echo "[$TS] [ERROR] $STALE_MSG" >> "$DAILY_LOG_FILE" 2>/dev/null || true
+    fi
+
     exit 1
 fi
 
@@ -136,9 +179,7 @@ else
     echo "Warning: .env file not found at $PROJECT_DIR/.env" >&2
 fi
 
-# Generate log file path
-DATE=$(date +%Y-%m-%d_%H-%M-%S)
-LOG_FILE="$LOG_DIR/sync-${SYNC_TYPE}-${DATE}.log"
+# LOG_FILE path was generated up-front before the flock check
 
 # Determine which script to run
 case "$SYNC_TYPE" in
@@ -165,6 +206,9 @@ case "$SYNC_TYPE" in
         ;;
     nikki)
         SYNC_SCRIPT="sync-nikki.js"
+        ;;
+    sponsit)
+        SYNC_SCRIPT="sync-sponsit.js"
         ;;
     freescout)
         SYNC_SCRIPT="sync-freescout.js"
@@ -197,12 +241,17 @@ EXIT_CODE=${PIPESTATUS[0]}
 
 # Healthchecks.io dead-man's switch (optional, per pipeline).
 # Set HEALTHCHECK_<PIPELINE>_URL in .env (e.g. HEALTHCHECK_PEOPLE_URL).
-# Pings always — even on failure — because failure emails are already covered
-# above; the dead-man only catches the "nothing ran at all" case.
+# The dead-man only catches a genuine failure ("nothing ran at all" / the pipeline
+# crashed), NOT a partial run. Pipeline exit codes:
+#   0 = success, 2 = partial (non-fatal per-item errors, e.g. one photo failed),
+#   1 (or any other non-zero) = fatal.
+# So exit 0 and 2 both ping the success URL (check stays green); only a fatal exit
+# pings /fail. Partial errors are still surfaced via the failure email below and the
+# dashboard — they just don't trip the dead-man switch.
 HC_VAR_NAME="HEALTHCHECK_$(echo "$SYNC_TYPE" | tr '[:lower:]-' '[:upper:]_')_URL"
 HC_URL="${!HC_VAR_NAME}"
 if [ -n "$HC_URL" ]; then
-    if [ $EXIT_CODE -eq 0 ]; then
+    if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
         curl -fsS -m 10 --retry 3 "$HC_URL" -o /dev/null 2>&1 || \
             echo "Warning: Healthcheck ping failed for $SYNC_TYPE" >&2
     else
@@ -211,7 +260,8 @@ if [ -n "$HC_URL" ]; then
     fi
 fi
 
-# Send failure alert if pipeline failed
+# Send alert email on any non-zero exit (partial=2 as well as fatal=1) so partial
+# runs stay visible in the operator inbox even though they no longer trip the dead-man.
 if [ $EXIT_CODE -ne 0 ]; then
     if [ -n "$LETTERMINT_API_TOKEN" ] && [ -n "$LETTERMINT_FROM_EMAIL" ] && [ -n "$OPERATOR_EMAIL" ]; then
         node "$PROJECT_DIR/lib/alert-email.js" send-failure-alert --pipeline "$SYNC_TYPE" || \

@@ -49,20 +49,17 @@ async function fetchAllWordPressCommissies(options) {
   let page = 1;
 
   while (true) {
-    try {
-      const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
-      const pageCommissies = response.body;
-      if (pageCommissies.length === 0) break;
-      commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
-      logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
-      page++;
-    } catch (error) {
-      // End of pages (400 error) or other error
-      if (error.details?.code === 'rest_post_invalid_page_number') {
-        break;
-      }
-      throw error;
-    }
+    const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
+    const pageCommissies = Array.isArray(response.body) ? response.body : [];
+    commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
+    logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
+
+    const totalPages = Number.parseInt(
+      response.headers?.['x-wp-totalpages'] || response.headers?.['X-WP-TotalPages'] || '0',
+      10
+    );
+    if (pageCommissies.length < 100 || (totalPages > 0 && page >= totalPages)) break;
+    page++;
   }
 
   return commissies;
@@ -153,7 +150,7 @@ async function syncCommissie(commissie, db, options) {
  * @returns {Promise<Object>} - Sync result
  */
 async function runSync(options = {}) {
-  const { logger, verbose = false, force = false, enableOrphanDetection = false } = options;
+  const { logger, verbose = false, force = false, enableOrphanDetection = false, onProgress = null } = options;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
   const logError = logger?.error.bind(logger) || console.error;
 
@@ -193,6 +190,9 @@ async function runSync(options = {}) {
         for (let i = 0; i < needsSync.length; i++) {
           const commissie = needsSync[i];
           logVerbose(`Syncing ${i + 1}/${needsSync.length}: ${commissie.commissie_name}`);
+          if (onProgress) {
+            onProgress({ current: i + 1, total: needsSync.length, label: commissie.commissie_name });
+          }
 
           try {
             const syncResult = await syncCommissie(commissie, db, options);
@@ -310,7 +310,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync };
+module.exports = { fetchAllWordPressCommissies, runSync };
 
 // CLI entry point
 if (require.main === module) {
