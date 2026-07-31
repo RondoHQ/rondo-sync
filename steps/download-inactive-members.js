@@ -1,7 +1,6 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -9,30 +8,32 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, members: Array, memberCount: number, error?: string}>}
  */
 async function runDownloadInactive(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, page: sharedPage } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
-  let browser;
+  let session;
   try {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      acceptDownloads: true,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let page;
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      session = new SportlinkSession({
+        logger: { log, verbose: logVerbose, error: logError }
+      });
+      page = await session.getPage();
+    }
 
     try {
-      if (isDebugEnabled()) {
+      if (!sharedPage && isDebugEnabled()) {
         page.on('request', r => logDebug('>>', r.method(), r.url()));
         page.on('response', r => logDebug('<<', r.status(), r.url()));
       }
-
-      await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
 
       const memberSearchPageUrl = 'https://club.sportlink.com/member/search';
       logDebug('Navigating to member search page:', memberSearchPageUrl);
@@ -90,7 +91,9 @@ async function runDownloadInactive(options = {}) {
       log(`Downloaded ${memberCount} inactive members from Sportlink`);
       return { success: true, members, memberCount };
     } finally {
-      await browser.close();
+      if (session) {
+        await session.close();
+      }
     }
   } catch (err) {
     const errorMsg = err.message || String(err);

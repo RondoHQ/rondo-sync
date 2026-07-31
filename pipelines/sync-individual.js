@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 require('dotenv/config');
 
-const { chromium } = require('playwright');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/laposta-db');
 const {
   openDb: openRondoClubDb,
@@ -37,7 +37,6 @@ const fs = require('fs/promises');
 const path = require('path');
 
 const {
-  loginToSportlink,
   fetchMemberGeneralData,
   fetchMemberFunctions,
   fetchMemberTeamMemberships,
@@ -104,21 +103,17 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
 
   log('Launching browser to fetch fresh data from Sportlink...');
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-  });
-  const page = await context.newPage();
-
   const logger = {
     log: verbose ? console.log : () => {},
     verbose: verbose ? console.log : () => {},
     error: console.error
   };
 
+  const session = new SportlinkSession({ logger });
+  const page = await session.getPage();
+
   try {
-    await loginToSportlink(page, logger);
-    log('Logged in to Sportlink');
+    log('Sportlink session ready');
 
     // Fetch general member data (person, communication, address, parental info)
     log(`Fetching general data for ${knvbId}...`);
@@ -182,7 +177,7 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
 
       log(`  Membership fetch failed (${error.message}). Re-authenticating and retrying once...`);
       try {
-        await loginToSportlink(page, logger);
+        await session.relogin();
         teamMemberships = await fetchMemberTeamMemberships(page, knvbId, logger);
       } catch (retryError) {
         log(`  Membership fetch still failing after retry: ${retryError.message}`);
@@ -248,7 +243,7 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
     };
 
   } finally {
-    await browser.close();
+    await session.close();
     log('Browser closed');
   }
 }
@@ -326,10 +321,13 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
  * This keeps parent/sibling links fresh during individual member sync.
  */
 async function syncParentsForMember(knvbId, db, options = {}) {
-  const { verbose = false } = options;
+  const { verbose = false, freshMemberData = null } = options;
   const log = verbose ? console.log : () => {};
 
-  const prepared = await runPrepareParents({ verbose });
+  const prepared = await runPrepareParents({
+    verbose,
+    memberOverrides: freshMemberData ? [freshMemberData] : []
+  });
   if (!prepared.success) {
     return { synced: 0, created: 0, updated: 0, total: 0, errors: [{ message: prepared.error || 'Prepare parents failed' }] };
   }
@@ -578,7 +576,7 @@ async function syncIndividual(knvbId, options = {}) {
         }
 
         // Also sync linked parents so family relationships stay current.
-        const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+        const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose, freshMemberData });
         if (parentResult.errors.length > 0) {
           console.log(`  Parent sync errors: ${parentResult.errors.length}`);
           parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
@@ -596,8 +594,8 @@ async function syncIndividual(knvbId, options = {}) {
         if (playerHistoryResult.errors.length > 0) {
           console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
           playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
-        } else if (playerHistoryResult.created > 0) {
-          console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+        } else if (playerHistoryResult.created > 0 || playerHistoryResult.reconciled > 0) {
+          console.log(`  Player history: ${playerHistoryResult.created || 0} added, ${playerHistoryResult.reconciled || 0} reconciled`);
         }
 
         // Photo upload (non-critical — failures logged but not propagated)
@@ -650,7 +648,7 @@ async function syncIndividual(knvbId, options = {}) {
     }
 
     // Also sync linked parents so family relationships stay current.
-    const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose });
+    const parentResult = await syncParentsForMember(knvbId, rondoClubDb, { verbose, freshMemberData });
     if (parentResult.errors.length > 0) {
       console.log(`  Parent sync errors: ${parentResult.errors.length}`);
       parentResult.errors.forEach(e => console.log(`    - ${e.email || 'unknown'}: ${e.message}`));
@@ -668,8 +666,8 @@ async function syncIndividual(knvbId, options = {}) {
     if (playerHistoryResult.errors.length > 0) {
       console.log(`  Player history sync errors: ${playerHistoryResult.errors.length}`);
       playerHistoryResult.errors.forEach(e => console.log(`    - ${e.knvb_id || knvbId}: ${e.message}`));
-    } else if (playerHistoryResult.created > 0) {
-      console.log(`  Player history: ${playerHistoryResult.created} work history row(s) added`);
+    } else if (playerHistoryResult.created > 0 || playerHistoryResult.reconciled > 0) {
+      console.log(`  Player history: ${playerHistoryResult.created || 0} added, ${playerHistoryResult.reconciled || 0} reconciled`);
     }
 
     // Photo upload (non-critical — failures logged but not propagated)

@@ -1,9 +1,8 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const { openDb, upsertCases, getCaseCount } = require('../lib/discipline-db');
 const { createSyncLogger } = require('../lib/logger');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -11,29 +10,33 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode (creates logger if not provided)
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, caseCount: number, error?: string}>}
  */
 async function runDownload(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, page: sharedPage } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
-  let browser;
+  let session;
   let db;
   try {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      acceptDownloads: true,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let page;
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      session = new SportlinkSession({
+        logger: { log, verbose: logVerbose, error: logError }
+      });
+      page = await session.getPage();
+      if (isDebugEnabled()) {
+        page.on('request', r => logDebug('>>', r.method(), r.url()));
+        page.on('response', r => logDebug('<<', r.status(), r.url()));
+      }
+    }
 
     try {
-      page.on('request', r => logDebug('>>', r.method(), r.url()));
-      page.on('response', r => logDebug('<<', r.status(), r.url()));
-
-      await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
       logVerbose('Logged into Sportlink successfully');
 
       // Navigate to discipline cases page
@@ -192,7 +195,9 @@ async function runDownload(options = {}) {
       log(`Downloaded ${cases.length} discipline cases (${caseCount} total in database)`);
       return { success: true, caseCount };
     } finally {
-      await browser.close();
+      if (session) {
+        await session.close();
+      }
     }
   } catch (err) {
     const errorMsg = err.message || String(err);

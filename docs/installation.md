@@ -168,6 +168,7 @@ This prompts for Postmark credentials (if not already in `.env`) and installs cr
 | 4x daily (7:30am, 10:30am, 1:30pm, 4:30pm) | Functions (recent) | `sync.sh functions` |
 | Weekly Sunday 1:00 AM | Functions (full) | `sync.sh functions --all` |
 | Weekly Sunday 6:00 AM | Teams | `sync.sh teams` |
+| Weekly Sunday 10:00 AM | Sponsit | `sync.sh sponsit` |
 | Weekly Monday 11:30 PM | Discipline | `sync.sh discipline` |
 
 All times are Europe/Amsterdam timezone.

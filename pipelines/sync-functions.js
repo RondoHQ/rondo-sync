@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runFunctionsDownload } = require('../steps/download-functions-from-sportlink');
 const { runSync: runCommissiesSync } = require('../steps/submit-rondo-club-commissies');
 const { runSync: runCommissieWorkHistorySync } = require('../steps/submit-rondo-club-commissie-work-history');
@@ -182,13 +183,15 @@ async function runFunctionsSync(options = {}) {
     logger.verbose(`Downloading functions from Sportlink (${syncMode})...`);
     const downloadStepId = tracker.startStep('functions-download');
     try {
-      const downloadResult = await runFunctionsDownload({ logger, verbose, withInvoice, recentOnly: !all, days });
+      const downloadOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(downloadStepId, { current, total, label });
+      const downloadResult = await runFunctionsDownload({ logger, verbose, withInvoice, recentOnly: !all, days, onProgress: downloadOnProgress });
       stats.download.total = downloadResult.total || 0;
       stats.download.functionsCount = downloadResult.functionsCount || 0;
       stats.download.committeesCount = downloadResult.committeesCount || 0;
-      if (!downloadResult.success) {
+      if (downloadResult.error) {
         stats.download.errors.push({
-          message: downloadResult.error || 'Unknown error',
+          message: downloadResult.error,
           system: 'functions-download'
         });
       }
@@ -226,7 +229,9 @@ async function runFunctionsSync(options = {}) {
     try {
       // Pass enableOrphanDetection flag instead of stale currentCommissieNames
       // The sync function will get fresh commissie names AFTER updating tracking table
-      const commissieResult = await runCommissiesSync({ logger, verbose, force, enableOrphanDetection: true });
+      const commissieOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(commissieStepId, { current, total, label });
+      const commissieResult = await runCommissiesSync({ logger, verbose, force, enableOrphanDetection: true, onProgress: commissieOnProgress });
       stats.commissies.total = commissieResult.total;
       stats.commissies.synced = commissieResult.synced;
       stats.commissies.created = commissieResult.created;
@@ -267,7 +272,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing commissie work history to Rondo Club...');
     const workHistoryStepId = tracker.startStep('commissie-work-history-sync');
     try {
-      const workHistoryResult = await runCommissieWorkHistorySync({ logger, verbose, force });
+      const workHistoryOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(workHistoryStepId, { current, total, label });
+      const workHistoryResult = await runCommissieWorkHistorySync({ logger, verbose, force, onProgress: workHistoryOnProgress });
       stats.workHistory.total = workHistoryResult.total;
       stats.workHistory.synced = workHistoryResult.synced;
       stats.workHistory.created = workHistoryResult.created;
@@ -307,7 +314,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing free fields to Rondo Club person records...');
     const freeFieldsStepId = tracker.startStep('free-fields-sync');
     try {
-      const freeFieldsResult = await runSyncFreeFieldsToRondoClub({ logger, verbose, force });
+      const freeFieldsOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(freeFieldsStepId, { current, total, label });
+      const freeFieldsResult = await runSyncFreeFieldsToRondoClub({ logger, verbose, force, onProgress: freeFieldsOnProgress });
       stats.freeFields.total = freeFieldsResult.total;
       stats.freeFields.synced = freeFieldsResult.synced;
       stats.freeFields.skipped = freeFieldsResult.skipped;
@@ -344,7 +353,9 @@ async function runFunctionsSync(options = {}) {
     logger.verbose('Syncing capabilities for tracked members...');
     const capabilitySyncStepId = tracker.startStep('capability-sync');
     try {
-      const capabilityResult = await runCapabilitySync({ logger, verbose });
+      const capabilityOnProgress = ({ current, total, label }) =>
+        tracker.updateStep(capabilitySyncStepId, { current, total, label });
+      const capabilityResult = await runCapabilitySync({ logger, verbose, onProgress: capabilityOnProgress });
       stats.capabilitySync.total = capabilityResult.total;
       stats.capabilitySync.synced = capabilityResult.synced;
       stats.capabilitySync.skipped = capabilityResult.skipped;
@@ -419,14 +430,5 @@ if (require.main === module) {
   const daysIdx = process.argv.indexOf('--days');
   const days = daysIdx !== -1 ? parseInt(process.argv[daysIdx + 1], 10) || 2 : 2;
 
-  runFunctionsSync({ verbose, force, withInvoice, all, days })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runFunctionsSync({ verbose, force, withInvoice, all, days }));
 }

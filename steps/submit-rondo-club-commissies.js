@@ -12,6 +12,33 @@ const {
 } = require('../lib/rondo-club-db');
 
 /**
+ * Fetch the set of Rondo-managed commissie IDs (pool commissies seeded inside
+ * Rondo). These must NEVER be deleted by the untracked-commissie cleanup —
+ * they have no Sportlink source and are managed entirely in Rondo.
+ *
+ * Returns a Set of integer commissie IDs. Returns an empty Set if the endpoint
+ * is unreachable, which is the conservative choice (sync may still run but the
+ * deletion safety net catches mass-delete bugs separately).
+ *
+ * @param {Object} options - Logger and request options.
+ * @returns {Promise<Set<number>>}
+ */
+async function fetchRondoManagedCommissieIds(options) {
+  const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+  try {
+    const response = await rondoClubRequest('rondo/v1/managed-commissies', 'GET', null, options);
+    const ids = Array.isArray(response.body?.ids) ? response.body.ids : [];
+    logVerbose(`  ${ids.length} Rondo-managed commissies will be protected from cleanup`);
+    return new Set(ids.map(n => parseInt(n, 10)).filter(n => !isNaN(n)));
+  } catch (error) {
+    // Endpoint may not exist on older versions of Rondo Club — that's fine,
+    // just protect nothing and continue. Log so it shows up in sync reports.
+    logVerbose(`  Could not fetch Rondo-managed commissies: ${error.message} — protecting none`);
+    return new Set();
+  }
+}
+
+/**
  * Fetch all commissies from WordPress API (paginated)
  * @param {Object} options - Logger options
  * @returns {Promise<Array<{id: number, title: string}>>}
@@ -22,20 +49,17 @@ async function fetchAllWordPressCommissies(options) {
   let page = 1;
 
   while (true) {
-    try {
-      const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
-      const pageCommissies = response.body;
-      if (pageCommissies.length === 0) break;
-      commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
-      logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
-      page++;
-    } catch (error) {
-      // End of pages (400 error) or other error
-      if (error.details?.code === 'rest_post_invalid_page_number') {
-        break;
-      }
-      throw error;
-    }
+    const response = await rondoClubRequest(`wp/v2/commissies?per_page=100&page=${page}`, 'GET', null, options);
+    const pageCommissies = Array.isArray(response.body) ? response.body : [];
+    commissies.push(...pageCommissies.map(c => ({ id: c.id, title: c.title?.rendered || c.title })));
+    logVerbose(`  Fetched page ${page}: ${pageCommissies.length} commissies`);
+
+    const totalPages = Number.parseInt(
+      response.headers?.['x-wp-totalpages'] || response.headers?.['X-WP-TotalPages'] || '0',
+      10
+    );
+    if (pageCommissies.length < 100 || (totalPages > 0 && page >= totalPages)) break;
+    page++;
   }
 
   return commissies;
@@ -126,7 +150,7 @@ async function syncCommissie(commissie, db, options) {
  * @returns {Promise<Object>} - Sync result
  */
 async function runSync(options = {}) {
-  const { logger, verbose = false, force = false, enableOrphanDetection = false } = options;
+  const { logger, verbose = false, force = false, enableOrphanDetection = false, onProgress = null } = options;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
   const logError = logger?.error.bind(logger) || console.error;
 
@@ -166,6 +190,9 @@ async function runSync(options = {}) {
         for (let i = 0; i < needsSync.length; i++) {
           const commissie = needsSync[i];
           logVerbose(`Syncing ${i + 1}/${needsSync.length}: ${commissie.commissie_name}`);
+          if (onProgress) {
+            onProgress({ current: i + 1, total: needsSync.length, label: commissie.commissie_name });
+          }
 
           try {
             const syncResult = await syncCommissie(commissie, db, options);
@@ -230,7 +257,14 @@ async function runSync(options = {}) {
       const trackedCommissies = getAllCommissies(db);
       const trackedRondoClubIds = new Set(trackedCommissies.filter(c => c.rondo_club_id).map(c => c.rondo_club_id));
 
-      const untrackedCommissies = wordPressCommissies.filter(c => !trackedRondoClubIds.has(c.id));
+      // Rondo-managed commissies (pool commissies for the volunteer-policy work)
+      // live entirely in WordPress and have no Sportlink source. Treat them as
+      // off-limits for the untracked cleanup.
+      const rondoManagedIds = await fetchRondoManagedCommissieIds(options);
+
+      const untrackedCommissies = wordPressCommissies.filter(
+        c => !trackedRondoClubIds.has(c.id) && !rondoManagedIds.has(c.id)
+      );
 
       // Safety: if ALL WordPress commissies are "untracked", the tracking DB is likely
       // empty or corrupt — deleting everything would be destructive, so skip.
@@ -276,7 +310,7 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync };
+module.exports = { fetchAllWordPressCommissies, runSync };
 
 // CLI entry point
 if (require.main === module) {

@@ -8,12 +8,13 @@ PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 echo "Rondo Sync - Cron Installation"
 echo "==============================="
 echo ""
-echo "This will set up ten sync schedules:"
+echo "This will set up eleven sync schedules:"
 echo "  - People sync:            4x daily (members, parents, photos)"
 echo "  - Nikki sync:             daily at 7:00 AM"
 echo "  - FreeScout sync:         daily at 8:00 AM"
 echo "  - FreeScout conversations: daily at 9:00 AM"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
+echo "  - Sponsit sync:           weekly on Sunday at 10:00 AM"
 echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
@@ -123,6 +124,9 @@ CRON_ENTRIES="
 # Team sync: weekly on Sunday at 6:00 AM
 0 6 * * 0 $PROJECT_DIR/scripts/sync.sh teams
 
+# Sponsit sync: weekly on Sunday at 10:00 AM
+0 10 * * 0 $PROJECT_DIR/scripts/sync.sh sponsit
+
 # Player history sync: monthly on the 1st at 3:00 AM
 0 3 1 * * $PROJECT_DIR/scripts/sync.sh player-history
 
@@ -139,10 +143,31 @@ CRON_ENTRIES="
 */5 * * * * $PROJECT_DIR/scripts/sync.sh reverse
 "
 
-# Install crontab (remove old entries first)
-(crontab -l 2>/dev/null | grep -v 'rondo\|sync\.sh\|cron-wrapper' || true; echo "$CRON_ENTRIES") | crontab -
+# Install crontab — under the rondo user, never under root.
+#
+# History: prior installs were run with `sudo bash install-cron.sh` and ended
+# up under root's crontab. The cron-spawned `node` processes then wrote every
+# log file as root:root, which blocked dashboard-triggered runs (which run as
+# rondo) from appending to the per-day log file with EACCES.
+#
+# Resolution: if this script is executed as root, install into `rondo`'s
+# crontab via `crontab -u rondo -`. Otherwise install into the current user's
+# crontab. Refuse to install into root's crontab even if explicitly requested.
+if [ "$(id -u)" -eq 0 ]; then
+    CRONTAB_USER="rondo"
+    if ! id -u "$CRONTAB_USER" >/dev/null 2>&1; then
+        echo "ERROR: target user '$CRONTAB_USER' does not exist on this host." >&2
+        echo "Create it first, or run this script as the user that should own the sync jobs." >&2
+        exit 1
+    fi
+    echo "Detected root invocation — installing crontab under user '$CRONTAB_USER' (not root)."
+    (crontab -u "$CRONTAB_USER" -l 2>/dev/null | grep -v 'rondo\|sync\.sh\|cron-wrapper' || true; echo "$CRON_ENTRIES") | crontab -u "$CRONTAB_USER" -
+else
+    CRONTAB_USER="$(id -un)"
+    (crontab -l 2>/dev/null | grep -v 'rondo\|sync\.sh\|cron-wrapper' || true; echo "$CRON_ENTRIES") | crontab -
+fi
 
-echo "Cron jobs installed successfully!"
+echo "Cron jobs installed successfully for user '$CRONTAB_USER'."
 echo ""
 echo "Scheduled jobs:"
 echo "  - People sync:            4x daily at 8am, 11am, 2pm, 5pm (members, parents, photos)"
@@ -150,6 +175,7 @@ echo "  - Nikki sync:             daily at 7:00 AM (nikki contributions)"
 echo "  - FreeScout sync:         daily at 8:00 AM (customer sync)"
 echo "  - FreeScout conversations: daily at 9:00 AM (after customer sync)"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
+echo "  - Sponsit sync:           weekly on Sunday at 10:00 AM"
 echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
 echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
 echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
@@ -163,8 +189,12 @@ if [ -n "$OPERATOR_EMAIL" ]; then
     echo ""
 fi
 echo "Helpful commands:"
-echo "  View installed cron jobs:   crontab -l"
+if [ "$(id -u)" -eq 0 ]; then
+    echo "  View installed cron jobs:   crontab -u $CRONTAB_USER -l"
+else
+    echo "  View installed cron jobs:   crontab -l"
+fi
 echo "  View logs:                  ls -la $PROJECT_DIR/logs/cron/"
-echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|freescout|reverse|discipline|all}"
+echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|sponsit|freescout|reverse|discipline|all}"
 echo "  Remove all cron jobs:       crontab -r"
 echo ""

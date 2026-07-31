@@ -505,6 +505,39 @@ body > form button:active {
   color: #856404;
 }
 
+/* In-flight step progress */
+.step-progress {
+  display: block;
+  width: 160px;
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
+}
+
+.step-progress-bar {
+  height: 100%;
+  background: #ffc107;
+  transition: width 0.3s ease;
+}
+
+.step-progress-text {
+  font-size: 0.8rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.live-banner {
+  background: #fff3cd;
+  color: #856404;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
 /* Pagination */
 .pagination {
   display: flex;

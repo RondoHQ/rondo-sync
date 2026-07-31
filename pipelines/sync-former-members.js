@@ -4,7 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const https = require('https');
-const { chromium } = require('playwright');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const FormData = require('form-data');
 const { runDownloadInactive } = require('../steps/download-inactive-members');
 const { preparePerson, isValidMember } = require('../steps/prepare-rondo-club-members');
@@ -193,10 +193,14 @@ async function runImport(options = {}) {
   console.log('Syncing former members to Rondo Club...');
   console.log('');
 
+  const syncStepId = tracker ? tracker.startStep('former-members-sync') : null;
   const dbForSync = openDb();
   try {
     for (let i = 0; i < toSync.length; i++) {
       const { knvb_id, prepared, rondo_club_id } = toSync[i];
+      if (tracker) {
+        tracker.updateStep(syncStepId, { current: i + 1, total: toSync.length, label: knvb_id });
+      }
 
       try {
         let response;
@@ -212,14 +216,20 @@ async function runImport(options = {}) {
           const resultId = rondo_club_id || response.body.id;
           const sourceHash = computeSourceHash(knvb_id, prepared.data);
 
-          // Track in rondo_club_members table
+          // Track in rondo_club_members table.
+          // NOTE: upsertMembers reads `data` (object) — not `data_json` (string)
+          // — and computes data_json + source_hash internally from it. Earlier
+          // this call passed `data_json` instead, which upsertMembers silently
+          // ignored, defaulting `data` to {} and writing literal "{}" to the
+          // row. That left 2604 former members with empty local data_json, so
+          // the change detector saw every Rondo Club ACF field as a "change"
+          // every cycle (root cause of the reverse-sync loop the
+          // rest_pre_insert_person + former_member-skip work was masking).
           upsertMembers(dbForSync, [{
             knvb_id: knvb_id,
             email: prepared.email,
-            data_json: JSON.stringify(prepared.data),
-            source_hash: sourceHash,
-            person_image_date: prepared.person_image_date,
-            last_seen_at: new Date().toISOString()
+            data: prepared.data,
+            person_image_date: prepared.person_image_date
           }]);
 
           // Update sync state with rondo_club_id
@@ -253,6 +263,14 @@ async function runImport(options = {}) {
     }
   } finally {
     dbForSync.close();
+    if (tracker) {
+      tracker.endStep(syncStepId, {
+        outcome: stats.failed > 0 ? (stats.synced > 0 ? 'partial' : 'failure') : 'success',
+        created: stats.synced,
+        failed: stats.failed,
+        skipped: stats.skippedFormer
+      });
+    }
   }
 
   // Step 4: Download photos for former members
@@ -275,23 +293,21 @@ async function runImport(options = {}) {
         console.log(`${membersNeedingPhotos.length} former members need photo downloads`);
 
         const logDebug = createDebugLogger();
-        const browser = await chromium.launch({ headless: true });
-        const context = await browser.newContext({
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+        const session = new SportlinkSession({
+          logger: { log: console.log, verbose: verbose ? console.log : () => {}, error: console.error }
         });
-        const page = await context.newPage();
-
-        page.on('request', r => logDebug('>>', r.method(), r.url()));
-        page.on('response', r => logDebug('<<', r.status(), r.url()));
+        let page;
 
         try {
-          // Login to Sportlink
+          // Login (or reuse cached session) before downloading photos
           try {
-            await loginToSportlink(page, { verbose });
+            page = await session.getPage();
+            page.on('request', r => logDebug('>>', r.method(), r.url()));
+            page.on('response', r => logDebug('<<', r.status(), r.url()));
           } catch (loginError) {
             console.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
             stats.photos.failed = membersNeedingPhotos.length;
-            await browser.close();
+            await session.close();
             dbForPhotos.close();
             // Continue to Step 5
             console.log('');
@@ -306,9 +322,15 @@ async function runImport(options = {}) {
             return stats;
           }
 
+          const photoStepId = tracker ? tracker.startStep('former-members-photos-download') : null;
+          let photoStepEnded = false;
+          try {
           for (let i = 0; i < membersNeedingPhotos.length; i++) {
             const member = membersNeedingPhotos[i];
             if (verbose) console.log(`  Processing ${i + 1}/${membersNeedingPhotos.length}: ${member.knvb_id}`);
+            if (tracker) {
+              tracker.updateStep(photoStepId, { current: i + 1, total: membersNeedingPhotos.length, label: member.knvb_id });
+            }
 
             try {
               const otherUrl = `https://club.sportlink.com/member/member-details/${member.knvb_id}/other`;
@@ -373,8 +395,19 @@ async function runImport(options = {}) {
               await new Promise(r => setTimeout(r, delay));
             }
           }
+          } finally {
+            if (tracker && !photoStepEnded) {
+              photoStepEnded = true;
+              tracker.endStep(photoStepId, {
+                outcome: stats.photos.failed > 0 ? 'partial' : 'success',
+                created: stats.photos.downloaded,
+                skipped: stats.photos.noPhoto,
+                failed: stats.photos.failed
+              });
+            }
+          }
         } finally {
-          await browser.close();
+          await session.close();
         }
 
         console.log(`Downloaded ${stats.photos.downloaded} photos (${stats.photos.noPhoto} no photo, ${stats.photos.failed} failed)`);
@@ -397,9 +430,15 @@ async function runImport(options = {}) {
       } else {
         console.log(`${membersWithPhotos.length} photos to upload`);
 
+        const uploadStepId = tracker ? tracker.startStep('former-members-photos-upload') : null;
+        const uploadStartFailed = stats.photos.failed;
+        try {
         for (let i = 0; i < membersWithPhotos.length; i++) {
           const member = membersWithPhotos[i];
           if (verbose) console.log(`  Uploading ${i + 1}/${membersWithPhotos.length}: ${member.knvb_id}`);
+          if (tracker) {
+            tracker.updateStep(uploadStepId, { current: i + 1, total: membersWithPhotos.length, label: member.knvb_id });
+          }
 
           if (!member.rondo_club_id) {
             if (verbose) console.log(`    Skipped: no rondo_club_id`);
@@ -427,6 +466,16 @@ async function runImport(options = {}) {
           // Rate limit: 2 seconds between uploads
           if (i < membersWithPhotos.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        } finally {
+          if (tracker) {
+            const newFailures = stats.photos.failed - uploadStartFailed;
+            tracker.endStep(uploadStepId, {
+              outcome: newFailures > 0 ? 'partial' : 'success',
+              updated: stats.photos.uploaded,
+              failed: newFailures
+            });
           }
         }
 

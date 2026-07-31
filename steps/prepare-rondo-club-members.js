@@ -263,6 +263,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const ageClass = (sportlinkMember.AgeClassDescription || '').trim() || null;
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
   const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
+  const tooltip = (sportlinkMember.Tooltip || '').trim();
 
   if (memberSince) acf['lid-sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
@@ -272,6 +273,13 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   if (personImageDate) acf['datum-foto'] = personImageDate;
   if (memberType) acf['type-lid'] = memberType;
   if (gameActivities) acf['spelactiviteit'] = gameActivities;
+
+  // Sportlink Tooltip "Actie van een ander (overschrijving)" marks members who
+  // were transferred in from another club and still need their KNVB transfer
+  // processed — they show up in Sportlink (and thus get synced to Rondo) but
+  // have no voetbalactiviteit yet. Always write the field so it clears once
+  // the transfer is processed.
+  acf['wacht_op_overschrijving'] = /overschrijving/i.test(tooltip);
 
   // Free fields from Sportlink /other tab (FreeScout ID, VOG datum, financial block)
   if (freeFields) {

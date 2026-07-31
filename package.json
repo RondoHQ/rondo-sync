@@ -1,8 +1,8 @@
 {
   "name": "rondo-sync",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "private": true,
-  "description": "Sync data from Sportlink Club to Rondo Club, Laposta, and FreeScout",
+  "description": "Sync data from Sportlink, Nikki, and Sponsit to Rondo Club and connected services",
   "main": "steps/download-data-from-sportlink.js",
   "scripts": {
     "download": "node steps/download-data-from-sportlink.js",
@@ -51,6 +51,15 @@
     "sync-nikki-rondo-club-verbose": "node steps/sync-nikki-to-rondo-club.js --verbose",
     "sync-nikki": "node pipelines/sync-nikki.js",
     "sync-nikki-verbose": "node pipelines/sync-nikki.js --verbose",
+    "download-sponsit": "node steps/download-sponsit-contacts.js",
+    "download-sponsit-verbose": "node steps/download-sponsit-contacts.js --verbose",
+    "show-sponsit": "node tools/show-sponsit-contacts.js --summary",
+    "preview-sponsit-rondo": "node steps/sync-sponsit-to-rondo-club.js",
+    "sync-sponsit-rondo": "node steps/sync-sponsit-to-rondo-club.js --apply",
+    "preview-sponsit-laposta": "node steps/sync-sponsit-to-laposta.js",
+    "sync-sponsit-laposta": "node steps/sync-sponsit-to-laposta.js --apply",
+    "sync-sponsit": "node pipelines/sync-sponsit.js",
+    "sync-sponsit-verbose": "node pipelines/sync-sponsit.js --verbose",
     "sync-freescout": "node pipelines/sync-freescout.js",
     "sync-freescout-verbose": "node pipelines/sync-freescout.js --verbose",
     "sync-individual": "node pipelines/sync-individual.js",
@@ -61,7 +70,8 @@
     "verify-rondo-club": "node tools/verify-rondo-club-data.js",
     "verify-rondo-club-verbose": "node tools/verify-rondo-club-data.js --verbose",
     "verify-rondo-club-fix": "node tools/verify-rondo-club-data.js --fix --verbose",
-    "install-cron": "bash scripts/install-cron.sh"
+    "install-cron": "bash scripts/install-cron.sh",
+    "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

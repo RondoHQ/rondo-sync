@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp, parseCliArgs } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runNikkiDownload } = require('../steps/download-nikki-contributions');
 const { runNikkiRondoClubSync } = require('../steps/sync-nikki-to-rondo-club');
 
@@ -167,14 +168,5 @@ module.exports = { runNikkiSync };
 if (require.main === module) {
   const { verbose, force } = parseCliArgs();
 
-  runNikkiSync({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runNikkiSync({ verbose, force }));
 }

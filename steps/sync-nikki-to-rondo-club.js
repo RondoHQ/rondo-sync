@@ -7,14 +7,29 @@ const { createSyncLogger } = require('../lib/logger');
 const { parseCliArgs, stableStringify, computeHash } = require('../lib/utils');
 
 /**
+ * Coerce any value to a finite number, or null. Required because Rondo Club's
+ * `_nikki_YYYY_total` / `_saldo` ACF fields are typed `number` and WP REST rejects
+ * empty strings with `rest_invalid_type` — which used to trigger thousands of retries
+ * per cycle until the People sync logs ballooned past 300k lines.
+ */
+function toNumberOrNull(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Build per-year ACF fields from contributions.
  * Creates fields like _nikki_2025_total, _nikki_2025_saldo, _nikki_2025_status
  */
 function buildPerYearAcfFields(contributions) {
   const fields = {};
   for (const c of contributions) {
-    fields[`_nikki_${c.year}_total`] = c.hoofdsom ?? null;
-    fields[`_nikki_${c.year}_saldo`] = c.saldo ?? null;
+    fields[`_nikki_${c.year}_total`] = toNumberOrNull(c.hoofdsom);
+    fields[`_nikki_${c.year}_saldo`] = toNumberOrNull(c.saldo);
     fields[`_nikki_${c.year}_status`] = c.status || null;
   }
   return fields;
@@ -187,7 +202,7 @@ async function runNikkiRondoClubSync(options = {}) {
   }
 }
 
-module.exports = { runNikkiRondoClubSync, buildPerYearAcfFields };
+module.exports = { runNikkiRondoClubSync, buildPerYearAcfFields, toNumberOrNull };
 
 if (require.main === module) {
   const { verbose, force } = parseCliArgs();

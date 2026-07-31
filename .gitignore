@@ -12,6 +12,7 @@ downloads/
 
 # Logs
 logs/
+.playwright-cli/
 
 # Databases
 *.sqlite

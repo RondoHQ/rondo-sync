@@ -1,13 +1,12 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const {
   openDb,
   upsertTeamsWithMetadata,
   upsertTeamMembers,
   clearTeamMembers
 } = require('../lib/rondo-club-db');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
 /**
@@ -15,29 +14,32 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, teamCount: number, memberCount: number, error?: string}>}
  */
 async function runTeamDownload(options = {}) {
-  const { logger, verbose = false } = options;
+  const { logger, verbose = false, page: sharedPage } = options;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
 
-  let browser;
+  let session;
   try {
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let page;
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      session = new SportlinkSession({
+        logger: { log, verbose: logVerbose, error: logError }
+      });
+      page = await session.getPage();
+    }
 
     try {
-      if (isDebugEnabled()) {
+      if (!sharedPage && isDebugEnabled()) {
         page.on('request', r => logDebug('>>', r.method(), r.url()));
         page.on('response', r => logDebug('<<', r.status(), r.url()));
       }
-
-      await loginToSportlink(page, { logger: { log, verbose: logVerbose, error: logError } });
 
       // Step 1: Navigate to union teams page and capture teams list
       logVerbose('Fetching union teams list...');
@@ -244,7 +246,9 @@ async function runTeamDownload(options = {}) {
       log(`Downloaded ${teamRecords.length} teams with ${totalMemberCount} team members from Sportlink`);
       return { success: true, teamCount: teamRecords.length, memberCount: totalMemberCount };
     } finally {
-      await browser.close();
+      if (session) {
+        await session.close();
+      }
     }
   } catch (err) {
     const errorMsg = err.message || String(err);

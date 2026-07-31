@@ -44,7 +44,7 @@ function convertMappedValue(value, valueType) {
  * This step applies mapped fields to person ACF payloads and always syncs financiele-blokkade.
  */
 async function runSyncFreeFieldsToRondoClub(options = {}) {
-  const { logger, verbose = false, force = false } = options;
+  const { logger, verbose = false, force = false, onProgress = null } = options;
   const log = logger?.log.bind(logger) || console.log;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
   const logError = logger?.error.bind(logger) || console.error;
@@ -99,8 +99,12 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
 
     log(`Processing ${members.length} members with free field data`);
 
-    for (const member of members) {
+    for (let i = 0; i < members.length; i++) {
+      const member = members[i];
       const { knvb_id, has_financial_block, rondo_club_id } = member;
+      if (onProgress) {
+        onProgress({ current: i + 1, total: members.length, label: knvb_id });
+      }
 
       // Parse stored data to get current field values and required fields
       let data;

@@ -1,11 +1,10 @@
 require('dotenv/config');
 
-const { chromium } = require('playwright');
 const fs = require('fs/promises');
 const path = require('path');
 const { openDb, getMembersNeedingPhotoDownload, updatePhotoState } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
-const { loginToSportlink } = require('../lib/sportlink-login');
+const { SportlinkSession } = require('../lib/sportlink-session');
 const { createDebugLogger } = require('../lib/log-adapters');
 const { parseMemberHeaderResponse, downloadPhotoFromUrl } = require('../lib/photo-utils');
 
@@ -15,9 +14,14 @@ const { parseMemberHeaderResponse, downloadPhotoFromUrl } = require('../lib/phot
  * Launches Playwright, logs into Sportlink, visits /other tab for each member
  * with pending_download photo state, captures MemberHeader response for the
  * signed photo URL, and downloads the photo immediately.
+ *
+ * @param {Object} options
+ * @param {Object} [options.logger] - Logger instance
+ * @param {boolean} [options.verbose=false] - Verbose mode
+ * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  */
 async function runPhotoDownload(options = {}) {
-  const { logger: providedLogger, verbose = false } = options;
+  const { logger: providedLogger, verbose = false, page: sharedPage } = options;
   const logger = providedLogger || createSyncLogger({ verbose });
 
   const result = {
@@ -46,23 +50,26 @@ async function runPhotoDownload(options = {}) {
     await fs.mkdir(photosDir, { recursive: true });
 
     const logDebug = createDebugLogger();
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    let session;
+    let page;
 
-    page.on('request', r => logDebug('>>', r.method(), r.url()));
-    page.on('response', r => logDebug('<<', r.status(), r.url()));
-
-    try {
+    if (sharedPage) {
+      page = sharedPage;
+    } else {
+      session = new SportlinkSession({ logger });
       try {
-        await loginToSportlink(page, { logger });
+        page = await session.getPage();
       } catch (loginError) {
         logger.log(`Sportlink login failed (${loginError.message.split('\n')[0]}) — skipping photo download`);
         result.warning = `Login failed: ${loginError.message.split('\n')[0]}`;
+        await session.close();
         return result;
       }
+      page.on('request', r => logDebug('>>', r.method(), r.url()));
+      page.on('response', r => logDebug('<<', r.status(), r.url()));
+    }
+
+    try {
 
       for (let i = 0; i < members.length; i++) {
         const member = members[i];
@@ -136,7 +143,9 @@ async function runPhotoDownload(options = {}) {
         }
       }
     } finally {
-      await browser.close();
+      if (session) {
+        await session.close();
+      }
     }
 
     // Summary

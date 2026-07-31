@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runSubmit: runFreescoutSubmit } = require('../steps/submit-freescout-sync');
 const { runSyncFreescoutIdsToRondoClub } = require('../steps/sync-freescout-ids-to-rondo-club');
 const { checkCredentials: checkFreescoutCredentials } = require('../lib/freescout-client');
@@ -200,14 +201,5 @@ if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
 
-  runFreescoutSync({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runFreescoutSync({ verbose, force }));
 }

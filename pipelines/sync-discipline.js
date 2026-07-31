@@ -3,6 +3,7 @@ require('dotenv/config');
 const { createSyncLogger } = require('../lib/logger');
 const { formatDuration, formatTimestamp } = require('../lib/utils');
 const { RunTracker } = require('../lib/run-tracker');
+const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runDownload } = require('../steps/download-discipline-cases');
 const { runSync: runDisciplineSync } = require('../steps/submit-rondo-club-discipline');
 
@@ -77,7 +78,7 @@ function printSummary(logger, stats) {
  * Uses member data from last people sync to link cases to persons
  */
 async function runDisciplineSyncPipeline(options = {}) {
-  const { verbose = false, force = false } = options;
+  const { verbose = false, force = false, page: sharedPage } = options;
 
   const logger = createSyncLogger({ verbose, prefix: 'discipline' });
   const startTime = Date.now();
@@ -109,7 +110,7 @@ async function runDisciplineSyncPipeline(options = {}) {
     logger.verbose('Downloading discipline cases from Sportlink...');
     const downloadStepId = tracker.startStep('discipline-download');
     try {
-      const downloadResult = await runDownload({ logger, verbose });
+      const downloadResult = await runDownload({ logger, verbose, page: sharedPage });
       stats.download.caseCount = downloadResult.caseCount || 0;
       if (!downloadResult.success) {
         stats.download.errors.push({
@@ -219,14 +220,5 @@ if (require.main === module) {
   const verbose = process.argv.includes('--verbose');
   const force = process.argv.includes('--force');
 
-  runDisciplineSyncPipeline({ verbose, force })
-    .then(result => {
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exitCode = 1;
-    });
+  runPipelineCli(runDisciplineSyncPipeline({ verbose, force }));
 }

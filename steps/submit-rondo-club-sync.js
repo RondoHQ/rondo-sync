@@ -22,6 +22,11 @@ const {
 const { resolveFieldConflicts, generateConflictSummary } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
+const {
+  normalizePersonEmailMatches,
+  selectParentEmailMatch,
+  getParentProfileOwnership
+} = require('../lib/parent-person-resolution');
 
 /**
  * Build a readable error message with API code/details for logs and summaries.
@@ -338,6 +343,61 @@ function hasRelationshipType(relationship, typeId) {
 }
 
 /**
+ * Check whether a tracked parent post is actually one of the known children.
+ * This catches stale mappings created before the shared-family-email guards
+ * were added; those mappings must be cleared before normal discovery runs.
+ *
+ * @param {number|null} rondoClubId - Tracked Rondo Club parent post ID
+ * @param {Set<number>} knownChildRondoClubIds - All known child post IDs
+ * @returns {boolean}
+ */
+function isTrackedParentKnownChild(rondoClubId, knownChildRondoClubIds) {
+  return Boolean(rondoClubId && knownChildRondoClubIds.has(rondoClubId));
+}
+
+/**
+ * Replace Sportlink-managed child links while preserving manually linked
+ * former children that no longer occur in the current parent feed.
+ *
+ * @param {Array<Object>} existingRelationships
+ * @param {Array<Object>} currentChildRelationships
+ * @param {Set<number>} knownCurrentChildIds
+ * @param {number|null} parentId
+ * @returns {Array<Object>}
+ */
+function mergeParentChildRelationships(
+  existingRelationships,
+  currentChildRelationships,
+  knownCurrentChildIds,
+  parentId = null
+) {
+  const currentIds = knownCurrentChildIds instanceof Set
+    ? knownCurrentChildIds
+    : new Set(knownCurrentChildIds || []);
+
+  const preservedRelationships = existingRelationships
+    .filter((relationship) => {
+      if (!hasRelationshipType(relationship, RELATIONSHIP_TYPE.CHILD) && !hasRelationshipType(relationship, 9)) {
+        return true;
+      }
+
+      const relatedPersonId = Number(relationship.related_person);
+      return relatedPersonId > 0 && relatedPersonId !== Number(parentId) && !currentIds.has(relatedPersonId);
+    })
+    .map((relationship) => (
+      hasRelationshipType(relationship, RELATIONSHIP_TYPE.CHILD) || hasRelationshipType(relationship, 9)
+        ? { ...relationship, relationship_type: [RELATIONSHIP_TYPE.CHILD] }
+        : relationship
+    ));
+
+  const currentRelationships = currentChildRelationships.filter(
+    relationship => Number(relationship.related_person) !== Number(parentId)
+  );
+
+  return [...preservedRelationships, ...currentRelationships];
+}
+
+/**
  * Update children's parents relationship field (bidirectional linking)
  * Preserves existing parent links, adds new one
  */
@@ -391,9 +451,9 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
  * Search for an existing person in Rondo Club by email address
  * @param {string} email - Email to search for
  * @param {Object} options - Logger and verbose options
- * @returns {Promise<number|null>} - Rondo Club person ID if found, null otherwise
+ * @returns {Promise<Array<{id: number, status: string}>>} Exact matches
  */
-async function findPersonByEmail(email, options) {
+async function findPeopleByEmail(email, options) {
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
 
   try {
@@ -405,16 +465,31 @@ async function findPersonByEmail(email, options) {
       options
     );
 
-    const personId = response.body?.id;
-    if (personId) {
-      logVerbose(`Found existing person ${personId} with email ${email}`);
-      return personId;
+    const matches = normalizePersonEmailMatches(response.body);
+    if (matches.length > 0) {
+      logVerbose(`Found ${matches.length} existing person match(es) with email ${email}`);
     }
-    return null;
+    return matches;
   } catch (error) {
     logVerbose(`Email lookup failed: ${error.message}`);
-    return null;
+    return [];
   }
+}
+
+/**
+ * Restore a trashed person through the standard WordPress REST controller.
+ *
+ * @param {number} personId - Rondo Club person ID
+ * @param {Object} options - Logger and verbose options
+ * @returns {Promise<Object>} REST response
+ */
+async function restorePerson(personId, options) {
+  return rondoClubRequest(
+    `wp/v2/people/${personId}`,
+    'PUT',
+    { status: 'publish' },
+    options
+  );
 }
 
 /**
@@ -426,7 +501,7 @@ async function findPersonByEmail(email, options) {
  * @param {Object} options - Logger and verbose options
  * @returns {Promise<{action: string, id: number}>}
  */
-async function syncParent(parent, db, knvbIdToRondoClubId, options) {
+async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard = {}) {
   const { email, childKnvbIds, data, source_hash } = parent;
   let { rondo_club_id } = parent;
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
@@ -445,34 +520,47 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
     relationship_label: ''
   }));
 
+  const knownChildKnvbIds = siblingGuard.allChildKnvbIds || new Set(childKnvbIds);
+  const knownChildRondoClubIds = siblingGuard.allChildRondoClubIds || new Set(childRondoClubIds);
+
+  // Older sync runs may already have stored a child post as this parent's ID.
+  // The discovery guard below only protects unmapped parents, so self-heal the
+  // stale mapping first and let the normal create/merge path resolve it again.
+  if (isTrackedParentKnownChild(rondo_club_id, knownChildRondoClubIds)) {
+    logVerbose(`Parent ${email} is incorrectly tracked as known child ${rondo_club_id}; clearing stale mapping`);
+    updateParentSyncState(db, email, null, null);
+    rondo_club_id = null;
+  }
+
   // If no rondo_club_id yet, check if person already exists by email (e.g., they're also a member)
   // Check local database first (reliable and fast), then WordPress API as fallback
-  // Important: exclude the parent's own children — in youth clubs, parents often share
-  // an email with their children in Sportlink, but they're separate people.
+  // Important: exclude any known child — in youth clubs, multiple siblings often share
+  // the family inbox in Sportlink, so a sibling's WP post can match this parent's email.
+  // We exclude both this parent's direct children AND any sibling registered as a child
+  // of any other parent record (sibling-by-shared-email guard).
   if (!rondo_club_id) {
-    const childKnvbIdSet = new Set(childKnvbIds);
     const memberMatches = db.prepare(
       'SELECT knvb_id, rondo_club_id FROM rondo_club_members WHERE LOWER(email) = LOWER(?) AND rondo_club_id IS NOT NULL'
     ).all(email);
-    const nonChildMatch = memberMatches.find(m => !childKnvbIdSet.has(m.knvb_id));
+    const nonChildMatch = memberMatches.find(m => !knownChildKnvbIds.has(m.knvb_id));
     if (nonChildMatch) {
       logVerbose(`Parent ${email} found as member in local DB (person ${nonChildMatch.rondo_club_id}), will merge`);
       rondo_club_id = nonChildMatch.rondo_club_id;
-    } else if (memberMatches.length === 0) {
-      // No member match at all — check WordPress API as fallback
-      const existingId = await findPersonByEmail(email, options);
-      if (existingId) {
-        // Verify the API match isn't one of our children either
-        const isChild = childRondoClubIds.includes(existingId);
-        if (!isChild) {
-          logVerbose(`Parent ${email} already exists as person ${existingId}, will merge`);
-          rondo_club_id = existingId;
-        } else {
-          logVerbose(`Parent ${email} found person ${existingId} but it's their own child, will create separate`);
-        }
-      }
     } else {
-      logVerbose(`Parent ${email} only matches own children in local DB, will create separate`);
+      // Local matches may all be children sharing the family inbox. Ask Rondo
+      // for every exact match, including trash, and let the child guard decide.
+      const emailMatches = await findPeopleByEmail(email, options);
+      const existingMatch = selectParentEmailMatch(emailMatches, knownChildRondoClubIds);
+      if (existingMatch) {
+        if (existingMatch.status === 'trash') {
+          await restorePerson(existingMatch.id, options);
+          logVerbose(`Restored parent ${existingMatch.id} from trash for ${email}`);
+        }
+        logVerbose(`Parent ${email} already exists as person ${existingMatch.id}, will merge`);
+        rondo_club_id = existingMatch.id;
+      } else if (memberMatches.length > 0 || emailMatches.length > 0) {
+        logVerbose(`Parent ${email} only matches known children, will create separate`);
+      }
     }
   }
 
@@ -484,19 +572,31 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
     let existingRelationships = [];
     let existingFirstName = '';
     let existingLastName = '';
-    let existingKnvbId = null;
+    let profileOwnership = { preserveIdentity: false, preserveContact: false };
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      existingRelationships = existing.body.acf?.relationships || [];
-      existingFirstName = existing.body.acf?.first_name || '';
-      existingLastName = existing.body.acf?.last_name || '';
-      existingKnvbId = existing.body.acf?.['knvb-id'] || null;
+      const existingAcf = existing.body.acf || {};
+      existingRelationships = existingAcf.relationships || [];
+      existingFirstName = existingAcf.first_name || '';
+      existingLastName = existingAcf.last_name || '';
+      profileOwnership = getParentProfileOwnership(existingAcf);
     } catch (e) {
-      // Person was deleted from WordPress - reset tracking state and create fresh
+      // A tracked parent can be in trash because every child temporarily left
+      // the club. Restore that exact record before considering a new person.
       if (e.message && e.message.includes('404')) {
-        logVerbose(`Person ${rondo_club_id} no longer exists (404) - will create fresh`);
-        updateParentSyncState(db, email, null, null); // Clear rondo_club_id and hash
-        rondo_club_id = null; // Trigger create path below
+        try {
+          const restored = await restorePerson(rondo_club_id, options);
+          const restoredAcf = restored.body.acf || {};
+          existingRelationships = restoredAcf.relationships || [];
+          existingFirstName = restoredAcf.first_name || '';
+          existingLastName = restoredAcf.last_name || '';
+          profileOwnership = getParentProfileOwnership(restoredAcf);
+          logVerbose(`Restored tracked parent ${rondo_club_id} from trash`);
+        } catch (restoreError) {
+          logVerbose(`Person ${rondo_club_id} could not be restored; will create fresh`);
+          updateParentSyncState(db, email, null, null);
+          rondo_club_id = null;
+        }
       } else {
         logVerbose(`Could not fetch existing person: ${e.message}`);
       }
@@ -504,31 +604,48 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options) {
 
     // Only proceed with update if person still exists (rondo_club_id not cleared by 404)
     if (rondo_club_id) {
-      // Merge: keep all existing non-child relationships, replace child relationships with fresh correct ones.
-      // This replaces any old wrong-typed child relations (e.g. old type 9 instead of correct type 3).
-      const nonChildRelationships = existingRelationships.filter(r =>
-        !hasRelationshipType(r, RELATIONSHIP_TYPE.CHILD) && !hasRelationshipType(r, 9) // 9 = old wrong type
+      // Replace links for current Sportlink children, but keep manually linked
+      // former children that no longer occur in the parent feed.
+      const mergedRelationships = mergeParentChildRelationships(
+        existingRelationships,
+        childRelationships,
+        knownChildRondoClubIds,
+        rondo_club_id
       );
-      const newChildRelationships = childRelationships.filter(r =>
-        r.related_person !== rondo_club_id // Prevent self-referential relationships
-      );
-      const mergedRelationships = [...nonChildRelationships, ...newChildRelationships];
 
       // Determine name to use:
-      // - If person has KNVB ID, they're a member - preserve their properly-split name
-      // - If no KNVB ID, they're a pure parent - update name from Sportlink
-      const isMember = !!existingKnvbId;
-      const firstName = isMember ? existingFirstName : (data.acf.first_name || existingFirstName);
-      const lastName = isMember ? existingLastName : (data.acf.last_name || existingLastName);
+      // - Members, contacts, and sponsors keep their existing managed profile.
+      // - Standalone parent records are updated from Sportlink.
+      const firstName = profileOwnership.preserveIdentity ? existingFirstName : (data.acf.first_name || existingFirstName);
+      const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.acf.last_name || existingLastName);
+      const parentManagedFields = {};
 
-      if (!isMember) {
+      // Pure parent records are managed by Sportlink. Keep their fixed ACF
+      // contact fields current. Former members also receive these current
+      // parent details, while their historical member identity remains intact.
+      if (!profileOwnership.preserveContact) {
+        for (const field of ['email_1', 'email_2', 'mobile_1', 'mobile_2', 'telephone_1', 'telephone_2']) {
+          if (Object.prototype.hasOwnProperty.call(data.acf, field)) {
+            parentManagedFields[field] = data.acf[field];
+          }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data.acf, 'addresses')) {
+          parentManagedFields.addresses = data.acf.addresses;
+        }
+      }
+
+      if (!profileOwnership.preserveIdentity) {
         logVerbose(`Pure parent - updating name from Sportlink: "${firstName} ${lastName}"`);
+      } else if (!profileOwnership.preserveContact) {
+        logVerbose(`Former member parent - preserving identity and updating current parent contact data`);
       }
 
       const updateData = {
         acf: {
           first_name: firstName,
           last_name: lastName,
+          ...parentManagedFields,
           relationships: mergedRelationships
         }
       };
@@ -694,10 +811,18 @@ async function parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, optio
 /**
  * Find hash-unchanged parents that still need sync because child relationships drifted.
  */
-async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options) {
+async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options, knownChildRondoClubIds = new Set()) {
   const unchangedParents = getUnchangedParents(db);
   const stale = [];
   for (const parent of unchangedParents) {
+    // A historical email match may have stored one of the children as the
+    // parent post. Force that unchanged row through syncParent so its mapping
+    // is cleared before it can keep writing parent/child relationships.
+    if (isTrackedParentKnownChild(parent.rondo_club_id, knownChildRondoClubIds)) {
+      stale.push(parent);
+      continue;
+    }
+
     if (await parentNeedsRelationshipRefresh(parent, knvbIdToRondoClubId, options)) {
       stale.push(parent);
     }
@@ -739,12 +864,33 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
   // Upsert to tracking database
   upsertParents(db, parents);
 
+  // Build a global set of every KNVB ID that appears as a child of any parent.
+  // Used as a safety net so a sibling sharing the family email is never merged
+  // into a parent record, even if they were excluded from this specific parent's
+  // childKnvbIds (e.g. their NameParentN was empty in Sportlink).
+  const allChildKnvbIds = new Set();
+  for (const parent of parents) {
+    for (const knvbId of parent.childKnvbIds || []) {
+      allChildKnvbIds.add(knvbId);
+    }
+  }
+  const allChildRondoClubIds = new Set();
+  for (const knvbId of allChildKnvbIds) {
+    const rondoId = knvbIdToRondoClubId.get(knvbId);
+    if (rondoId) allChildRondoClubIds.add(rondoId);
+  }
+
   // Get parents needing sync (includes rondo_club_id from database)
   const needsSync = getParentsNeedingSync(db, force);
 
   // Guard against stale links when child person IDs changed while parent source data did not.
   if (!force) {
-    const staleRelationshipParents = await getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options);
+    const staleRelationshipParents = await getParentsWithStaleRelationships(
+      db,
+      knvbIdToRondoClubId,
+      options,
+      allChildRondoClubIds
+    );
     if (staleRelationshipParents.length > 0) {
       const byEmail = new Map(needsSync.map(parent => [parent.email, parent]));
       for (const parent of staleRelationshipParents) {
@@ -766,7 +912,10 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
     logVerbose(`Syncing parent ${i + 1}/${needsSync.length}: ${parent.email}`);
 
     try {
-      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, options);
+      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, options, {
+        allChildKnvbIds,
+        allChildRondoClubIds
+      });
       result.synced++;
       if (syncResult.action === 'created') result.created++;
       if (syncResult.action === 'updated') result.updated++;
@@ -973,7 +1122,13 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncParent, logFinancialBlockActivity };
+module.exports = {
+  runSync,
+  syncParent,
+  logFinancialBlockActivity,
+  isTrackedParentKnownChild,
+  mergeParentChildRelationships
+};
 
 // CLI entry point
 if (require.main === module) {

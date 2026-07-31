@@ -47,6 +47,7 @@ ls -la .sync-*.lock
 ```bash
 scripts/sync.sh people           # Members, parents, photos → Laposta + Rondo Club
 scripts/sync.sh nikki            # Nikki contributions → Rondo Club
+scripts/sync.sh sponsit          # Sponsor contacts → Rondo Club + Laposta
 scripts/sync.sh freescout        # Rondo Club members → FreeScout customers
 scripts/sync.sh teams            # Teams + work history → Rondo Club
 scripts/sync.sh functions        # Commissies + free fields (recent updates)
@@ -221,6 +222,7 @@ Daily checks:
 
 Weekly checks:
 - [ ] Team sync ran on Sunday (check `logs/cron/sync-teams-*`)
+- [ ] Sponsit sync ran on Sunday (check `logs/cron/sync-sponsit-*`)
 - [ ] Full functions sync ran on Sunday (check `logs/cron/sync-functions-*`)
 - [ ] Discipline sync ran on Monday (check `logs/cron/sync-discipline-*`)
 - [ ] Disk usage reasonable (`du -sh /home/rondo/`)
