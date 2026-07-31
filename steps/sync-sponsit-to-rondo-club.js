@@ -35,7 +35,7 @@ async function applyPlan(plan, options = {}) {
   for (const item of plan.updates) {
     try {
       await request(`wp/v2/people/${item.person.id}`, 'PATCH', {
-        fields: item.candidate.sponsorAcf
+        fields: item.candidate.sponsorFields
       }, options);
       result.updated += 1;
     } catch (error) {
@@ -45,9 +45,9 @@ async function applyPlan(plan, options = {}) {
   for (const item of plan.creates) {
     try {
       await request('wp/v2/people', 'POST', {
-        title: item.candidate.displayName || item.candidate.createAcf.company_name || 'Sponsor',
+        title: item.candidate.displayName || item.candidate.createFields.company_name || 'Sponsor',
         status: 'publish',
-        fields: item.candidate.createAcf
+        fields: item.candidate.createFields
       }, options);
       result.created += 1;
     } catch (error) {

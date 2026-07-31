@@ -58,9 +58,9 @@ function formatSyncError(error) {
 /**
  * Extract tracked field values from member data.
  * Handles both Sportlink format (data object from prepare-rondo-club-members.js)
- * and Rondo Club format (ACF data from WordPress API).
+ * and Rondo Club format (native field data from WordPress API).
  *
- * @param {Object} data - Member data with ACF fields
+ * @param {Object} data - Member data with canonical fields
  * @returns {Object} Object with field names as keys (using underscores)
  */
 function extractTrackedFieldValues(data) {
@@ -532,22 +532,22 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     let profileOwnership = { preserveIdentity: false, preserveContact: false };
     try {
       const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      const existingAcf = existing.body.fields || {};
-      existingRelationships = existingAcf.relationships || [];
-      existingFirstName = existingAcf.first_name || '';
-      existingLastName = existingAcf.last_name || '';
-      profileOwnership = getParentProfileOwnership(existingAcf);
+      const existingFields = existing.body.fields || {};
+      existingRelationships = existingFields.relationships || [];
+      existingFirstName = existingFields.first_name || '';
+      existingLastName = existingFields.last_name || '';
+      profileOwnership = getParentProfileOwnership(existingFields);
     } catch (e) {
       // A tracked parent can be in trash because every child temporarily left
       // the club. Restore that exact record before considering a new person.
       if (e.message && e.message.includes('404')) {
         try {
           const restored = await restorePerson(rondo_club_id, options);
-          const restoredAcf = restored.body.fields || {};
-          existingRelationships = restoredAcf.relationships || [];
-          existingFirstName = restoredAcf.first_name || '';
-          existingLastName = restoredAcf.last_name || '';
-          profileOwnership = getParentProfileOwnership(restoredAcf);
+          const restoredFields = restored.body.fields || {};
+          existingRelationships = restoredFields.relationships || [];
+          existingFirstName = restoredFields.first_name || '';
+          existingLastName = restoredFields.last_name || '';
+          profileOwnership = getParentProfileOwnership(restoredFields);
           logVerbose(`Restored tracked parent ${rondo_club_id} from trash`);
         } catch (restoreError) {
           logVerbose(`Person ${rondo_club_id} could not be restored; will create fresh`);
@@ -577,7 +577,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.fields.last_name || existingLastName);
       const parentManagedFields = {};
 
-      // Pure parent records are managed by Sportlink. Keep their fixed ACF
+      // Pure parent records are managed by Sportlink. Keep their fixed native field
       // contact fields current. Former members also receive these current
       // parent details, while their historical member identity remains intact.
       if (!profileOwnership.preserveContact) {

@@ -158,9 +158,9 @@ function getMostRecentNikkiData(nikkiDb, knvbId) {
  */
 async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, options = {}) {
   const data = member.data || {};
-  const acf = data.fields || {};
+  const fields = data.fields || {};
 
-  let email = acf.email_1 || acf.email_2 || null;
+  let email = fields.email_1 || fields.email_2 || null;
 
   // Get FreeScout ID from tracking databases
   const freescoutId = getExistingFreescoutId(freescoutDb, rondoClubDb, member.knvb_id);
@@ -182,10 +182,10 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
     return null;
   }
 
-  const mobilePhone = acf.mobile_1 || acf.mobile_2 || acf.telephone_1 || null;
+  const mobilePhone = fields.mobile_1 || fields.mobile_2 || fields.telephone_1 || null;
 
-  let firstName = acf.first_name || '';
-  let lastName = acf.last_name || '';
+  let firstName = fields.first_name || '';
+  let lastName = fields.last_name || '';
   let phones = [];
   if (mobilePhone) {
     phones.push({ type: 'mobile', value: mobilePhone });
@@ -207,7 +207,7 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
   const nikkiData = getMostRecentNikkiData(nikkiDb, member.knvb_id);
 
   // Get RelationEnd date
-  const relationEndRaw = acf['lid_tot'] || null;
+  const relationEndRaw = fields['lid_tot'] || null;
   const relationEnd = normalizeDateToYYYYMMDD(relationEndRaw);
 
   // Build websites array
@@ -243,7 +243,7 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
     customFields: {
       union_teams: unionTeams,
       public_person_id: member.knvb_id,
-      member_since: acf['lid_sinds'] || null,
+      member_since: fields['lid_sinds'] || null,
       nikki_saldo: nikkiData.saldo,
       nikki_status: nikkiData.status,
       relation_end: relationEnd

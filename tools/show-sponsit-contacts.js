@@ -25,7 +25,7 @@ function main() {
     const activeRecords = getContactRecords(db, { activeOnly: true });
     const candidates = activeRecords.flatMap(buildRondoSponsorCandidates);
     const variantCounts = candidates.reduce((counts, candidate) => {
-      const variant = candidate.sponsorAcf.sponsor_pass_variant;
+      const variant = candidate.sponsorFields.sponsor_pass_variant;
       counts[variant] = (counts[variant] || 0) + 1;
       return counts;
     }, {});

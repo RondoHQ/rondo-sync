@@ -88,7 +88,7 @@ node tools/clear-commissie-work-history.js
 
 ### find-orphan-dates.js (DEPRECATED)
 
-**DEPRECATED (v2.3):** Birthdays now sync as `acf.birthdate` on person records, not as separate `important_date` posts.
+**DEPRECATED (v2.3):** Birthdays now sync as `fields.birthdate` on person records, not as separate `important_date` posts.
 
 Finds important dates (birthdays) that reference people who no longer exist in Rondo Club.
 

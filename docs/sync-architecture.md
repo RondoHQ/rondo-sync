@@ -173,11 +173,11 @@ Parent emails create separate Laposta list entries (deduplicated across lists).
 
 ### Sportlink to Rondo Club Members: Field Mapping
 
-Source: Sportlink `SearchMembers` internal request + free fields from SQLite. Destination: Rondo Club `wp/v2/people` ACF fields.
+Source: Sportlink `SearchMembers` internal request + free fields from SQLite. Destination: Rondo Club `wp/v2/people` canonical fields.
 
 **Core person fields:**
 
-| Rondo Club ACF Field | Source | Notes |
+| Rondo Club native field Field | Source | Notes |
 |---|---|---|
 | `first_name` | `FirstName` | Required on every PUT |
 | `infix` | `Infix` | Lowercased tussenvoegsel (optional, omitted when empty) |
@@ -186,7 +186,7 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 | `gender` | `GenderCode` | Normalized: Male->male, Female->female |
 | `birth_year` | `DateOfBirth` | Year extracted |
 
-**Contact info** (ACF repeater `contact_info`):
+**Contact info** (native field repeater `contact_info`):
 
 | Contact Type | Source |
 |---|---|
@@ -194,7 +194,7 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 | `mobile` | `Mobile` |
 | `phone` | `Telephone` |
 
-**Address** (ACF repeater `addresses`):
+**Address** (native field repeater `addresses`):
 
 | Address Field | Source |
 |---|---|
@@ -205,7 +205,7 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 
 **Membership metadata:**
 
-| Rondo Club ACF Field | Source |
+| Rondo Club native field Field | Source |
 |---|---|
 | `lid-sinds` | `MemberSince` |
 | `leeftijdsgroep` | `AgeClassDescription` |
@@ -214,7 +214,7 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 
 **Free fields** (from `sportlink_member_free_fields` table, populated by Functions pipeline):
 
-| Rondo Club ACF Field | SQLite Column | Origin |
+| Rondo Club native field Field | SQLite Column | Origin |
 |---|---|---|
 | `freescout-id` | `freescout_id` | Sportlink `Remarks3` |
 | `datum-vog` | `vog_datum` | Sportlink `Remarks8` |
@@ -222,7 +222,7 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 
 **Invoice data** (from `sportlink_member_invoice_data` table, optional `--with-invoice`):
 
-| Rondo Club ACF Field | SQLite Column |
+| Rondo Club native field Field | SQLite Column |
 |---|---|
 | `factuur-adres` | `invoice_street` + `invoice_house_number` + etc. |
 | `factuur-email` | `invoice_email` |
@@ -232,18 +232,18 @@ Source: Sportlink `SearchMembers` internal request + free fields from SQLite. De
 
 Parent entries are created as separate Rondo Club person posts from `NameParent1`/`NameParent2` fields. They are:
 - Deduplicated by email address
-- Linked to children via ACF `relationships` field (relationship_type 9 = child)
+- Linked to children via native field `relationships` field (relationship_type 9 = child)
 - Given aggregated contact info from all their children
 
 ### Sportlink to Rondo Club Birthdays
 
-**v2.3+:** Birthdate syncs as ACF field on person record.
+**v2.3+:** Birthdate syncs as canonical field on person record.
 
-Source: `DateOfBirth`. Destination: `wp/v2/people` (person ACF field).
+Source: `DateOfBirth`. Destination: `wp/v2/people` (person canonical field).
 
 | Rondo Club Field | Value |
 |---|---|
-| `acf.birthdate` | `DateOfBirth` (YYYY-MM-DD) |
+| `fields.birthdate` | `DateOfBirth` (YYYY-MM-DD) |
 
 **Previous versions** (pre-v2.3): Used separate `wp/v2/important-dates` posts (now deprecated).
 
@@ -290,9 +290,9 @@ A single person can have **multiple contribution lines per year** in Nikki (e.g.
 
 When a person has multiple contribution lines for a year, `saldo` and `hoofdsom` are **summed** across all lines for that member+year combination.
 
-For each contribution year, three ACF fields are written per person:
+For each contribution year, three canonical fields are written per person:
 
-| Rondo Club ACF Field | Source | Example |
+| Rondo Club native field Field | Source | Example |
 |---|---|---|
 | `_nikki_{YEAR}_total` | `hoofdsom` | `_nikki_2025_total`: 1500.00 |
 | `_nikki_{YEAR}_saldo` | `saldo` | `_nikki_2025_saldo`: 250.00 |
@@ -325,17 +325,17 @@ Source: Sportlink `UnionTeams` / `ClubTeams` internal requests. Destination: `wp
 | Rondo Club Field | Sportlink Field | Notes |
 |---|---|---|
 | `title` | `TeamName` / `Name` | Post title |
-| `acf.publicteamid` | `PublicTeamId` | Sportlink team ID |
-| `acf.activiteit` | `GameActivityDescription` | Activity type |
-| `acf.gender` | `Gender` | Mapped: Mannen->male, Vrouwen->female, Gemengd->skipped |
+| `fields.publicteamid` | `PublicTeamId` | Sportlink team ID |
+| `fields.activiteit` | `GameActivityDescription` | Activity type |
+| `fields.gender` | `Gender` | Mapped: Mannen->male, Vrouwen->female, Gemengd->skipped |
 
 Fields stored in SQLite but not sent to Rondo Club: `team_code`, `player_count`, `staff_count`.
 
 ### Sportlink to Rondo Club Work History: Field Mapping
 
-Links members to their teams via the ACF `work_history` repeater on person posts.
+Links members to their teams via the native field `work_history` repeater on person posts.
 
-| Rondo Club ACF Field | Source | Notes |
+| Rondo Club native field Field | Source | Notes |
 |---|---|---|
 | `work_history[].team` | `rondo_club_teams.rondo_club_id` | WordPress post ID of the team |
 | `work_history[].job_title` | `role_description` from `sportlink_team_members`, or fallback based on `KernelGameActivities` | "Speler" for players, "Staflid" for staff |
@@ -386,9 +386,9 @@ A synthetic "Verenigingsbreed" commissie is created for club-level functions (no
 
 ### Sportlink to Rondo Club Commissie Work History: Field Mapping
 
-Links members to commissies via the ACF `work_history` repeater on person posts.
+Links members to commissies via the native field `work_history` repeater on person posts.
 
-| Rondo Club ACF Field | Source | Notes |
+| Rondo Club native field Field | Source | Notes |
 |---|---|---|
 | `work_history[].team` | `rondo_club_commissies.rondo_club_id` | WordPress post ID of the commissie |
 | `work_history[].job_title` | `role_name` from `sportlink_member_committees`, or "Lid" as fallback | Role within committee |
@@ -432,10 +432,10 @@ graph LR
 
 | FreeScout Field | Source | Origin |
 |---|---|---|
-| `firstName` | `acf.first_name` | rondo_club_members |
-| `lastName` | `acf.last_name` | rondo_club_members |
-| `emails[].value` | `acf.contact_info` (type=email) | rondo_club_members |
-| `phones[].value` | `acf.contact_info` (type=mobile) | rondo_club_members |
+| `firstName` | `fields.first_name` | rondo_club_members |
+| `lastName` | `fields.last_name` | rondo_club_members |
+| `emails[].value` | `fields.contact_info` (type=email) | rondo_club_members |
+| `phones[].value` | `fields.contact_info` (type=mobile) | rondo_club_members |
 
 **Custom fields** (sent to `PUT /api/customers/{id}/customer_fields`):
 
@@ -443,7 +443,7 @@ graph LR
 |---|---|---|---|
 | `union_teams` | 1 | All `team_name` values, comma-separated | rondo_club_work_history |
 | `public_person_id` | 4 | `knvb_id` | rondo_club_members |
-| `member_since` | 5 | `acf['lid-sinds']` | rondo_club_members |
+| `member_since` | 5 | `fields['lid-sinds']` | rondo_club_members |
 | `nikki_saldo` | 7 | Most recent year's `saldo` | nikki_contributions |
 | `nikki_status` | 8 | Most recent year's `status` | nikki_contributions |
 

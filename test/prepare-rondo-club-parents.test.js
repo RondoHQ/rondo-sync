@@ -7,7 +7,7 @@ const {
   prepareParentsFromMembers
 } = require('../steps/prepare-rondo-club-parents');
 
-test('parent contacts use the fixed person ACF fields', () => {
+test('parent contacts use the fixed person canonical fields', () => {
   assert.deepEqual(
     buildParentContactFields('ouder@example.com', new Set(['06 12345678', '+31612345678', '024-1234567'])),
     {

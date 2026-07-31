@@ -62,9 +62,9 @@ function lookupTeamRondoClubId(teamCode, teamMap, db, knvbId) {
 }
 
 /**
- * Convert JS Date to ACF date format (YYYYMMDD).
+ * Convert JS Date to native field date format (YYYYMMDD).
  * @param {Date} date - Date object
- * @returns {string} - ACF date string
+ * @returns {string} - native field date string
  */
 function formatDateForFields(date) {
   const year = date.getFullYear();
@@ -90,7 +90,7 @@ function sameId(left, right) {
 }
 
 /**
- * Find the actual ACF row for a team assignment. Work-history is a shared
+ * Find the actual native field row for a team assignment. Work-history is a shared
  * repeater: player-history and commissie syncs can insert rows and invalidate
  * the array index stored in SQLite. Treat the stored index as a hint only.
  */
@@ -115,11 +115,11 @@ function findTeamWorkHistoryIndex(workHistory, expectedIndex, teamRondoClubId) {
 }
 
 /**
- * Build ACF work_history entry for a team.
+ * Build native field work_history entry for a team.
  * @param {number} teamRondoClubId - Team WordPress post ID
  * @param {boolean} isBackfill - Is this a backfilled entry
  * @param {string} jobTitle - Job title (required)
- * @returns {Object} - ACF work_history entry
+ * @returns {Object} - native field work_history entry
  */
 function buildWorkHistoryEntry(teamRondoClubId, isBackfill, jobTitle) {
   return {
@@ -184,7 +184,7 @@ function detectTeamChanges(db, knvbId, currentTeams) {
 
 /**
  * Sync work history for a single member.
- * Detects team changes and updates WordPress work_history ACF field.
+ * Detects team changes and updates WordPress work_history canonical field.
  * @param {Object} member - Member with KNVB ID and current teams
  * @param {Array<string>} currentTeams - Current team names
  * @param {Object} db - Rondo Club SQLite database
@@ -249,7 +249,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
       modified = true;
       logVerbose(`Ended work_history for team ${removed.team_name} (index ${index})`);
     } else {
-      logVerbose(`Could not find a current ACF row for removed team ${removed.team_name}; clearing stale tracking only`);
+      logVerbose(`Could not find a current native field row for removed team ${removed.team_name}; clearing stale tracking only`);
     }
     trackingDeletes.push(removed.team_name);
   }

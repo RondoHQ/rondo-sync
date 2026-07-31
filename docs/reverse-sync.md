@@ -29,7 +29,7 @@ Phase 2: Sync to Sportlink (when unsynced changes exist)
 
 ## Tracked Fields
 
-| Field | Rondo Club ACF Location | Sportlink Page | Sportlink Selector | Type |
+| Field | Rondo Club native field Location | Sportlink Page | Sportlink Selector | Type |
 |---|---|---|---|---|
 | `email` | `contact_info` repeater (type=email) | /general | `input[name="Email1"], input[name="Email"]` | text |
 | `email2` | `contact_info` repeater (type=email2) | /general | `input[name="Email2"]` | text |

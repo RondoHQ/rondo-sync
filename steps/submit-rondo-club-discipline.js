@@ -14,7 +14,7 @@ const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-
 const { readEnv } = require('../lib/utils');
 
 /**
- * Convert date string to ACF Ymd format (e.g., "2026-01-15" -> "20260115")
+ * Convert date string to native field Ymd format (e.g., "2026-01-15" -> "20260115")
  * @param {string} dateString - Date in various formats (ISO, etc.)
  * @returns {string} - Date in Ymd format, or empty string if invalid
  */
@@ -68,7 +68,7 @@ async function fetchPersonName(rondoClubId, options, cache) {
     const person = response.body;
     let name = person.title?.rendered || person.title;
 
-    // If title not available, construct from ACF
+    // If title not available, construct from native field
     if (!name && person.fields) {
       const firstName = person.fields.first_name || '';
       const lastName = person.fields.last_name || '';
@@ -165,10 +165,10 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     return { action: 'skipped', id: rondo_club_id };
   }
 
-  // Build ACF fields payload
-  // Note: Date fields use ACF date_picker with Ymd return format (e.g., "20260115")
+  // Build canonical fields payload
+  // Note: Date fields use native field date_picker with Ymd return format (e.g., "20260115")
   const sportlinkIsCharged = caseData.is_charged === 1;
-  const acfFields = {
+  const fields = {
     'dossier_id': dossier_id,
     'person': personRondoClubId,
     match_date: toFieldsDateFormat(match_date),
@@ -191,7 +191,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     title: title,
     status: 'publish',
     seizoen: [seasonTermId],
-    fields: acfFields
+    fields: fields
   };
 
   if (rondo_club_id) {

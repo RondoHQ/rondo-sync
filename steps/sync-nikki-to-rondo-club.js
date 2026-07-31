@@ -8,7 +8,7 @@ const { parseCliArgs, stableStringify, computeHash } = require('../lib/utils');
 
 /**
  * Coerce any value to a finite number, or null. Required because Rondo Club's
- * `_nikki_YYYY_total` / `_saldo` ACF fields are typed `number` and WP REST rejects
+ * `_nikki_YYYY_total` / `_saldo` canonical fields are typed `number` and WP REST rejects
  * empty strings with `rest_invalid_type` — which used to trigger thousands of retries
  * per cycle until the People sync logs ballooned past 300k lines.
  */
@@ -22,10 +22,10 @@ function toNumberOrNull(v) {
 }
 
 /**
- * Build per-year ACF fields from contributions.
+ * Build per-year canonical fields from contributions.
  * Creates fields like _nikki_2025_total, _nikki_2025_saldo, _nikki_2025_status
  */
-function buildPerYearAcfFields(contributions) {
+function buildPerYearFields(contributions) {
   const fields = {};
   for (const c of contributions) {
     fields[`_nikki_${c.year}_total`] = toNumberOrNull(c.hoofdsom);
@@ -43,7 +43,7 @@ function computeFieldsHash(fields) {
 }
 
 /**
- * Sync Nikki contribution data to Rondo Club per-year ACF fields
+ * Sync Nikki contribution data to Rondo Club per-year canonical fields
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance
  * @param {boolean} [options.verbose=false] - Verbose mode
@@ -95,8 +95,8 @@ async function runNikkiRondoClubSync(options = {}) {
         continue;
       }
 
-      // Build per-year ACF fields for all contribution years
-      const perYearFields = buildPerYearAcfFields(contributions);
+      // Build per-year canonical fields for all contribution years
+      const perYearFields = buildPerYearFields(contributions);
       const newFieldsHash = computeFieldsHash(perYearFields);
 
       // Fetch existing data from Rondo Club (needed for change detection AND name fields)
@@ -118,10 +118,10 @@ async function runNikkiRondoClubSync(options = {}) {
         // Check if we need to update (only if not forcing)
         if (!force) {
           // Extract existing per-year fields from response for comparison
-          const existingAcf = response.body?.fields || {};
+          const existingFields = response.body?.fields || {};
           const existingPerYearFields = {};
           for (const key of Object.keys(perYearFields)) {
-            existingPerYearFields[key] = existingAcf[key] ?? null;
+            existingPerYearFields[key] = existingFields[key] ?? null;
           }
           const existingFieldsHash = computeFieldsHash(existingPerYearFields);
 
@@ -202,7 +202,7 @@ async function runNikkiRondoClubSync(options = {}) {
   }
 }
 
-module.exports = { runNikkiRondoClubSync, buildPerYearAcfFields, toNumberOrNull };
+module.exports = { runNikkiRondoClubSync, buildPerYearFields, toNumberOrNull };
 
 if (require.main === module) {
   const { verbose, force } = parseCliArgs();

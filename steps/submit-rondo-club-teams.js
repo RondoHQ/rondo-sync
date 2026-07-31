@@ -53,10 +53,10 @@ async function syncTeam(team, db, options) {
   let { rondo_club_id } = team;
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
 
-  // Build ACF fields payload
-  const acfFields = {};
-  if (sportlink_id) acfFields.publicteamid = sportlink_id;
-  if (game_activity) acfFields.activiteit = game_activity;
+  // Build canonical fields payload
+  const fields = {};
+  if (sportlink_id) fields.publicteamid = sportlink_id;
+  if (game_activity) fields.activiteit = game_activity;
 
   // Map Sportlink gender values to Rondo Club API values
   const genderMap = {
@@ -64,7 +64,7 @@ async function syncTeam(team, db, options) {
     'Vrouwen': 'female'
     // 'Gemengd' is not mapped - skip it as Rondo Club doesn't have a mixed option
   };
-  if (gender && genderMap[gender]) acfFields.gender = genderMap[gender];
+  if (gender && genderMap[gender]) fields.gender = genderMap[gender];
 
   if (rondo_club_id) {
     // Team exists - check if changed (unless force)
@@ -76,7 +76,7 @@ async function syncTeam(team, db, options) {
     const payload = {
       title: team_name,
       status: 'publish',
-      fields: acfFields
+      fields: fields
     };
     const endpoint = `wp/v2/teams/${rondo_club_id}`;
     logVerbose(`Updating existing team: ${rondo_club_id} - ${team_name}`);
@@ -113,7 +113,7 @@ async function syncTeam(team, db, options) {
     const payload = {
       title: team_name,
       status: 'publish',
-      fields: acfFields
+      fields: fields
     };
     const endpoint = 'wp/v2/teams';
     logVerbose(`Creating new team: ${team_name}`);

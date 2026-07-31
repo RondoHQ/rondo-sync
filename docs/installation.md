@@ -214,9 +214,8 @@ npm install  # Only needed if dependencies changed
 
 The Rondo Club WordPress site needs:
 
-- **ACF Pro** plugin for custom fields and REST API integration
-- **Rondo Club theme** with custom post types: `person`, `team`, `commissie`, `discipline_case`
-- **REST API** enabled with `show_in_rest` on all custom post types and ACF field groups
+- **Rondo Club theme** with its native field registry and the custom post types `person`, `team`, `commissie`, and `discipline_case`
+- **REST API** enabled with `show_in_rest` on all synchronized custom post types
 - **Application Passwords** enabled for the sync user
 - Custom endpoints provided by the Rondo Club theme:
   - `GET /wp-json/rondo/v1/people/filtered` (for VOG-filtered volunteers)

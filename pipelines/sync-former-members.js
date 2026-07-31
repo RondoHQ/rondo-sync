@@ -222,7 +222,7 @@ async function runImport(options = {}) {
           // this call passed `data_json` instead, which upsertMembers silently
           // ignored, defaulting `data` to {} and writing literal "{}" to the
           // row. That left 2604 former members with empty local data_json, so
-          // the change detector saw every Rondo Club ACF field as a "change"
+          // the change detector saw every Rondo Club canonical field as a "change"
           // every cycle (root cause of the reverse-sync loop the
           // rest_pre_insert_person + former_member-skip work was masking).
           upsertMembers(dbForSync, [{

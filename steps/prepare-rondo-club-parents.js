@@ -46,7 +46,7 @@ function buildParentAddress(member) {
 }
 
 /**
- * Build fixed ACF contact fields for a parent.
+ * Build fixed native field contact fields for a parent.
  * @param {string} email - Parent email
  * @param {Set} phones - Set of phone numbers
  * @returns {Object}

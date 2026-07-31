@@ -66,8 +66,8 @@ Sent to `POST/PUT /api/customers`:
 
 | FreeScout Field | Source | Origin |
 |---|---|---|
-| `firstName` | `acf.first_name` | `rondo_club_members.data_json` |
-| `lastName` | `acf.last_name` | `rondo_club_members.data_json` |
+| `firstName` | `fields.first_name` | `rondo_club_members.data_json` |
+| `lastName` | `fields.last_name` | `rondo_club_members.data_json` |
 | `emails[].value` | Email from `contact_info` repeater | `rondo_club_members.data_json` |
 | `phones[].value` | Mobile from `contact_info` repeater | `rondo_club_members.data_json` |
 
@@ -79,7 +79,7 @@ Sent to `PUT /api/customers/{id}/customer_fields`:
 |---|---|---|---|
 | `union_teams` | 1 | All current team names, comma-separated | `rondo_club_work_history` |
 | `public_person_id` | 4 | KNVB ID | `rondo_club_members` |
-| `member_since` | 5 | `acf['lid-sinds']` | `rondo_club_members` |
+| `member_since` | 5 | `fields['lid-sinds']` | `rondo_club_members` |
 | `nikki_saldo` | 7 | Most recent year's outstanding balance | `nikki_contributions` |
 | `nikki_status` | 8 | Most recent year's payment status | `nikki_contributions` |
 

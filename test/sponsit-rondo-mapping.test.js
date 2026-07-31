@@ -44,14 +44,14 @@ test('maps a Sponsit contact person to a reviewable Rondo sponsor candidate', ()
   const candidates = buildRondoSponsorCandidates(baseRecord());
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].sourceKey, 'sponsit:400:900');
-  assert.equal(candidates[0].sponsorAcf.is_sponsor, true);
-  assert.equal(candidates[0].sponsorAcf.sponsor_pass_variant, 'businessclub');
-  assert.equal(candidates[0].sponsorAcf.company_name, 'Example BV');
-  assert.equal(candidates[0].createAcf.person_type, 'contact');
-  assert.equal(candidates[0].createAcf.first_name, 'Jan');
-  assert.equal(candidates[0].createAcf.gender, 'male');
-  assert.equal(candidates[0].createAcf.birthdate, '1980-01-02');
-  assert.deepEqual(candidates[0].createAcf.addresses[0], {
+  assert.equal(candidates[0].sponsorFields.is_sponsor, true);
+  assert.equal(candidates[0].sponsorFields.sponsor_pass_variant, 'businessclub');
+  assert.equal(candidates[0].sponsorFields.company_name, 'Example BV');
+  assert.equal(candidates[0].createFields.person_type, 'contact');
+  assert.equal(candidates[0].createFields.first_name, 'Jan');
+  assert.equal(candidates[0].createFields.gender, 'male');
+  assert.equal(candidates[0].createFields.birthdate, '1980-01-02');
+  assert.deepEqual(candidates[0].createFields.addresses[0], {
     address_label: 'Hoofdadres',
     street_name: 'Dorpsstraat',
     house_number: '12',
@@ -70,11 +70,11 @@ test('company-only contacts remain valid sponsor candidates', () => {
   record.contact.tags = [];
   const [candidate] = buildRondoSponsorCandidates(record);
   assert.equal(candidate.sourceKey, 'sponsit:400:contact');
-  assert.equal(candidate.sponsorAcf.company_name, 'Example BV');
-  assert.equal(candidate.sponsorAcf.sponsor_pass_variant, 'awc_sponsor');
-  assert.equal('sponsit_person_id' in candidate.sponsorAcf, false);
-  assert.equal('gender' in candidate.createAcf, false);
-  assert.equal('birthdate' in candidate.createAcf, false);
+  assert.equal(candidate.sponsorFields.company_name, 'Example BV');
+  assert.equal(candidate.sponsorFields.sponsor_pass_variant, 'awc_sponsor');
+  assert.equal('sponsit_person_id' in candidate.sponsorFields, false);
+  assert.equal('gender' in candidate.createFields, false);
+  assert.equal('birthdate' in candidate.createFields, false);
 });
 
 test('business club custom field also selects the businessclub pass', () => {

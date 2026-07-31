@@ -41,7 +41,7 @@ function convertMappedValue(value, valueType) {
  * Sync configurable free fields (Remarks1..Remarks8) plus financial block from Sportlink to Rondo Club.
  *
  * Mappings are configured in free_field_mappings (source_field -> target_field + value_type).
- * This step applies mapped fields to person ACF payloads and always syncs financiele-blokkade.
+ * This step applies mapped fields to person native field payloads and always syncs financiele-blokkade.
  */
 async function runSyncFreeFieldsToRondoClub(options = {}) {
   const { logger, verbose = false, force = false, onProgress = null } = options;
@@ -116,10 +116,10 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
         continue;
       }
 
-      const acf = data.fields || {};
+      const fields = data.fields || {};
       const meta = data.meta || {};
-      const firstName = acf.first_name;
-      const lastName = acf.last_name;
+      const firstName = fields.first_name;
+      const lastName = fields.last_name;
 
       if (!firstName || !lastName) {
         logVerbose(`Skipping ${knvb_id}: missing first_name or last_name`);
@@ -128,7 +128,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
       }
 
       const newFinancialBlock = has_financial_block === 1;
-      const currentFinancialBlock = acf['financiele_blokkade'] || false;
+      const currentFinancialBlock = fields['financiele_blokkade'] || false;
       const financialBlockChanged = newFinancialBlock !== currentFinancialBlock;
 
       const mappedChanges = [];
@@ -139,7 +139,7 @@ async function runSyncFreeFieldsToRondoClub(options = {}) {
         if (!targetField) continue;
 
         const newValue = convertMappedValue(member[sourceKey], mapping.value_type || 'string');
-        const sourceObj = targetScope === 'meta' ? meta : acf;
+        const sourceObj = targetScope === 'meta' ? meta : fields;
         const currentValue = (sourceObj[targetField] === undefined || sourceObj[targetField] === '') ? null : sourceObj[targetField];
 
         if (force || newValue !== currentValue) {

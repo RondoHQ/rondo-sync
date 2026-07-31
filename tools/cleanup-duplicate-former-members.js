@@ -37,7 +37,7 @@ async function runCleanup(options = {}) {
     const allFormer = [];
     while (true) {
       const { status, body } = await rondoClubRequest(
-        `wp/v2/people?per_page=100&page=${page}&acf_former_member=true`, 'GET'
+        `wp/v2/people?per_page=100&page=${page}&former_member=true`, 'GET'
       );
       if (status !== 200 || !body.length) break;
       allFormer.push(...body);

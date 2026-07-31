@@ -17,14 +17,14 @@ test('matches an existing member by unique email and identity without changing i
   const plan = planRondoSponsorSync([record()], [member]);
   assert.equal(plan.updates.length, 1);
   assert.equal(plan.updates[0].strategy, 'email_and_identity');
-  assert.equal(plan.updates[0].candidate.sponsorAcf.person_type, undefined);
+  assert.equal(plan.updates[0].candidate.sponsorFields.person_type, undefined);
   assert.equal(plan.creates.length, 0);
 });
 
 test('new external sponsors are created as contacts', () => {
   const plan = planRondoSponsorSync([record()], []);
   assert.equal(plan.creates.length, 1);
-  assert.equal(plan.creates[0].candidate.createAcf.person_type, 'contact');
+  assert.equal(plan.creates[0].candidate.createFields.person_type, 'contact');
 });
 
 test('stable source matches with current sponsor fields are left unchanged', () => {
@@ -64,7 +64,7 @@ test('only Sponsit-owned inactive sponsors are deactivated', () => {
   assert.deepEqual(plan.deactivations.map((person) => person.id), [1]);
 });
 
-test('deactivation clears the ACF select field with null', async () => {
+test('deactivation clears the canonical select field with null', async () => {
   const requests = [];
   const plan = { updates: [], creates: [], deactivations: [{ id: 42 }] };
 

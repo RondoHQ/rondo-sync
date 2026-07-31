@@ -17,9 +17,9 @@ const {
 } = require('../lib/rondo-club-db');
 
 /**
- * Convert JS Date to ACF date format (YYYYMMDD).
+ * Convert JS Date to native field date format (YYYYMMDD).
  * @param {Date} date - Date object
- * @returns {string} - ACF date string
+ * @returns {string} - native field date string
  */
 function formatDateForFields(date) {
   const year = date.getFullYear();
@@ -29,11 +29,11 @@ function formatDateForFields(date) {
 }
 
 /**
- * Convert Sportlink date format to ACF date format
+ * Convert Sportlink date format to native field date format
  * Sportlink format: "2023-01-01" or similar
- * ACF work_history format: "Y-m-d" (e.g., "2023-01-01")
+ * native field work_history format: "Y-m-d" (e.g., "2023-01-01")
  * @param {string} dateStr - Sportlink date string
- * @returns {string} - ACF date string or empty
+ * @returns {string} - native field date string or empty
  */
 function convertDateForFields(dateStr) {
   if (!dateStr) return null;
@@ -42,13 +42,13 @@ function convertDateForFields(dateStr) {
 }
 
 /**
- * Build ACF work_history entry for a commissie.
+ * Build native field work_history entry for a commissie.
  * @param {number} commissieRondoClubId - Commissie WordPress post ID
  * @param {string} jobTitle - Job title/role
  * @param {boolean} isActive - Is current
  * @param {string} startDate - Start date (Sportlink format)
  * @param {string} endDate - End date (Sportlink format)
- * @returns {Object} - ACF work_history entry
+ * @returns {Object} - native field work_history entry
  */
 function buildWorkHistoryEntry(commissieRondoClubId, jobTitle, isActive, startDate, endDate) {
   if (!jobTitle) {

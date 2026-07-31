@@ -54,7 +54,7 @@ function buildAssignmentKey(entry) {
 }
 
 /**
- * Reconcile Sportlink membership history with the shared ACF repeater.
+ * Reconcile Sportlink membership history with the shared native field repeater.
  * The old append-only merge added a second ended row when RelationEnd
  * appeared, leaving the original assignment incorrectly marked current.
  */

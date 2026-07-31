@@ -1,6 +1,6 @@
 # Nikki Pipeline
 
-Syncs member contribution/dues data from the Nikki accounting system to Rondo Club WordPress ACF fields.
+Syncs member contribution/dues data from the Nikki accounting system to Rondo Club WordPress canonical fields.
 
 ## Schedule
 
@@ -52,7 +52,7 @@ pipelines/sync-nikki.js
 4. Skips members without a `rondo_club_id` (not yet synced to Rondo Club)
 5. For each member with changes, sends `PUT /wp/v2/people/{rondo_club_id}` with:
    - `first_name` and `last_name` (always required by Rondo Club API)
-   - Per-year Nikki ACF fields (up to 4 years of history)
+   - Per-year Nikki canonical fields (up to 4 years of history)
 6. Rate limited: 500ms between updates
 
 **Output:** `{ updated, skipped, noRondoClubId, errors }`
@@ -61,11 +61,11 @@ pipelines/sync-nikki.js
 
 ## Field Mappings
 
-### Nikki → Rondo Club ACF Fields
+### Nikki → Rondo Club native field Fields
 
-For each contribution year, three ACF fields are written per person:
+For each contribution year, three canonical fields are written per person:
 
-| Rondo Club ACF Field | Source | Example |
+| Rondo Club native field Field | Source | Example |
 |---|---|---|
 | `_nikki_{YEAR}_total` | Sum of `hoofdsom` for that year | `_nikki_2025_total`: 1500.00 |
 | `_nikki_{YEAR}_saldo` | Sum of `saldo` for that year | `_nikki_2025_saldo`: 250.00 |
