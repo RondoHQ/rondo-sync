@@ -7,7 +7,7 @@ const {
   prepareParentsFromMembers
 } = require('../steps/prepare-rondo-club-parents');
 
-test('parent contacts use the fixed person ACF fields', () => {
+test('parent contacts use the fixed person canonical fields', () => {
   assert.deepEqual(
     buildParentContactFields('ouder@example.com', new Set(['06 12345678', '+31612345678', '024-1234567'])),
     {
@@ -53,7 +53,7 @@ test('fresh individual data replaces the stale child record used for parent sync
   const existingParent = parents.find(parent => parent.email === 'bestaand@example.com');
 
   assert.deepEqual(newParent.childKnvbIds, ['CHILD-1']);
-  assert.equal(newParent.data.acf.email_1, 'nieuw@example.com');
-  assert.equal(newParent.data.acf.contact_info, undefined);
+  assert.equal(newParent.data.fields.email_1, 'nieuw@example.com');
+  assert.equal(newParent.data.fields.contact_info, undefined);
   assert.deepEqual(existingParent.childKnvbIds.sort(), ['CHILD-1', 'SIBLING-1']);
 });

@@ -227,7 +227,7 @@ Parent/guardian records (identified by email, no KNVB ID).
 
 ### rondo_club_important_dates (DEPRECATED - v2.3)
 
-**DEPRECATED:** Birthday sync migrated to `acf.birthdate` on person records. Table retained for backward compatibility.
+**DEPRECATED:** Birthday sync migrated to `fields.birthdate` on person records. Table retained for backward compatibility.
 
 Birth dates and other important dates synced to Rondo Club.
 
@@ -280,7 +280,7 @@ Team records from Sportlink.
 
 ### rondo_club_work_history
 
-Member-team assignments synced to WordPress ACF repeater.
+Member-team assignments synced to WordPress native field repeater.
 
 | Column | Type | Description |
 |---|---|---|
@@ -392,7 +392,7 @@ Committee memberships with roles.
 
 ### rondo_club_commissie_work_history
 
-Committee membership work history synced to WordPress ACF repeater.
+Committee membership work history synced to WordPress native field repeater.
 
 | Column | Type | Description |
 |---|---|---|

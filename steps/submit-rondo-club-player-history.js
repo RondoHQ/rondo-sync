@@ -6,12 +6,12 @@ const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
 
-function formatDateForACF(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return '';
+function formatDateForFields(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
   const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return '';
-  return `${match[1]}${match[2]}${match[3]}`;
+  if (!match) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function normalizeGameType(gameTypeDescription) {
@@ -36,8 +36,8 @@ function buildJobTitle(teamRow) {
 }
 
 function buildSignature(entry) {
-  const teamKey = entry.team
-    ? `id:${entry.team}`
+  const teamKey = entry.team_id
+    ? `id:${entry.team_id}`
     : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
   const start = String(entry.start_date || '');
   const end = String(entry.end_date || '');
@@ -46,15 +46,15 @@ function buildSignature(entry) {
 }
 
 function buildAssignmentKey(entry) {
-  const teamKey = entry.team
-    ? `id:${entry.team}`
+  const teamKey = entry.team_id
+    ? `id:${entry.team_id}`
     : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
   const title = String(entry.job_title || '').trim().toLowerCase();
   return `${teamKey}|${title}`;
 }
 
 /**
- * Reconcile Sportlink membership history with the shared ACF repeater.
+ * Reconcile Sportlink membership history with the shared native field repeater.
  * The old append-only merge added a second ended row when RelationEnd
  * appeared, leaving the original assignment incorrectly marked current.
  */
@@ -166,7 +166,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
 
   const response = await rondoClubRequest(`wp/v2/people/${member.rondo_club_id}`, 'GET', null, { logger, verbose });
   const person = response.body || {};
-  const existingWorkHistory = Array.isArray(person.acf?.work_history) ? person.acf.work_history : [];
+  const existingWorkHistory = Array.isArray(person.fields?.work_history) ? person.fields.work_history : [];
 
   const sourceEntries = [];
   const sourceSignatures = new Set();
@@ -177,12 +177,12 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
     const entry = {
       job_title: buildJobTitle(row),
       is_current: !row.RelationEnd,
-      start_date: formatDateForACF(row.RelationStart),
-      end_date: formatDateForACF(row.RelationEnd)
+      start_date: formatDateForFields(row.RelationStart),
+      end_date: formatDateForFields(row.RelationEnd)
     };
 
     if (teamRondoClubId) {
-      entry.team = teamRondoClubId;
+      entry.team_id = teamRondoClubId;
     } else {
       entry.team_name_text = buildHistoricalTeamName(row);
       entry.entity_type = 'external_team';
@@ -211,9 +211,9 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
     `wp/v2/people/${member.rondo_club_id}`,
     'PUT',
     {
-      acf: {
-        first_name: person.acf?.first_name || '',
-        last_name: person.acf?.last_name || '',
+      fields: {
+        first_name: person.fields?.first_name || '',
+        last_name: person.fields?.last_name || '',
         work_history: reconciliation.workHistory
       }
     },
@@ -487,7 +487,7 @@ module.exports = {
   runSync,
   syncSingleMember,
   syncMemberPlayerHistory,
-  formatDateForACF,
+  formatDateForFields,
   buildFallbackTeamName,
   reconcilePlayerHistory
 };

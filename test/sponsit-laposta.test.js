@@ -17,7 +17,7 @@ function record(email = 'jan@example.test') {
 }
 
 test('builds the requested Businessclub and member fields', () => {
-  const rondoMember = { id: 1, acf: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'jan@example.test' } };
+  const rondoMember = { id: 1, fields: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'jan@example.test' } };
   const plan = buildSponsitLapostaPlan([record()], [rondoMember]);
   assert.equal(plan.members.length, 1);
   assert.equal(plan.members[0].custom_fields.businessclub, 'Ja');

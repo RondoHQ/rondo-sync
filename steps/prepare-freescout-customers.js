@@ -158,16 +158,9 @@ function getMostRecentNikkiData(nikkiDb, knvbId) {
  */
 async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, options = {}) {
   const data = member.data || {};
-  const acf = data.acf || {};
+  const fields = data.fields || {};
 
-  // Extract email from contact_info
-  let email = null;
-  if (acf.contact_info && Array.isArray(acf.contact_info)) {
-    const emailContact = acf.contact_info.find(c => c.contact_type === 'email');
-    if (emailContact) {
-      email = emailContact.contact_value;
-    }
-  }
+  let email = fields.email_1 || fields.email_2 || null;
 
   // Get FreeScout ID from tracking databases
   const freescoutId = getExistingFreescoutId(freescoutDb, rondoClubDb, member.knvb_id);
@@ -189,17 +182,10 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
     return null;
   }
 
-  // Get mobile phone from contact_info
-  let mobilePhone = null;
-  if (acf.contact_info && Array.isArray(acf.contact_info)) {
-    const mobileContact = acf.contact_info.find(c => c.contact_type === 'mobile');
-    if (mobileContact) {
-      mobilePhone = mobileContact.contact_value;
-    }
-  }
+  const mobilePhone = fields.mobile_1 || fields.mobile_2 || fields.telephone_1 || null;
 
-  let firstName = acf.first_name || '';
-  let lastName = acf.last_name || '';
+  let firstName = fields.first_name || '';
+  let lastName = fields.last_name || '';
   let phones = [];
   if (mobilePhone) {
     phones.push({ type: 'mobile', value: mobilePhone });
@@ -221,7 +207,7 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
   const nikkiData = getMostRecentNikkiData(nikkiDb, member.knvb_id);
 
   // Get RelationEnd date
-  const relationEndRaw = acf['lid-tot'] || null;
+  const relationEndRaw = fields['lid_tot'] || null;
   const relationEnd = normalizeDateToYYYYMMDD(relationEndRaw);
 
   // Build websites array
@@ -257,7 +243,7 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
     customFields: {
       union_teams: unionTeams,
       public_person_id: member.knvb_id,
-      member_since: acf['lid-sinds'] || null,
+      member_since: fields['lid_sinds'] || null,
       nikki_saldo: nikkiData.saldo,
       nikki_status: nikkiData.status,
       relation_end: relationEnd

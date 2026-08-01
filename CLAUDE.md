@@ -209,7 +209,7 @@ temp DB across cases.
 
 ## Rondo Club API Gotchas
 
-**Required fields on ACF updates:** When updating a person via PUT, `first_name` and `last_name` are always required, even for single-field updates. Partial ACF updates require a GET first.
+**Required fields on native field updates:** When updating a person via PUT, `first_name` and `last_name` are always required, even for single-field updates. Partial native field updates require a GET first.
 
 **Relationship type term IDs:** The `relationship_type` taxonomy in WordPress has these term IDs (verified in production):
 - `2` = Parent (the related person is a parent of this person)
@@ -276,7 +276,7 @@ After lifting: the next player-history run will fully re-fetch the member (their
 
 ### `upsertMembers(db, members)` reads `member.data` (object), NOT `member.data_json` (string)
 
-The function takes the prepared ACF blob as an OBJECT in the `data` field and computes `data_json` + `source_hash` internally. Passing `data_json: JSON.stringify(prepared.data)` silently leaves `member.data` undefined, so it defaults to `{}` and the row gets written with literal `"{}"` as data_json. The change detector then sees Rondo Club's real ACF differ from the empty stored mirror and re-flags every field as a "change" every cycle — the reverse-sync loop we kept hitting.
+The function takes the prepared native field blob as an OBJECT in the `data` field and computes `data_json` + `source_hash` internally. Passing `data_json: JSON.stringify(prepared.data)` silently leaves `member.data` undefined, so it defaults to `{}` and the row gets written with literal `"{}"` as data_json. The change detector then sees Rondo Club's real native field differ from the empty stored mirror and re-flags every field as a "change" every cycle — the reverse-sync loop we kept hitting.
 
 Caller shape:
 ```js
@@ -300,7 +300,7 @@ ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node -e "
 
 If eligible-pending is **0** after the run, the detector converged — the large batch was legitimate (e.g. the **July 1 season rollover**: memberships expire/renew, team assignments + age categories move club-wide, so hundreds of members genuinely change at once; a single day of admin edits also spikes it). A real churn loop would still be non-zero and would NOT settle on the next run — the giveaway is a spike that clears to 0 changes on subsequent runs (as the 2026-06-29 15:00 spike did across all of 06-30). Long duration on those days is throughput, not a bug: the forward sync does a sequential GET-then-PUT per member through Cloudflare (~8s each), so ~750 members ≈ ~100 min. Only chase a volatile-field hash bug if eligible-pending stays non-zero across consecutive runs with no real Sportlink change.
 
-**Team work-history indexes are hints, not identities.** The `work_history` ACF repeater is shared by team, player-history, and commissie syncs, so another pipeline can insert rows and shift every later array index. Team cleanup must verify `rondo_club_work_history_id` against the expected Rondo team ID and fall back to finding the current row by team ID. Player-history must reconcile a newly ended Sportlink relation with an existing current row; an append-only merge recreates the stale-role bug by adding an ended duplicate while leaving the old row current. Disappearance-only team changes also need explicit set comparison because they create no new source row/hash mismatch.
+**Team work-history indexes are hints, not identities.** The `work_history` native field repeater is shared by team, player-history, and commissie syncs, so another pipeline can insert rows and shift every later array index. Team cleanup must verify `rondo_club_work_history_id` against the expected Rondo team ID and fall back to finding the current row by team ID. Player-history must reconcile a newly ended Sportlink relation with an existing current row; an append-only merge recreates the stale-role bug by adding an ended duplicate while leaving the old row current. Disappearance-only team changes also need explicit set comparison because they create no new source row/hash mismatch.
 
 ## Documentation Maintenance
 

@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { toNumberOrNull, buildPerYearAcfFields } = require('../steps/sync-nikki-to-rondo-club');
+const { toNumberOrNull, buildPerYearFields } = require('../steps/sync-nikki-to-rondo-club');
 
-// Regression: WordPress REST rejects empty-string values on number-typed ACF
+// Regression: WordPress REST rejects empty-string values on number-typed native field
 // fields with `rest_invalid_type`. On 2026-05-28 that rejection caused
 // 2,600+ retries from a single People sync, ballooning logs to 302k lines.
 test('toNumberOrNull coerces empty/junk to null and preserves numbers', () => {
@@ -34,8 +34,8 @@ test('toNumberOrNull coerces empty/junk to null and preserves numbers', () => {
   assert.equal(toNumberOrNull('0'), 0);
 });
 
-test('buildPerYearAcfFields never emits empty strings for _total/_saldo', () => {
-  const fields = buildPerYearAcfFields([
+test('buildPerYearFields never emits empty strings for _total/_saldo', () => {
+  const fields = buildPerYearFields([
     { year: 2025, hoofdsom: 250, saldo: 0, status: 'OPEN' },
     { year: 2024, hoofdsom: '', saldo: '', status: '' },           // Excel empties
     { year: 2023, hoofdsom: '1.50', saldo: null, status: null },   // string-coerce + null
@@ -59,7 +59,7 @@ test('buildPerYearAcfFields never emits empty strings for _total/_saldo', () => 
   assert.equal(fields._nikki_2022_status, 'PAID');
 
   // No value should ever be the empty string — that's what triggered the
-  // rest_invalid_type retry storm against `acf[_nikki_YYYY_saldo]`.
+  // rest_invalid_type retry storm against `fields[_nikki_YYYY_saldo]`.
   for (const v of Object.values(fields)) {
     assert.notEqual(v, '');
   }

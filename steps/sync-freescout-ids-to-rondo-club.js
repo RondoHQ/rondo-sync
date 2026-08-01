@@ -6,11 +6,11 @@ const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { createSyncLogger } = require('../lib/logger');
 
 /**
- * Sync FreeScout IDs back to Rondo Club ACF fields.
+ * Sync FreeScout IDs back to Rondo Club canonical fields.
  *
  * For each customer in freescout-sync.sqlite that has a freescout_id but hasn't
  * been synced to Rondo Club yet, look up the member's rondo_club_id and write
- * the freescout-id ACF field via PUT.
+ * the freescout-id canonical field via PUT.
  */
 async function runSyncFreescoutIdsToRondoClub(options = {}) {
   const { logger, verbose = false } = options;
@@ -50,9 +50,9 @@ async function runSyncFreescoutIdsToRondoClub(options = {}) {
       }
 
       const data = JSON.parse(member.data_json || '{}');
-      const acf = data.acf || {};
-      const firstName = acf.first_name || '';
-      const lastName = acf.last_name || '';
+      const fields = data.fields || {};
+      const firstName = fields.first_name || '';
+      const lastName = fields.last_name || '';
 
       if (!firstName || !lastName) {
         logVerbose(`Skipping ${knvb_id}: missing first_name or last_name`);
@@ -67,10 +67,10 @@ async function runSyncFreescoutIdsToRondoClub(options = {}) {
           `wp/v2/people/${member.rondo_club_id}`,
           'PUT',
           {
-            acf: {
+            fields: {
               first_name: firstName,
               last_name: lastName,
-              'freescout-id': freescout_id
+              'freescout_id': freescout_id
             }
           },
           { logger, verbose }

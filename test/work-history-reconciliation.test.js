@@ -13,9 +13,9 @@ const { reconcilePlayerHistory } = require('../steps/submit-rondo-club-player-hi
 
 test('team cleanup ignores a stale index and finds the current row by team ID', () => {
   const rows = [
-    { team: 999, job_title: 'Commissielid', is_current: true },
-    { team: 2618, job_title: 'Assistent-trainer/coach', is_current: false },
-    { team: 2618, job_title: 'Assistent-trainer/coach', is_current: true }
+    { team_id: 999, job_title: 'Commissielid', is_current: true },
+    { team_id: 2618, job_title: 'Assistent-trainer/coach', is_current: false },
+    { team_id: 2618, job_title: 'Assistent-trainer/coach', is_current: true }
   ];
 
   assert.equal(findTeamWorkHistoryIndex(rows, 1, 2618), 2);
@@ -56,21 +56,21 @@ test('work-history hashes include the role description', () => {
 test('player history closes a legacy current duplicate when Sportlink has ended it', () => {
   const existing = [
     {
-      team: 2618,
+      team_id: 2618,
       job_title: 'Assistent-trainer/coach',
       start_date: '20260212',
       end_date: '20260705',
       is_current: false
     },
     {
-      team: 2618,
+      team_id: 2618,
       job_title: 'Assistent-trainer/coach',
       start_date: '20250701',
       end_date: '',
       is_current: true
     },
     {
-      team: 2662,
+      team_id: 2662,
       job_title: 'Bestuurslid',
       start_date: '20231117',
       end_date: '',
@@ -78,7 +78,7 @@ test('player history closes a legacy current duplicate when Sportlink has ended 
     }
   ];
   const source = [{
-    team: 2618,
+    team_id: 2618,
     job_title: 'Assistent-trainer/coach',
     start_date: '20250701',
     end_date: '20260701',
@@ -95,7 +95,7 @@ test('player history closes a legacy current duplicate when Sportlink has ended 
 
 test('an active source stint prevents an older ended stint from closing the current row', () => {
   const existing = [{
-    team: 2630,
+    team_id: 2630,
     job_title: 'Teammanager',
     start_date: '20250813',
     end_date: '',
@@ -103,14 +103,14 @@ test('an active source stint prevents an older ended stint from closing the curr
   }];
   const source = [
     {
-      team: 2630,
+      team_id: 2630,
       job_title: 'Teammanager',
       start_date: '20240813',
       end_date: '20250701',
       is_current: false
     },
     {
-      team: 2630,
+      team_id: 2630,
       job_title: 'Teammanager',
       start_date: '20250813',
       end_date: '',
@@ -119,7 +119,7 @@ test('an active source stint prevents an older ended stint from closing the curr
   ];
 
   const result = reconcilePlayerHistory(existing, source);
-  const currentRows = result.workHistory.filter(row => row.team === 2630 && row.is_current);
+  const currentRows = result.workHistory.filter(row => row.team_id === 2630 && row.is_current);
   assert.equal(currentRows.length, 1);
   assert.equal(currentRows[0].start_date, '20250813');
 });

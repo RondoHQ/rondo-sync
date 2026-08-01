@@ -13,7 +13,7 @@ async function fetchRondoPeople(options = {}) {
   for (let page = 1; ; page += 1) {
     try {
       const response = await rondoClubRequestWithRetry(
-        `wp/v2/people?per_page=100&page=${page}&_fields=id,title,acf`,
+        `wp/v2/people?per_page=100&page=${page}&_fields=id,title,fields`,
         'GET',
         null,
         options
@@ -35,7 +35,7 @@ async function applyPlan(plan, options = {}) {
   for (const item of plan.updates) {
     try {
       await request(`wp/v2/people/${item.person.id}`, 'PATCH', {
-        acf: item.candidate.sponsorAcf
+        fields: item.candidate.sponsorFields
       }, options);
       result.updated += 1;
     } catch (error) {
@@ -45,9 +45,9 @@ async function applyPlan(plan, options = {}) {
   for (const item of plan.creates) {
     try {
       await request('wp/v2/people', 'POST', {
-        title: item.candidate.displayName || item.candidate.createAcf.company_name || 'Sponsor',
+        title: item.candidate.displayName || item.candidate.createFields.company_name || 'Sponsor',
         status: 'publish',
-        acf: item.candidate.createAcf
+        fields: item.candidate.createFields
       }, options);
       result.created += 1;
     } catch (error) {
@@ -57,7 +57,7 @@ async function applyPlan(plan, options = {}) {
   for (const person of plan.deactivations) {
     try {
       await request(`wp/v2/people/${person.id}`, 'PATCH', {
-        acf: { is_sponsor: false, sponsor_pass_variant: null }
+        fields: { is_sponsor: false, sponsor_pass_variant: null }
       }, options);
       result.deactivated += 1;
     } catch (error) {
@@ -88,7 +88,7 @@ async function runSponsitRondoSync(options = {}) {
       creates: plan.creates.length,
       updates: plan.updates.length,
       unchanged: plan.unchanged.length,
-      memberSponsorUpdates: plan.updates.filter((item) => (item.person.acf?.person_type || 'member') !== 'contact').length,
+      memberSponsorUpdates: plan.updates.filter((item) => (item.person.fields?.person_type || 'member') !== 'contact').length,
       deactivations: plan.deactivations.length,
       quarantined: plan.quarantined.length,
       quarantineReasons: plan.quarantined.reduce((counts, item) => {

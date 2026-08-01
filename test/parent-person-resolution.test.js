@@ -45,14 +45,14 @@ test('preserves an existing sponsor profile when it is also a Sportlink parent',
 
 test('preserves identity and contact fields for an active member profile', () => {
   assert.deepEqual(
-    getParentProfileOwnership({ 'knvb-id': 'ABC123', former_member: false }),
+    getParentProfileOwnership({ 'knvb_id': 'ABC123', former_member: false }),
     { preserveIdentity: true, preserveContact: true }
   );
 });
 
 test('preserves former-member identity but lets current parent data refresh contacts', () => {
   assert.deepEqual(
-    getParentProfileOwnership({ 'knvb-id': 'BNHX357', former_member: '1' }),
+    getParentProfileOwnership({ 'knvb_id': 'BNHX357', former_member: '1' }),
     { preserveIdentity: true, preserveContact: false }
   );
 });

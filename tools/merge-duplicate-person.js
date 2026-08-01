@@ -10,7 +10,7 @@ require('dotenv/config');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb } = require('../lib/rondo-club-db');
 
-// Relationship type term IDs in the WordPress relationship_type taxonomy.
+// Relationship type term IDs in the WordPress relationship_type_id taxonomy.
 const RELATIONSHIP_TYPE = {
   PARENT: 2,  // "Parent" - the related person is a parent
   CHILD: 3,   // "Child" - the related person is a child
@@ -29,30 +29,30 @@ async function mergePerson(parentId, memberId) {
   const parent = parentRes.body;
   const member = memberRes.body;
 
-  console.log(`Parent: ${parent.acf.first_name} ${parent.acf.last_name || ''}`);
-  console.log(`Member: ${member.acf.first_name} ${member.acf.last_name || ''}`);
+  console.log(`Parent: ${parent.fields.first_name} ${parent.fields.last_name || ''}`);
+  console.log(`Member: ${member.fields.first_name} ${member.fields.last_name || ''}`);
 
   // Step 2: Get member's relationships, filter out sibling reference to parent
-  const memberRelationships = (member.acf.relationships || [])
-    .filter(r => r.related_person !== parentId);
+  const memberRelationships = (member.fields.relationships || [])
+    .filter(r => r.related_person_id !== parentId);
 
   console.log(`Keeping ${memberRelationships.length} relationships on member`);
 
   // Step 3: Update member with cleaned relationships
   await rondoClubRequest(`wp/v2/people/${memberId}`, 'PUT', {
-    acf: {
-      first_name: member.acf.first_name,
-      last_name: member.acf.last_name,
+    fields: {
+      first_name: member.fields.first_name,
+      last_name: member.fields.last_name,
       relationships: memberRelationships
     }
   });
   console.log('Updated member relationships');
 
   // Step 4: Update children to reference member instead of parent
-  const parentRelationships = parent.acf.relationships || [];
+  const parentRelationships = parent.fields.relationships || [];
   const childIds = parentRelationships
-    .filter(r => r.relationship_type === RELATIONSHIP_TYPE.CHILD) // Children
-    .map(r => r.related_person)
+    .filter(r => r.relationship_type_id === RELATIONSHIP_TYPE.CHILD) // Children
+    .map(r => r.related_person_id)
     .filter(id => id !== memberId); // Don't update member itself
 
   console.log(`Found ${childIds.length} children to update: ${childIds.join(', ')}`);
@@ -63,9 +63,9 @@ async function mergePerson(parentId, memberId) {
       const child = childRes.body;
 
       // Replace parent relationship: parentId -> memberId
-      const childRelationships = (child.acf.relationships || []).map(r => {
-        if (r.related_person === parentId && r.relationship_type === RELATIONSHIP_TYPE.PARENT) {
-          return { ...r, related_person: memberId };
+      const childRelationships = (child.fields.relationships || []).map(r => {
+        if (r.related_person_id === parentId && r.relationship_type_id === RELATIONSHIP_TYPE.PARENT) {
+          return { ...r, related_person_id: memberId };
         }
         return r;
       });
@@ -73,16 +73,16 @@ async function mergePerson(parentId, memberId) {
       // Deduplicate (in case member link already exists)
       const seen = new Set();
       const deduped = childRelationships.filter(r => {
-        const key = `${r.related_person}-${r.relationship_type}`;
+        const key = `${r.related_person_id}-${r.relationship_type_id}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
 
       await rondoClubRequest(`wp/v2/people/${childId}`, 'PUT', {
-        acf: {
-          first_name: child.acf.first_name,
-          last_name: child.acf.last_name,
+        fields: {
+          first_name: child.fields.first_name,
+          last_name: child.fields.last_name,
           relationships: deduped
         }
       });
@@ -99,7 +99,7 @@ async function mergePerson(parentId, memberId) {
   // Step 6: Update database tracking
   const db = openDb();
   try {
-    const email = parent.acf.contact_info?.find(c => c.contact_type === 'email')?.contact_value;
+    const email = parent.fields.email_1 || parent.fields.email_2;
     if (email) {
       db.prepare('DELETE FROM rondo_club_parents WHERE email = ?').run(email);
       console.log(`Removed parent tracking for ${email}`);

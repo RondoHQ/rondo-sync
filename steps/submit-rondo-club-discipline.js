@@ -14,22 +14,22 @@ const { openDb: openRondoClubDb, getTeamBySportlinkId } = require('../lib/rondo-
 const { readEnv } = require('../lib/utils');
 
 /**
- * Convert date string to ACF Ymd format (e.g., "2026-01-15" -> "20260115")
+ * Convert date string to native field Ymd format (e.g., "2026-01-15" -> "20260115")
  * @param {string} dateString - Date in various formats (ISO, etc.)
  * @returns {string} - Date in Ymd format, or empty string if invalid
  */
-function toAcfDateFormat(dateString) {
-  if (!dateString) return '';
+function toFieldsDateFormat(dateString) {
+  if (!dateString) return null;
 
   // Try to parse the date
   const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
+  if (isNaN(date.getTime())) return null;
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
 
-  return `${year}${month}${day}`;
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -68,10 +68,10 @@ async function fetchPersonName(rondoClubId, options, cache) {
     const person = response.body;
     let name = person.title?.rendered || person.title;
 
-    // If title not available, construct from ACF
-    if (!name && person.acf) {
-      const firstName = person.acf.first_name || '';
-      const lastName = person.acf.last_name || '';
+    // If title not available, construct from native field
+    if (!name && person.fields) {
+      const firstName = person.fields.first_name || '';
+      const lastName = person.fields.last_name || '';
       name = `${firstName} ${lastName}`.trim();
     }
 
@@ -165,23 +165,23 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     return { action: 'skipped', id: rondo_club_id };
   }
 
-  // Build ACF fields payload
-  // Note: Date fields use ACF date_picker with Ymd return format (e.g., "20260115")
+  // Build canonical fields payload
+  // Note: Date fields use native field date_picker with Ymd return format (e.g., "20260115")
   const sportlinkIsCharged = caseData.is_charged === 1;
-  const acfFields = {
+  const fields = {
     'dossier_id': dossier_id,
     'person': personRondoClubId,
-    'match_date': toAcfDateFormat(match_date),
+    match_date: toFieldsDateFormat(match_date),
     'match_description': match_description || '',
     'team_name': caseData.team_name || '',
     'charge_codes': caseData.charge_codes || '',
     'charge_description': caseData.charge_description || '',
     'sanction_description': caseData.sanction_description || '',
-    'processing_date': toAcfDateFormat(caseData.processing_date),
+    processing_date: toFieldsDateFormat(caseData.processing_date),
     'administrative_fee': caseData.administrative_fee ? parseFloat(caseData.administrative_fee) : null,
     'is_charged': sportlinkIsCharged ? 'sportlink' : '',
-    'home_team': homeTeamRondoClubId || '',
-    'away_team': awayTeamRondoClubId || ''
+    'home_team': homeTeamRondoClubId || null,
+    'away_team': awayTeamRondoClubId || null
   };
 
   const title = buildCaseTitle(personName, match_description || 'Unknown Match', match_date || 'Unknown Date');
@@ -191,7 +191,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     title: title,
     status: 'publish',
     seizoen: [seasonTermId],
-    acf: acfFields
+    fields: fields
   };
 
   if (rondo_club_id) {
@@ -200,7 +200,7 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     // Rondo Club may have set is_charged to 'rondo' when an invoice was sent.
     // Only send is_charged in the update payload when Sportlink explicitly charges it.
     if (!sportlinkIsCharged) {
-      delete payload.acf['is_charged'];
+      delete payload.fields['is_charged'];
     }
     const endpoint = `wp/v2/discipline-cases/${rondo_club_id}`;
     logVerbose(`Updating discipline case: ${rondo_club_id} - ${dossier_id}`);
@@ -409,7 +409,7 @@ async function runSync(options = {}) {
           let oldPersonId = null;
           try {
             const caseResponse = await rondoClubRequest(`wp/v2/discipline-cases/${caseData.rondo_club_id}`, 'GET', null, options);
-            oldPersonId = caseResponse.body?.acf?.person || null;
+            oldPersonId = caseResponse.body?.fields?.person || null;
           } catch (fetchError) {
             logVerbose(`  Could not fetch old case data: ${fetchError.message}`);
           }
@@ -512,7 +512,7 @@ async function runSync(options = {}) {
         let oldPersonId = null;
         try {
           const caseResponse = await rondoClubRequest(`wp/v2/discipline-cases/${staleCase.rondo_club_id}`, 'GET', null, options);
-          oldPersonId = caseResponse.body?.acf?.person || null;
+          oldPersonId = caseResponse.body?.fields?.person || null;
         } catch (fetchError) {
           logVerbose(`    Could not fetch old case data: ${fetchError.message}`);
         }

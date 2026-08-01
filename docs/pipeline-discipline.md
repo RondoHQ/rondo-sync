@@ -56,7 +56,7 @@ pipelines/sync-discipline.js
    - Checks if case already exists: `GET /wp/v2/discipline-cases?meta_key=dossier_id&meta_value=T-12345`
    - **New case**: `POST /wp/v2/discipline-cases`
    - **Existing case**: `PUT /wp/v2/discipline-cases/{id}`
-   - Links to person via `acf.person` (Post Object field, single integer ID)
+   - Links to person via `fields.person` (Post Object field, single integer ID)
 5. Cases without a matching person are skipped (counted as `skipped_no_person`)
 
 **Output:** `{ total, synced, created, updated, skipped, skipped_no_person, errors }`
@@ -68,7 +68,7 @@ pipelines/sync-discipline.js
 **Post type:** `discipline_case`
 **REST endpoint:** `wp/v2/discipline-cases`
 
-| Rondo Club ACF Field | SQLite Column | Type | Notes |
+| Rondo Club native field Field | SQLite Column | Type | Notes |
 |---|---|---|---|
 | `dossier_id` | `dossier_id` | Text | Unique case ID (e.g., T-12345). Has server-side uniqueness validation. |
 | `person` | → `rondo_club_members.rondo_club_id` | Post Object | Single integer ID (not array). Looked up via `public_person_id`. |
@@ -102,11 +102,11 @@ Generated as: `"{person_name} - {match_description} - {match_date}"`
 
 ## Rondo Club WordPress Requirements
 
-- **ACF Pro** (for Post Object fields and REST API integration)
+- **Rondo Club theme** with its native field registry
 - **Custom post type:** `discipline_case` with `show_in_rest = true`
 - **Taxonomy:** `seizoen` with `show_in_rest = true`
 - **Capability:** `fairplay` - only users with this capability can view cases in the UI
-- All ACF fields must have `show_in_rest = true`
+- All canonical fields must be present in the Rondo Club field registry
 - `person` field uses **Post Object** type (returns single integer, not array)
 - `dossier_id` has server-side uniqueness validation
 

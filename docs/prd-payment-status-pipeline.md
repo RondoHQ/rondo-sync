@@ -83,7 +83,7 @@ Defined in `class-post-types.php`:
 ### Stored Payment Data
 
 When a payment request is created (`class-rabobank-payment.php`), the following are stored on the invoice:
-- `payment_link` (ACF field) — the betaalverzoek URL
+- `payment_link` (canonical field) — the betaalverzoek URL
 - `_payment_request_id` (post meta) — the Rabobank payment request ID
 
 The `_payment_request_id` is the key for matching Rabobank API responses back to Rondo Club invoices.

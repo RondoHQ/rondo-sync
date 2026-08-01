@@ -17,11 +17,11 @@ const {
 } = require('../lib/rondo-club-db');
 
 /**
- * Convert JS Date to ACF date format (YYYYMMDD).
+ * Convert JS Date to native field date format (YYYYMMDD).
  * @param {Date} date - Date object
- * @returns {string} - ACF date string
+ * @returns {string} - native field date string
  */
-function formatDateForACF(date) {
+function formatDateForFields(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -29,26 +29,26 @@ function formatDateForACF(date) {
 }
 
 /**
- * Convert Sportlink date format to ACF date format
+ * Convert Sportlink date format to native field date format
  * Sportlink format: "2023-01-01" or similar
- * ACF work_history format: "Y-m-d" (e.g., "2023-01-01")
+ * native field work_history format: "Y-m-d" (e.g., "2023-01-01")
  * @param {string} dateStr - Sportlink date string
- * @returns {string} - ACF date string or empty
+ * @returns {string} - native field date string or empty
  */
-function convertDateForACF(dateStr) {
-  if (!dateStr) return '';
+function convertDateForFields(dateStr) {
+  if (!dateStr) return null;
   // Remove any time component, keep Y-m-d format
   return dateStr.split('T')[0];
 }
 
 /**
- * Build ACF work_history entry for a commissie.
+ * Build native field work_history entry for a commissie.
  * @param {number} commissieRondoClubId - Commissie WordPress post ID
  * @param {string} jobTitle - Job title/role
  * @param {boolean} isActive - Is current
  * @param {string} startDate - Start date (Sportlink format)
  * @param {string} endDate - End date (Sportlink format)
- * @returns {Object} - ACF work_history entry
+ * @returns {Object} - native field work_history entry
  */
 function buildWorkHistoryEntry(commissieRondoClubId, jobTitle, isActive, startDate, endDate) {
   if (!jobTitle) {
@@ -57,9 +57,9 @@ function buildWorkHistoryEntry(commissieRondoClubId, jobTitle, isActive, startDa
   return {
     job_title: jobTitle,
     is_current: isActive,
-    start_date: convertDateForACF(startDate),
-    end_date: isActive ? '' : convertDateForACF(endDate),
-    team: commissieRondoClubId  // Note: This will work once Rondo Club's work_history.team field accepts commissie post type
+    start_date: convertDateForFields(startDate),
+    end_date: isActive ? null : convertDateForFields(endDate),
+    team_id: commissieRondoClubId  // Note: This will work once Rondo Club's work_history.team field accepts commissie post type
   };
 }
 
@@ -121,9 +121,9 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
   let existingLastName = '';
   try {
     const response = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-    existingWorkHistory = response.body.acf?.work_history || [];
-    existingFirstName = response.body.acf?.first_name || '';
-    existingLastName = response.body.acf?.last_name || '';
+    existingWorkHistory = response.body.fields?.work_history || [];
+    existingFirstName = response.body.fields?.first_name || '';
+    existingLastName = response.body.fields?.last_name || '';
   } catch (error) {
     logVerbose(`Could not fetch existing data for ${knvb_id}: ${error.message}`);
   }
@@ -144,7 +144,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
         newWorkHistory[index] = {
           ...newWorkHistory[index],
           is_current: false,
-          end_date: formatDateForACF(new Date())
+          end_date: formatDateForFields(new Date())
         };
         endedCount++;
         modified = true;
@@ -234,7 +234,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
       await rondoClubRequest(
         `wp/v2/people/${rondo_club_id}`,
         'PUT',
-        { acf: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
+        { fields: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
         options
       );
     } catch (error) {

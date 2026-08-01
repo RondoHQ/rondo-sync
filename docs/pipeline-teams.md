@@ -69,7 +69,7 @@ pipelines/sync-teams.js
 1. Reads team membership from `sportlink_team_members` joined with `rondo_club_teams` and `rondo_club_members`
 2. Compares current team assignments against `rondo_club_work_history` table
 3. For each member with changes:
-   - Fetches current `work_history` ACF repeater from Rondo Club
+   - Fetches current `work_history` native field repeater from Rondo Club
    - Adds new team assignments (creates new rows in the repeater)
    - Ends removed assignments (sets `is_current: false`, `end_date: today`)
    - Only modifies sync-created entries (manual entries are preserved)
@@ -87,13 +87,13 @@ pipelines/sync-teams.js
 | Rondo Club Field | Sportlink Source | Notes |
 |---|---|---|
 | `title` | `TeamName` / `Name` | Post title |
-| `acf.publicteamid` | `PublicTeamId` | Sportlink team identifier |
-| `acf.activiteit` | `GameActivityDescription` | "Veld" or "Zaal" |
-| `acf.gender` | `Gender` | Mannen→male, Vrouwen→female, Gemengd→skipped |
+| `fields.publicteamid` | `PublicTeamId` | Sportlink team identifier |
+| `fields.activiteit` | `GameActivityDescription` | "Veld" or "Zaal" |
+| `fields.gender` | `Gender` | Mannen→male, Vrouwen→female, Gemengd→skipped |
 
 ### Sportlink → Rondo Club Work History
 
-The ACF `work_history` is a repeater field on person posts:
+The native field `work_history` is a repeater field on person posts:
 
 | Repeater Field | Source | Notes |
 |---|---|---|

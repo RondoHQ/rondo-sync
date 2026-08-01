@@ -27,7 +27,7 @@ const ENTITIES = {
     idColumn: 'rondo_club_id',
     keyColumn: 'knvb_id',
     endpoint: 'wp/v2/people',
-    acfKeyField: 'knvb-id',
+    fieldKey: 'knvb_id',
     label: 'Members'
   },
   parents: {
@@ -35,7 +35,7 @@ const ENTITIES = {
     idColumn: 'rondo_club_id',
     keyColumn: 'email',
     endpoint: 'wp/v2/people',
-    acfKeyField: null, // Parents use email lookup
+    fieldKey: null, // Parents use email lookup
     label: 'Parents'
   },
   teams: {
@@ -43,7 +43,7 @@ const ENTITIES = {
     idColumn: 'rondo_club_id',
     keyColumn: 'team_name',
     endpoint: 'wp/v2/teams',
-    acfKeyField: null, // Teams use title
+    fieldKey: null, // Teams use title
     label: 'Teams'
   },
   commissies: {
@@ -51,7 +51,7 @@ const ENTITIES = {
     idColumn: 'rondo_club_id',
     keyColumn: 'commissie_name',
     endpoint: 'wp/v2/commissies',
-    acfKeyField: null, // Commissies use title
+    fieldKey: null, // Commissies use title
     label: 'Commissies'
   }
 };

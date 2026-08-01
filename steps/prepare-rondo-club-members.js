@@ -9,6 +9,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
 const { normalizePhone } = require('../lib/phone-normalizer');
+const { READ_ONLY_OR_UNREGISTERED_PERSON_FIELDS } = require('../lib/canonical-fields');
 
 /**
  * Map Sportlink gender codes to Rondo Club format
@@ -18,17 +19,6 @@ const { normalizePhone } = require('../lib/phone-normalizer');
 function mapGender(sportlinkGender) {
   const mapping = { 'Male': 'male', 'Female': 'female' };
   return mapping[sportlinkGender] || '';
-}
-
-/**
- * Extract birth year from date string
- * @param {string} dateOfBirth - Date in YYYY-MM-DD format
- * @returns {number|null} - Year as integer or null
- */
-function extractBirthYear(dateOfBirth) {
-  if (!dateOfBirth) return null;
-  const year = parseInt(dateOfBirth.substring(0, 4), 10);
-  return isNaN(year) ? null : year;
 }
 
 /**
@@ -86,10 +76,10 @@ function convertMappedValue(value, valueType) {
 }
 
 /**
- * Apply configurable free-field mappings (Remarks1..Remarks8 -> ACF/meta field).
- * @param {Object} payload - Output payload with acf/meta objects
+ * Apply configurable free-field mappings (Remarks1..Remarks8 -> native field/meta field).
+ * @param {Object} payload - Output payload with fields/meta objects
  * @param {Object} freeFields - Free fields row from DB
- * @param {Array<{source_field: string, target_field: string|null, target_scope: 'acf'|'meta', value_type: string}>} freeFieldMappings
+ * @param {Array<{source_field: string, target_field: string|null, target_scope: 'fields'|'meta', value_type: string}>} freeFieldMappings
  */
 function applyMappedFreeFields(payload, freeFields, freeFieldMappings) {
   if (!freeFields || !Array.isArray(freeFieldMappings)) return;
@@ -97,13 +87,14 @@ function applyMappedFreeFields(payload, freeFields, freeFieldMappings) {
   for (const mapping of freeFieldMappings) {
     const targetField = (mapping.target_field || '').trim();
     if (!targetField) continue;
+    if (mapping.target_scope !== 'meta' && READ_ONLY_OR_UNREGISTERED_PERSON_FIELDS.has(targetField)) continue;
 
     const sourceKey = String(mapping.source_field || '').toLowerCase(); // "remarks3"
     const rowKey = sourceKey.replace('remarks', 'remark'); // "remark3"
     const value = freeFields[rowKey];
     const converted = convertMappedValue(value, mapping.value_type || 'string');
     if (converted !== null) {
-      const scope = mapping.target_scope === 'meta' ? 'meta' : 'acf';
+      const scope = mapping.target_scope === 'meta' ? 'meta' : 'fields';
       if (!payload[scope]) payload[scope] = {};
       payload[scope][targetField] = converted;
     }
@@ -147,8 +138,8 @@ function buildName(member) {
 }
 
 /**
- * Build fixed contact fields object for ACF.
- * Maps Sportlink API field names to the 6 fixed ACF contact fields.
+ * Build fixed contact fields object for native field.
+ * Maps Sportlink API field names to the 6 fixed native field contact fields.
  * Phone numbers are normalized to E.164 format.
  * @param {Object} member - Sportlink member record
  * @returns {Object} Object with email_1, email_2, mobile_1, mobile_2, telephone_1, telephone_2
@@ -165,7 +156,7 @@ function buildFixedContactFields(member) {
 }
 
 /**
- * Build addresses array for ACF repeater
+ * Build addresses array for native field repeater
  * Only includes address if at least street name or city present
  * @param {Object} member - Sportlink member record
  * @returns {Array<Object>}
@@ -190,7 +181,7 @@ function buildAddresses(member) {
 }
 
 /**
- * Build invoice address as ACF repeater row
+ * Build invoice address as native field repeater row
  * @param {Object} invoiceData - Invoice data from database
  * @returns {Object|null} - Address repeater row or null if no data
  */
@@ -221,14 +212,13 @@ function buildInvoiceAddress(invoiceData) {
 function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, freeFieldMappings = []) {
   const name = buildName(sportlinkMember);
   const gender = mapGender(sportlinkMember.GenderCode);
-  const birthYear = extractBirthYear(sportlinkMember.DateOfBirth);
   const birthdate = extractBirthdate(sportlinkMember.DateOfBirth);
   const teams = extractTeams(sportlinkMember);
 
-  const acf = {
+  const fields = {
     first_name: name.first_name,
     last_name: name.last_name,
-    'knvb-id': sportlinkMember.PublicPersonId,
+    'knvb_id': sportlinkMember.PublicPersonId,
     addresses: buildAddresses(sportlinkMember)
   };
 
@@ -236,21 +226,20 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const contactFields = buildFixedContactFields(sportlinkMember);
   for (const [key, value] of Object.entries(contactFields)) {
     if (value !== null) {
-      acf[key] = value;
+      fields[key] = value;
     }
   }
   const payload = {
-    acf: acf,
+    fields: fields,
     meta: {
       team: teams || ''
     }
   };
 
   // Only add optional fields if they have values
-  if (name.infix) acf.infix = name.infix;
-  if (gender) acf.gender = gender;
-  if (birthYear) acf.birth_year = birthYear;
-  if (birthdate) acf.birthdate = birthdate;
+  if (name.infix) fields.infix = name.infix;
+  if (gender) fields.gender = gender;
+  if (birthdate) fields.birthdate = birthdate;
 
   // Extract PersonImageDate for photo state tracking
   // Normalize to null if empty string or whitespace
@@ -265,21 +254,21 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
   const tooltip = (sportlinkMember.Tooltip || '').trim();
 
-  if (memberSince) acf['lid-sinds'] = memberSince;
+  if (memberSince) fields['lid_sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
-  acf['lid-tot'] = relationEnd || '';
-  if (dateOfPassing) acf['datum-overlijden'] = dateOfPassing;
-  if (ageClass) acf['leeftijdsgroep'] = ageClass;
-  if (personImageDate) acf['datum-foto'] = personImageDate;
-  if (memberType) acf['type-lid'] = memberType;
-  if (gameActivities) acf['spelactiviteit'] = gameActivities;
+  fields['lid_tot'] = relationEnd || null;
+  if (dateOfPassing) fields['datum_overlijden'] = dateOfPassing;
+  if (ageClass) fields['leeftijdsgroep'] = ageClass;
+  if (personImageDate) fields['datum_foto'] = personImageDate;
+  if (memberType) fields['type_lid'] = memberType;
+  if (gameActivities) fields['spelactiviteit'] = gameActivities;
 
   // Sportlink Tooltip "Actie van een ander (overschrijving)" marks members who
   // were transferred in from another club and still need their KNVB transfer
   // processed — they show up in Sportlink (and thus get synced to Rondo) but
   // have no voetbalactiviteit yet. Always write the field so it clears once
   // the transfer is processed.
-  acf['wacht_op_overschrijving'] = /overschrijving/i.test(tooltip);
+  fields['wacht_op_overschrijving'] = /overschrijving/i.test(tooltip);
 
   // Free fields from Sportlink /other tab (FreeScout ID, VOG datum, financial block)
   if (freeFields) {
@@ -287,13 +276,13 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     // Financial block status (convert SQLite INTEGER 0/1 to boolean)
     // Explicitly check for 1 to treat null/undefined/0 as "not blocked"
     if (freeFields.has_financial_block !== undefined) {
-      acf['financiele-blokkade'] = (freeFields.has_financial_block === 1);
+      fields['financiele_blokkade'] = (freeFields.has_financial_block === 1);
     }
   }
 
   // Active members are explicitly marked as not former
   // (Members no longer in Sportlink are marked as former in separate step)
-  acf.former_member = false;
+  fields.former_member = false;
 
   // Invoice data from Sportlink /financial tab
   if (invoiceData) {
@@ -301,16 +290,8 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     if (invoiceData.invoice_address_is_default === 0) {
       const invoiceAddress = buildInvoiceAddress(invoiceData);
       if (invoiceAddress) {
-        acf.addresses.push(invoiceAddress);
+        fields.addresses.push(invoiceAddress);
       }
-    }
-    // Invoice email (always include if present)
-    if (invoiceData.invoice_email) {
-      acf['factuur-email'] = invoiceData.invoice_email;
-    }
-    // External invoice code/reference (always include if present)
-    if (invoiceData.invoice_external_code) {
-      acf['factuur-referentie'] = invoiceData.invoice_external_code;
     }
   }
 

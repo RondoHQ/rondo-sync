@@ -46,7 +46,7 @@ function buildParentAddress(member) {
 }
 
 /**
- * Build fixed ACF contact fields for a parent.
+ * Build fixed native field contact fields for a parent.
  * @param {string} email - Parent email
  * @param {Set} phones - Set of phone numbers
  * @returns {Object}
@@ -77,7 +77,7 @@ function prepareParent(email, data) {
     childKnvbIds: data.childKnvbIds,  // For relationship linking in sync phase
     data: {
       status: 'publish',
-      acf: {
+      fields: {
         first_name: data.name.first_name,
         last_name: data.name.last_name,
         ...buildParentContactFields(email, data.phones),

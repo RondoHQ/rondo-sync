@@ -203,7 +203,7 @@ node tools/cleanup-orphan-relationships.js --fix     # Remove them
 node tools/cleanup-duplicate-relationships.js
 ```
 
-**Note:** As of v2.3, birthdays sync as `acf.birthdate` on person records and no longer use separate `important_date` posts.
+**Note:** As of v2.3, birthdays sync as `fields.birthdate` on person records and no longer use separate `important_date` posts.
 
 ---
 

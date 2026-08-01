@@ -76,14 +76,14 @@ async function runCleanup(options = {}) {
   const toFix = [];
 
   for (const person of rondoClubPeople) {
-    const relationships = person.acf?.relationships || [];
+    const relationships = person.fields?.relationships || [];
     if (relationships.length === 0) continue;
 
     const orphanedRelations = [];
     const validRelations = [];
 
     for (const rel of relationships) {
-      const relatedId = rel.related_person;
+      const relatedId = rel.related_person_id;
       if (relatedId && !validIds.has(relatedId)) {
         orphanedRelations.push(rel);
       } else {
@@ -92,8 +92,8 @@ async function runCleanup(options = {}) {
     }
 
     if (orphanedRelations.length > 0) {
-      const firstName = (person.acf?.first_name || '').trim();
-      const lastName = (person.acf?.last_name || '').trim();
+      const firstName = (person.fields?.first_name || '').trim();
+      const lastName = (person.fields?.last_name || '').trim();
       const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
       toFix.push({
@@ -101,7 +101,7 @@ async function runCleanup(options = {}) {
         fullName,
         originalCount: relationships.length,
         orphanedCount: orphanedRelations.length,
-        orphanedIds: orphanedRelations.map(r => r.related_person),
+        orphanedIds: orphanedRelations.map(r => r.related_person_id),
         validRelations
       });
     }
@@ -135,9 +135,9 @@ async function runCleanup(options = {}) {
         // Fetch current person to get required fields
         const current = await rondoClubRequest(`wp/v2/people/${person.id}`);
         const payload = {
-          acf: {
-            first_name: current.acf?.first_name || '',
-            last_name: current.acf?.last_name || '',
+          fields: {
+            first_name: current.fields?.first_name || '',
+            last_name: current.fields?.last_name || '',
             relationships: person.validRelations
           }
         };

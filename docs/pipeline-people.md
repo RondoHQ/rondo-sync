@@ -89,7 +89,7 @@ pipelines/sync-people.js
 
 1. Reads members from `data/rondo-sync.sqlite` where `source_hash != last_synced_hash`
 2. Reads free fields from `sportlink_member_free_fields` table (FreeScout ID, VOG date, financial block)
-3. Builds WordPress API payload with ACF fields (see field mappings below)
+3. Builds WordPress API payload with canonical fields (see field mappings below)
 4. For each changed member:
    - **No `rondo_club_id`**: `POST /wp/v2/people` (create new person)
    - **Has `rondo_club_id`**: `PUT /wp/v2/people/{rondo_club_id}` (update existing)
@@ -97,14 +97,14 @@ pipelines/sync-people.js
 6. Updates `last_synced_hash` on success
 7. Then processes **parent members** (from `rondo_club_parents` table):
    - Identified by email (no KNVB ID)
-   - Linked to children via ACF `relationships` field
+   - Linked to children via native field `relationships` field
    - Deduplicated across multiple children's parent fields
 
 **Output:** `{ total, synced, created, updated, skipped, errors, parents: { ... } }`
 
-**Important:** `first_name` and `last_name` are required on every PUT request, even for partial ACF updates.
+**Important:** `first_name` and `last_name` are required on every PUT request, even for partial native field updates.
 
-**Birthday field:** As of v2.3, birthdate is synced as `acf.birthdate` (YYYY-MM-DD) on the person record during Step 4. Previous versions used a separate `important_date` post type which is now deprecated.
+**Birthday field:** As of v2.3, birthdate is synced as `fields.birthdate` (YYYY-MM-DD) on the person record during Step 4. Previous versions used a separate `important_date` post type which is now deprecated.
 
 ### Step 5: Laposta Deliverability Follow-up Tasks
 
@@ -178,7 +178,7 @@ See `config/field-mapping.json` for the complete mapping. Key fields:
 
 ### Sportlink → Rondo Club Members
 
-| Rondo Club ACF Field | Source |
+| Rondo Club native field Field | Source |
 |---|---|
 | `first_name` | `FirstName` |
 | `infix` | `Infix` (lowercased tussenvoegsel) |

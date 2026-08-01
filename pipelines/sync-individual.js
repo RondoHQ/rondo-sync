@@ -28,6 +28,7 @@ const { syncParent, logFinancialBlockActivity } = require('../steps/submit-rondo
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
+const { applyCanonicalResolution, toBooleanFlag } = require('../lib/canonical-fields');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const { syncCommissieWorkHistoryForMember } = require('../steps/submit-rondo-club-commissie-work-history');
 const { runSync: runPlayerHistorySync, syncSingleMember: syncSinglePlayerHistory } = require('../steps/submit-rondo-club-player-history');
@@ -61,23 +62,10 @@ function extractTrackedFieldValues(data) {
  */
 function applyResolutions(originalData, resolutions) {
   const resolvedData = JSON.parse(JSON.stringify(originalData));
-  if (!resolvedData.acf) resolvedData.acf = {};
+  if (!resolvedData.fields) resolvedData.fields = {};
 
   for (const [field, resolution] of resolutions.entries()) {
-    const value = resolution.value;
-    if (['email', 'email2', 'mobile', 'phone'].includes(field)) {
-      if (!resolvedData.acf.contact_info) resolvedData.acf.contact_info = [];
-      const contactInfo = resolvedData.acf.contact_info;
-      const existing = contactInfo.findIndex(c => c.contact_type === field);
-      if (existing >= 0) {
-        contactInfo[existing].contact_value = value;
-      } else if (value !== null) {
-        contactInfo.push({ contact_type: field, contact_value: value });
-      }
-    } else {
-      const acfFieldName = field.replace(/_/g, '-');
-      resolvedData.acf[acfFieldName] = value;
-    }
+    applyCanonicalResolution(resolvedData.fields, field, resolution.value);
   }
   return resolvedData;
 }
@@ -447,7 +435,7 @@ async function syncIndividual(knvbId, options = {}) {
       console.log('\n=== DRY RUN - No changes will be made ===');
       console.log(`KNVB ID: ${knvbId}`);
       console.log(`Rondo Club ID: ${rondoClubId || '(will create new)'}`);
-      console.log(`Name: ${prepared.data.acf.first_name} ${prepared.data.acf.last_name}`);
+      console.log(`Name: ${prepared.data.fields.first_name} ${prepared.data.fields.last_name}`);
       console.log(`Email: ${prepared.email || 'none'}`);
       console.log('\nData to sync:');
       console.log(JSON.stringify(prepared.data, null, 2));
@@ -488,7 +476,7 @@ async function syncIndividual(knvbId, options = {}) {
 
       // Financial block and volunteer status
       console.log('\nFinancial/volunteer status:');
-      console.log(`  Financial block: ${prepared.data.acf['financiele-blokkade'] ? 'YES' : 'no'}`);
+      console.log(`  Financial block: ${prepared.data.fields['financiele_blokkade'] ? 'YES' : 'no'}`);
       if (rondoClubId) {
         console.log('  Volunteer status: (available after sync - stored in Rondo Club)');
       } else {
@@ -545,27 +533,27 @@ async function syncIndividual(knvbId, options = {}) {
 
         // Preserve existing addresses if Sportlink has no address data
         // This prevents individual sync from clearing addresses when Sportlink data is incomplete
-        if (updateData.acf.addresses && updateData.acf.addresses.length === 0 &&
-            existingData.acf && existingData.acf.addresses && existingData.acf.addresses.length > 0) {
+        if (updateData.fields.addresses && updateData.fields.addresses.length === 0 &&
+            existingData.fields && existingData.fields.addresses && existingData.fields.addresses.length > 0) {
           log('Preserving existing addresses (Sportlink has no address data)');
-          updateData.acf.addresses = existingData.acf.addresses;
+          updateData.fields.addresses = existingData.fields.addresses;
         }
 
         await rondoClubRequest(`wp/v2/people/${rondoClubId}`, 'PUT', updateData, { verbose });
         updateSyncState(rondoClubDb, knvbId, prepared.source_hash, rondoClubId);
 
         // Capture volunteer status from Rondo Club
-        const volunteerStatus = existingData.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+        const volunteerStatus = toBooleanFlag(existingData.fields?.['huidig_vrijwilliger']) ? 1 : 0;
         updateVolunteerStatus(rondoClubDb, knvbId, volunteerStatus);
 
         // Compare financial block status and log activity if changed
-        const previousBlockStatus = existingData.acf?.['financiele-blokkade'] || false;
-        const newBlockStatus = prepared.data.acf?.['financiele-blokkade'] || false;
+        const previousBlockStatus = existingData.fields?.['financiele_blokkade'] || false;
+        const newBlockStatus = prepared.data.fields?.['financiele_blokkade'] || false;
         if (previousBlockStatus !== newBlockStatus) {
           await logFinancialBlockActivity(rondoClubId, newBlockStatus, { verbose });
         }
 
-        console.log(`Updated person ${rondoClubId} (${prepared.data.acf.first_name} ${prepared.data.acf.last_name})`);
+        console.log(`Updated person ${rondoClubId} (${prepared.data.fields.first_name} ${prepared.data.fields.last_name})`);
 
         // Sync functions/commissie work history
         if (!skipFunctions) {
@@ -628,16 +616,16 @@ async function syncIndividual(knvbId, options = {}) {
     updateSyncState(rondoClubDb, knvbId, prepared.source_hash, newId);
 
     // Capture volunteer status from newly created person
-    const createVolunteerStatus = response.body.acf?.['huidig-vrijwilliger'] === '1' ? 1 : 0;
+    const createVolunteerStatus = toBooleanFlag(response.body.fields?.['huidig_vrijwilliger']) ? 1 : 0;
     updateVolunteerStatus(rondoClubDb, knvbId, createVolunteerStatus);
 
     // Log initial block status for newly created persons
-    const newBlockStatus = prepared.data.acf?.['financiele-blokkade'] || false;
+    const newBlockStatus = prepared.data.fields?.['financiele_blokkade'] || false;
     if (newBlockStatus) {
       await logFinancialBlockActivity(newId, true, { verbose });
     }
 
-    console.log(`Created person ${newId} (${prepared.data.acf.first_name} ${prepared.data.acf.last_name})`);
+    console.log(`Created person ${newId} (${prepared.data.fields.first_name} ${prepared.data.fields.last_name})`);
 
     // Sync functions/commissie work history for new person
     if (!skipFunctions) {

@@ -88,7 +88,7 @@ pipelines/sync-functions.js
 2. Also reads club functions from `sportlink_member_functions` (mapped to "Verenigingsbreed" commissie)
 3. Compares against `rondo_club_commissie_work_history` table
 4. For each member with changes:
-   - Fetches current `work_history` ACF repeater from Rondo Club
+   - Fetches current `work_history` native field repeater from Rondo Club
    - Adds new commissie assignments
    - Ends removed assignments (sets `is_current: false`)
    - Only modifies sync-created entries (manual entries preserved)
@@ -120,7 +120,7 @@ pipelines/sync-functions.js
 
 These are scraped during the functions pipeline but consumed by the People pipeline:
 
-| Sportlink API | Sportlink Field | SQLite Column | Rondo Club ACF Field |
+| Sportlink API | Sportlink Field | SQLite Column | Rondo Club native field Field |
 |---|---|---|---|
 | `MemberFreeFields` | `Remarks3.Value` | `freescout_id` | `freescout-id` |
 | `MemberFreeFields` | `Remarks8.Value` | `vog_datum` | `datum-vog` |

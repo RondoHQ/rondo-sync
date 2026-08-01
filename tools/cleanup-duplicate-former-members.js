@@ -37,7 +37,7 @@ async function runCleanup(options = {}) {
     const allFormer = [];
     while (true) {
       const { status, body } = await rondoClubRequest(
-        `wp/v2/people?per_page=100&page=${page}&acf_former_member=true`, 'GET'
+        `wp/v2/people?per_page=100&page=${page}&former_member=true`, 'GET'
       );
       if (status !== 200 || !body.length) break;
       allFormer.push(...body);
@@ -52,7 +52,7 @@ async function runCleanup(options = {}) {
     const byKnvb = {};
     const noKnvb = [];
     for (const p of allFormer) {
-      const knvbId = p.acf?.['knvb-id'];
+      const knvbId = p.fields?.['knvb_id'];
       if (!knvbId) {
         noKnvb.push(p);
         continue;
@@ -139,7 +139,7 @@ async function runCleanup(options = {}) {
     for (const post of nameMatched) {
       const match = nameToKnvbPost[post.title?.rendered];
       if (verbose) {
-        console.log(`  Name "${post.title?.rendered}": delete ${post.id} (no KNVB), keep ${match.id} (KNVB: ${match.acf?.['knvb-id']})`);
+        console.log(`  Name "${post.title?.rendered}": delete ${post.id} (no KNVB), keep ${match.id} (KNVB: ${match.fields?.['knvb_id']})`);
       }
 
       if (!dryRun) {

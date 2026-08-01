@@ -614,7 +614,7 @@ async function fetchVogFilteredKnvbIds(logger) {
       if (!data.people || data.people.length === 0) break;
 
       for (const person of data.people) {
-        const knvbId = person.acf?.['knvb-id'];
+        const knvbId = person.fields?.['knvb_id'];
         if (knvbId) knvbIds.add(String(knvbId));
       }
 

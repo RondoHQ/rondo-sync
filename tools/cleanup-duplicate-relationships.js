@@ -31,7 +31,7 @@ async function cleanupAllRelationships() {
     totalPeople += people.length;
 
     for (const person of people) {
-      const relationships = person.acf?.relationships || [];
+      const relationships = person.fields?.relationships || [];
       if (relationships.length === 0) continue;
 
       // Deduplicate and remove self-references
@@ -41,12 +41,12 @@ async function cleanupAllRelationships() {
 
       for (const rel of relationships) {
         // Skip self-referential
-        if (rel.related_person === person.id) {
+        if (rel.related_person_id === person.id) {
           issues++;
           continue;
         }
 
-        const key = `${rel.related_person}-${rel.relationship_type}`;
+        const key = `${rel.related_person_id}-${rel.relationship_type_id}`;
         if (seen.has(key)) {
           issues++;
           continue;
@@ -56,15 +56,15 @@ async function cleanupAllRelationships() {
       }
 
       if (issues > 0) {
-        console.log(`Fixing ${person.id} (${person.acf.first_name} ${person.acf.last_name}): ${relationships.length} -> ${deduped.length} relationships`);
+        console.log(`Fixing ${person.id} (${person.fields.first_name} ${person.fields.last_name}): ${relationships.length} -> ${deduped.length} relationships`);
 
         await rondoClubRequest(
           `wp/v2/people/${person.id}`,
           'PUT',
           {
-            acf: {
-              first_name: person.acf.first_name,
-              last_name: person.acf.last_name,
+            fields: {
+              first_name: person.fields.first_name,
+              last_name: person.fields.last_name,
               relationships: deduped
             }
           }
