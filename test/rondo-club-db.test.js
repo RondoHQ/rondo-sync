@@ -123,7 +123,7 @@ test('initDb migrates legacy free-field scopes to fields without losing mappings
     INSERT INTO free_field_mappings
       (source_field, target_field, target_scope, value_type, updated_at)
     VALUES
-      ('Remarks1', 'custom_note', 'acf', 'string', '2026-07-31T00:00:00.000Z'),
+      ('Remarks1', 'custom-note', 'acf', 'string', '2026-07-31T00:00:00.000Z'),
       ('Remarks2', 'legacy_meta', 'meta', 'number', '2026-07-31T00:00:00.000Z');
   `);
 
@@ -156,5 +156,74 @@ test('initDb migrates legacy free-field scopes to fields without losing mappings
   assert.match(tableSql, /CHECK \(target_scope IN \('fields','meta'\)\)/);
   assert.doesNotMatch(tableSql, /'acf'/);
 
+  db.close();
+});
+
+test('initDb migrates cached ACF envelopes without changing sync hashes', () => {
+  const db = new Database(':memory:');
+  initDb(db);
+  db.prepare(`
+    INSERT INTO rondo_club_members
+      (knvb_id, data_json, source_hash, last_seen_at, last_synced_hash, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'TEST123',
+    JSON.stringify({
+      status: 'publish',
+      acf: {
+        'knvb-id': 'TEST123',
+        'datum-vog': '2026-01-02',
+        birth_year: 1990,
+        addresses: [{ 'address-label': 'Home', postal_code: '1234 AB' }]
+      },
+      meta: { team: 'Test 1' }
+    }),
+    'source-before',
+    '2026-08-01T00:00:00.000Z',
+    'synced-before',
+    '2026-08-01T00:00:00.000Z'
+  );
+  db.prepare(`
+    INSERT INTO rondo_club_parents
+      (email, data_json, source_hash, last_seen_at, last_synced_hash, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'parent@example.test',
+    JSON.stringify({
+      data: { status: 'publish', acf: { first_name: 'Test', 'last-name': 'Parent' } },
+      childKnvbIds: ['TEST123']
+    }),
+    'parent-source-before',
+    '2026-08-01T00:00:00.000Z',
+    'parent-synced-before',
+    '2026-08-01T00:00:00.000Z'
+  );
+
+  initDb(db);
+
+  const member = db.prepare('SELECT data_json, source_hash, last_synced_hash FROM rondo_club_members WHERE knvb_id = ?').get('TEST123');
+  assert.deepEqual(JSON.parse(member.data_json), {
+    fields: {
+      addresses: [{ address_label: 'Home', postal_code: '1234 AB' }],
+      datum_vog: '2026-01-02',
+      knvb_id: 'TEST123'
+    },
+    meta: { team: 'Test 1' },
+    status: 'publish'
+  });
+  assert.equal(member.source_hash, 'source-before');
+  assert.equal(member.last_synced_hash, 'synced-before');
+
+  const parent = db.prepare('SELECT data_json, source_hash, last_synced_hash FROM rondo_club_parents WHERE email = ?').get('parent@example.test');
+  assert.deepEqual(JSON.parse(parent.data_json), {
+    childKnvbIds: ['TEST123'],
+    data: { fields: { first_name: 'Test', last_name: 'Parent' }, status: 'publish' }
+  });
+  assert.equal(parent.source_hash, 'parent-source-before');
+  assert.equal(parent.last_synced_hash, 'parent-synced-before');
+
+  initDb(db);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM rondo_club_members WHERE data_json LIKE '%\"acf\"%'").get().count, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM rondo_club_parents WHERE data_json LIKE '%\"acf\"%'").get().count, 0);
   db.close();
 });
