@@ -21,7 +21,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { resolveFieldConflicts, generateConflictSummary } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
-const { applyCanonicalResolution } = require('../lib/canonical-fields');
+const { applyCanonicalResolution, sanitizeRelationship, toBooleanFlag } = require('../lib/canonical-fields');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const {
   normalizePersonEmailMatches,
@@ -206,7 +206,7 @@ async function syncPerson(member, db, options) {
         updateSyncState(db, knvb_id, source_hash, rondo_club_id);
 
         // Capture volunteer status from Rondo Club
-        const volunteerStatus = existingData.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
+        const volunteerStatus = toBooleanFlag(existingData.fields?.['huidig_vrijwilliger']) ? 1 : 0;
         updateVolunteerStatus(db, knvb_id, volunteerStatus);
 
         // Compare financial block status and log activity if changed
@@ -249,7 +249,7 @@ async function syncPerson(member, db, options) {
     updateSyncState(db, knvb_id, source_hash, newId);
 
     // Capture volunteer status from Rondo Club (newly created person defaults)
-    const createVolunteerStatus = response.body.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
+    const createVolunteerStatus = toBooleanFlag(response.body.fields?.['huidig_vrijwilliger']) ? 1 : 0;
     updateVolunteerStatus(db, knvb_id, createVolunteerStatus);
 
     // Log initial block status for newly created persons
@@ -351,7 +351,7 @@ function mergeParentChildRelationships(
     relationship => Number(relationship.related_person_id) !== Number(parentId)
   );
 
-  return [...preservedRelationships, ...currentRelationships];
+  return [...preservedRelationships, ...currentRelationships].map(sanitizeRelationship);
 }
 
 /**
@@ -388,7 +388,7 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
           relationship_type_id: RELATIONSHIP_TYPE.PARENT,
           relationship_label: ''
         };
-        const mergedRelationships = [...existingRelationships, newRelationship];
+        const mergedRelationships = [...existingRelationships, newRelationship].map(sanitizeRelationship);
         await rondoClubRequest(
           `wp/v2/people/${childId}`,
           'PUT',
@@ -921,8 +921,9 @@ async function markFormerMembers(db, currentKnvbIds, options) {
     let lastName = '';
     try {
       const data = JSON.parse(member.data_json || '{}');
-      firstName = data.fields?.first_name || '';
-      lastName = data.fields?.last_name || '';
+      const storedFields = data.fields || data.acf || {};
+      firstName = storedFields.first_name || '';
+      lastName = storedFields.last_name || '';
     } catch (e) { /* ignore parse errors */ }
 
     logVerbose(`Marking as former member: ${member.knvb_id} (${firstName} ${lastName}, Rondo Club ID: ${member.rondo_club_id})`);

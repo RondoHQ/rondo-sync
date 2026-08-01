@@ -28,7 +28,7 @@ const { syncParent, logFinancialBlockActivity } = require('../steps/submit-rondo
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { resolveFieldConflicts } = require('../lib/conflict-resolver');
 const { TRACKED_FIELDS } = require('../lib/sync-origin');
-const { applyCanonicalResolution } = require('../lib/canonical-fields');
+const { applyCanonicalResolution, toBooleanFlag } = require('../lib/canonical-fields');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const { syncCommissieWorkHistoryForMember } = require('../steps/submit-rondo-club-commissie-work-history');
 const { runSync: runPlayerHistorySync, syncSingleMember: syncSinglePlayerHistory } = require('../steps/submit-rondo-club-player-history');
@@ -543,7 +543,7 @@ async function syncIndividual(knvbId, options = {}) {
         updateSyncState(rondoClubDb, knvbId, prepared.source_hash, rondoClubId);
 
         // Capture volunteer status from Rondo Club
-        const volunteerStatus = existingData.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
+        const volunteerStatus = toBooleanFlag(existingData.fields?.['huidig_vrijwilliger']) ? 1 : 0;
         updateVolunteerStatus(rondoClubDb, knvbId, volunteerStatus);
 
         // Compare financial block status and log activity if changed
@@ -616,7 +616,7 @@ async function syncIndividual(knvbId, options = {}) {
     updateSyncState(rondoClubDb, knvbId, prepared.source_hash, newId);
 
     // Capture volunteer status from newly created person
-    const createVolunteerStatus = response.body.fields?.['huidig_vrijwilliger'] === '1' ? 1 : 0;
+    const createVolunteerStatus = toBooleanFlag(response.body.fields?.['huidig_vrijwilliger']) ? 1 : 0;
     updateVolunteerStatus(rondoClubDb, knvbId, createVolunteerStatus);
 
     // Log initial block status for newly created persons

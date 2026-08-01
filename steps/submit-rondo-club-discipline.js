@@ -19,11 +19,11 @@ const { readEnv } = require('../lib/utils');
  * @returns {string} - Date in Ymd format, or empty string if invalid
  */
 function toFieldsDateFormat(dateString) {
-  if (!dateString) return '';
+  if (!dateString) return null;
 
   // Try to parse the date
   const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
+  if (isNaN(date.getTime())) return null;
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -180,8 +180,8 @@ async function syncCase(caseData, personRondoClubId, seasonTermId, personName, d
     processing_date: toFieldsDateFormat(caseData.processing_date),
     'administrative_fee': caseData.administrative_fee ? parseFloat(caseData.administrative_fee) : null,
     'is_charged': sportlinkIsCharged ? 'sportlink' : '',
-    'home_team': homeTeamRondoClubId || '',
-    'away_team': awayTeamRondoClubId || ''
+    'home_team': homeTeamRondoClubId || null,
+    'away_team': awayTeamRondoClubId || null
   };
 
   const title = buildCaseTitle(personName, match_description || 'Unknown Match', match_date || 'Unknown Date');

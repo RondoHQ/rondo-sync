@@ -31,7 +31,13 @@ test('keeps a genuine separate parent mapping', () => {
 
 test('preserves manually linked former children while refreshing current children', () => {
   const existing = [
-    { related_person_id: 4893, relationship_type_id: 3, relationship_label: '' },
+    {
+      related_person_id: 4893,
+      relationship_type_id: 3,
+      relationship_label: '',
+      person_name: 'Derived name',
+      person_thumbnail: 'https://example.test/photo.jpg'
+    },
     { related_person_id: 4894, relationship_type_id: 9, relationship_label: '' },
     { related_person_id: 708, relationship_type_id: 3, relationship_label: '' },
     { related_person_id: 9000, relationship_type_id: 4, relationship_label: '' }

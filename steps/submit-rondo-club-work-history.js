@@ -276,7 +276,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
         ...newWorkHistory[existingIndex],
         job_title: jobTitle,
         is_current: true,
-        end_date: '',
+        end_date: null,
         team_id: teamStadionId
       };
       updatedCount++;
@@ -320,7 +320,7 @@ async function syncWorkHistoryForMember(member, currentTeams, db, teamMap, optio
           ...newWorkHistory[index],
           job_title: jobTitle,
           is_current: true,
-          end_date: '',
+          end_date: null,
           team_id: teamStadionId
         };
         updatedCount++;

@@ -9,6 +9,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
 const { normalizePhone } = require('../lib/phone-normalizer');
+const { READ_ONLY_OR_UNREGISTERED_PERSON_FIELDS } = require('../lib/canonical-fields');
 
 /**
  * Map Sportlink gender codes to Rondo Club format
@@ -18,17 +19,6 @@ const { normalizePhone } = require('../lib/phone-normalizer');
 function mapGender(sportlinkGender) {
   const mapping = { 'Male': 'male', 'Female': 'female' };
   return mapping[sportlinkGender] || '';
-}
-
-/**
- * Extract birth year from date string
- * @param {string} dateOfBirth - Date in YYYY-MM-DD format
- * @returns {number|null} - Year as integer or null
- */
-function extractBirthYear(dateOfBirth) {
-  if (!dateOfBirth) return null;
-  const year = parseInt(dateOfBirth.substring(0, 4), 10);
-  return isNaN(year) ? null : year;
 }
 
 /**
@@ -97,6 +87,7 @@ function applyMappedFreeFields(payload, freeFields, freeFieldMappings) {
   for (const mapping of freeFieldMappings) {
     const targetField = (mapping.target_field || '').trim();
     if (!targetField) continue;
+    if (mapping.target_scope !== 'meta' && READ_ONLY_OR_UNREGISTERED_PERSON_FIELDS.has(targetField)) continue;
 
     const sourceKey = String(mapping.source_field || '').toLowerCase(); // "remarks3"
     const rowKey = sourceKey.replace('remarks', 'remark'); // "remark3"
@@ -221,7 +212,6 @@ function buildInvoiceAddress(invoiceData) {
 function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, freeFieldMappings = []) {
   const name = buildName(sportlinkMember);
   const gender = mapGender(sportlinkMember.GenderCode);
-  const birthYear = extractBirthYear(sportlinkMember.DateOfBirth);
   const birthdate = extractBirthdate(sportlinkMember.DateOfBirth);
   const teams = extractTeams(sportlinkMember);
 
@@ -249,7 +239,6 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   // Only add optional fields if they have values
   if (name.infix) fields.infix = name.infix;
   if (gender) fields.gender = gender;
-  if (birthYear) fields.birth_year = birthYear;
   if (birthdate) fields.birthdate = birthdate;
 
   // Extract PersonImageDate for photo state tracking
@@ -267,7 +256,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
 
   if (memberSince) fields['lid_sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
-  fields['lid_tot'] = relationEnd || '';
+  fields['lid_tot'] = relationEnd || null;
   if (dateOfPassing) fields['datum_overlijden'] = dateOfPassing;
   if (ageClass) fields['leeftijdsgroep'] = ageClass;
   if (personImageDate) fields['datum_foto'] = personImageDate;
@@ -303,14 +292,6 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
       if (invoiceAddress) {
         fields.addresses.push(invoiceAddress);
       }
-    }
-    // Invoice email (always include if present)
-    if (invoiceData.invoice_email) {
-      fields.factuur_email = invoiceData.invoice_email;
-    }
-    // External invoice code/reference (always include if present)
-    if (invoiceData.invoice_external_code) {
-      fields.factuur_referentie = invoiceData.invoice_external_code;
     }
   }
 
