@@ -80,7 +80,7 @@
     "@fastify/session": "^11.1.1",
     "@fastify/static": "^9.0.0",
     "@fastify/view": "^11.1.1",
-    "argon2": "^0.44.0",
+    "argon2": "^0.45.1",
     "better-sqlite3": "latest",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.4.2",
