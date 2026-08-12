@@ -81,7 +81,13 @@ async function runDownload(options = {}) {
       const navigateToSearch = async () => {
         logDebug('Navigating to member search page:', memberSearchPageUrl);
         await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle');
+        // Best-effort settle only. Sportlink's SPA keeps background network
+        // activity going, so 'networkidle' intermittently never fires and the
+        // default 30s timeout hard-fails the whole download (3/5 runs on
+        // 2026-08-12). domcontentloaded above is enough to proceed; the search
+        // panel has its own #btnShowMore:not([disabled]) reload-retry. Bound it
+        // and swallow the timeout, matching download-functions/reverse-sync.
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       };
 
       await navigateToSearch();
