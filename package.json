@@ -1,6 +1,6 @@
 {
   "name": "rondo-sync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Sync data from Sportlink, Nikki, and Sponsit to Rondo Club and connected services",
   "main": "steps/download-data-from-sportlink.js",

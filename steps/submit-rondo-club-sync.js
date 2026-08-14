@@ -24,6 +24,11 @@ const { TRACKED_FIELDS } = require('../lib/sync-origin');
 const { applyCanonicalResolution, sanitizeRelationship, toBooleanFlag } = require('../lib/canonical-fields');
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const {
+  fetchPersonFollowingMerge,
+  hasHttpStatus,
+  resolveMergedPersonId
+} = require('../lib/rondo-person-merge');
+const {
   normalizePersonEmailMatches,
   selectParentEmailMatch,
   getParentProfileOwnership
@@ -144,37 +149,34 @@ async function syncPerson(member, db, options) {
 
   if (rondo_club_id) {
     // UPDATE existing person (we know the ID from our database)
-    const endpoint = `wp/v2/people/${rondo_club_id}`;
+    let endpoint = `wp/v2/people/${rondo_club_id}`;
     logVerbose(`Updating existing person: ${rondo_club_id}`);
     logVerbose(`  PUT ${endpoint}`);
 
     // Get existing person to compare financial block status and resolve conflicts
     let previousBlockStatus = false;
     let existingData = null;
-    let fetchExistingError = null;
     let conflicts = [];
 
     try {
-      const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      existingData = existing.body;
-      previousBlockStatus = existingData.fields?.['financiele_blokkade'] || false;
-    } catch (fetchError) {
-      // If we can't fetch, continue with update but skip activity comparison
-      if (fetchError.message && fetchError.message.includes('404')) {
-        // Person was deleted - reset tracking state and create fresh
-        logVerbose(`Person ${rondo_club_id} no longer exists (404) - will create fresh`);
-        updateSyncState(db, knvb_id, null, null); // Clear rondo_club_id and hash
-        rondo_club_id = null; // Clear local variable to trigger CREATE path
+      const tracked = await fetchPersonFollowingMerge(rondo_club_id, options);
+      if (!tracked) {
+        logVerbose(`Person ${rondo_club_id} no longer exists and was not merged - will create fresh`);
+        updateSyncState(db, knvb_id, null, null);
+        rondo_club_id = null;
       } else {
-        logVerbose(`  Could not fetch existing person for activity comparison: ${fetchError.message}`);
-        fetchExistingError = fetchError;
+        if (tracked.remapped) {
+          logVerbose(`Person ${rondo_club_id} was merged into ${tracked.personId}; repairing local mapping`);
+          rondo_club_id = tracked.personId;
+          endpoint = `wp/v2/people/${rondo_club_id}`;
+          updateSyncState(db, knvb_id, null, rondo_club_id);
+        }
+        existingData = tracked.response.body;
+        previousBlockStatus = existingData.fields?.['financiele_blokkade'] || false;
       }
-    }
-
-    // Never fall back to create when the tracked person exists but lookup failed for non-404 reasons.
-    // That would trigger duplicate-create attempts and mask the real error.
-    if (rondo_club_id && !existingData && fetchExistingError) {
-      throw fetchExistingError;
+    } catch (fetchError) {
+      logVerbose(`  Could not fetch existing person or its merge target: ${fetchError.message}`);
+      throw fetchError;
     }
 
     // Only proceed with update if person still exists (not 404 above)
@@ -217,11 +219,18 @@ async function syncPerson(member, db, options) {
 
         return { action: 'updated', id: rondo_club_id, conflicts };
       } catch (error) {
-        // Person was deleted from WordPress - reset tracking state and create fresh
-        if (error.message && error.message.includes('404')) {
-          logVerbose(`Person ${rondo_club_id} no longer exists (404) - will create fresh`);
-          updateSyncState(db, knvb_id, null, null); // Clear rondo_club_id and hash
-          rondo_club_id = null; // Clear local variable to trigger CREATE path
+        // A concurrent merge can happen between the GET and PUT. Repair the
+        // mapping and retry against the survivor instead of creating anew.
+        if (hasHttpStatus(error, 404)) {
+          const mergedId = await resolveMergedPersonId(rondo_club_id, options);
+          if (mergedId) {
+            logVerbose(`Person ${rondo_club_id} was concurrently merged into ${mergedId}; retrying survivor`);
+            updateSyncState(db, knvb_id, null, mergedId);
+            return syncPerson({ ...member, rondo_club_id: mergedId }, db, options);
+          }
+          logVerbose(`Person ${rondo_club_id} no longer exists and was not merged - will create fresh`);
+          updateSyncState(db, knvb_id, null, null);
+          rondo_club_id = null;
         } else {
           console.error(`API Error updating person "${knvb_id}" (ID: ${rondo_club_id}):`);
           console.error(`  Status: ${error.message}`);
@@ -531,8 +540,14 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
     let existingLastName = '';
     let profileOwnership = { preserveIdentity: false, preserveContact: false };
     try {
-      const existing = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
-      const existingFields = existing.body.fields || {};
+      const tracked = await fetchPersonFollowingMerge(rondo_club_id, options);
+      if (!tracked) throw new Error('404: tracked parent was not found');
+      if (tracked.remapped) {
+        logVerbose(`Parent ${rondo_club_id} was merged into ${tracked.personId}; repairing local mapping`);
+        rondo_club_id = tracked.personId;
+        updateParentSyncState(db, email, null, rondo_club_id);
+      }
+      const existingFields = tracked.response.body.fields || {};
       existingRelationships = existingFields.relationships || [];
       existingFirstName = existingFields.first_name || '';
       existingLastName = existingFields.last_name || '';
@@ -556,6 +571,7 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
         }
       } else {
         logVerbose(`Could not fetch existing person: ${e.message}`);
+        throw e;
       }
     }
 
