@@ -5,6 +5,7 @@ const { createSyncLogger } = require('../lib/logger');
 const { RunTracker } = require('../lib/run-tracker');
 const { runReverseSyncMultiPage } = require('../lib/reverse-sync-sportlink');
 const { detectChanges } = require('../lib/detect-rondo-club-changes');
+const { detectParentChanges, runParentSlotSync } = require('../lib/parent-slot-sync');
 
 /**
  * Run full reverse sync for all fields (Rondo Club -> Sportlink)
@@ -29,11 +30,28 @@ async function runAllFieldsReverseSync(options = {}) {
   try {
     // Detect Rondo Club changes to populate rondo_club_change_detections table
     logger.log('Detecting Rondo Club changes...');
-    const detectedChanges = await detectChanges({ verbose, logger, knvbId });
+    const [detectedChanges, detectedParents] = await Promise.all([
+      detectChanges({ verbose, logger, knvbId }),
+      detectParentChanges({ verbose, logger })
+    ]);
     logger.log(`Detected ${detectedChanges.length} field change(s)`);
+    if (detectedParents.queued > 0 || detectedParents.blocked > 0) {
+      logger.log(`Detected ${detectedParents.queued} oudertaak/taken (${detectedParents.blocked} geblokkeerd)`);
+    }
 
     const stepId = tracker.startStep('sportlink-update');
-    const result = await runReverseSyncMultiPage({ verbose, logger, knvbId });
+    const fieldResult = await runReverseSyncMultiPage({ verbose, logger, knvbId });
+    const parentResult = knvbId
+      ? { success: true, synced: 0, failed: 0, results: [] }
+      : await runParentSlotSync({ verbose, logger });
+    const result = {
+      success: fieldResult.success && parentResult.success,
+      synced: fieldResult.synced + parentResult.synced,
+      failed: fieldResult.failed + parentResult.failed,
+      results: [...fieldResult.results, ...parentResult.results],
+      fields: fieldResult,
+      parents: parentResult
+    };
 
     if (result.synced === 0 && result.failed === 0) {
       logger.log('No changes to sync');

@@ -2,11 +2,11 @@
 
 Detects field changes made in Rondo Club WordPress and pushes them back to Sportlink Club via browser automation.
 
-**Status: currently disabled.** The detection and sync code is complete but needs testing and re-enabling.
+**Status: active.** The reverse sync runs every five minutes.
 
 ## Schedule
 
-When enabled: **hourly** via `scripts/sync.sh reverse`.
+**Every five minutes** via `scripts/sync.sh reverse`.
 
 ```bash
 scripts/sync.sh reverse                      # Production (with locking + email report)
@@ -17,7 +17,7 @@ node pipelines/reverse-sync.js --knvb-id SYBH898 --verbose   # Target one member
 
 ## Architecture
 
-The reverse sync operates in two phases:
+The reverse sync operates in two independent tracks:
 
 ```
 Phase 1: Change Detection (hourly)
@@ -25,7 +25,20 @@ Phase 1: Change Detection (hourly)
 
 Phase 2: Sync to Sportlink (when unsynced changes exist)
     rondo_club_change_detections → lib/reverse-sync-sportlink.js → Sportlink Browser (Playwright)
+
+Parent-slot track:
+    Modified child/parent relationships → parent_slot_sync_jobs
+    → MemberParentalInfo editor → verified Sportlink parent slot
+    → status callback to Rondo Club
 ```
+
+## Parent/guardian slots
+
+An added Rondo `parent` relationship is detected independently from ordinary contact-field changes. The desired parent name, e-mail address and optional phone number are stored in `parent_slot_sync_jobs`, so a temporary Sportlink outage cannot lose the request.
+
+The writer always reads `MemberParentalInfo` immediately before changing it. It first matches an existing slot by normalized e-mail address. If no match exists, it uses only a slot where name, e-mail and phone are all empty. It never overwrites a partially or fully occupied slot. After saving, it reads the data back and reports `pending`, `synced` (including slot 1 or 2) or `error` to Rondo Club.
+
+Removing a relationship cancels pending work but does not clear an already written Sportlink field in the first version. This avoids destructive reverse synchronization.
 
 ## Tracked Fields
 
@@ -161,6 +174,14 @@ Singleton table tracking detection progress.
 | `id` | Always 1 |
 | `last_detection_at` | Timestamp of last detection run |
 | `updated_at` | When this record was last updated |
+
+### parent_slot_sync_jobs
+
+Durable queue for Rondo parent relationships. The unique key is `(child_rondo_id, parent_rondo_id)`. `desired_hash` makes detection idempotent, while `state`, `attempts`, `next_attempt_at`, `last_error`, `slot`, and `synced_at` record retry and verification state.
+
+### parent_slot_sync_state
+
+Separate incremental cursor for parent relationship detection. It deliberately does not share the ordinary flat-field cursor or `sync_origin` suppression, because a parent edit can affect one or more children.
 
 ### conflict_resolutions
 

@@ -160,7 +160,7 @@ Tracks Laposta deliverability signals (`unsubscribed`, `cleaned`) and links each
 
 ## Database 2: rondo-sync.sqlite
 
-**Purpose:** Tracks WordPress Rondo Club synchronization including members, parents, teams, committees, work history, photos, discipline cases, and reverse sync state.
+**Purpose:** Tracks WordPress Rondo Club synchronization including members, parents, teams, committees, work history, photos, discipline cases, reverse sync state, and queued parent-slot writes.
 
 **Module:** `lib/rondo-club-db.js`
 
@@ -536,6 +536,14 @@ Audit log of conflicts between Rondo Club and Sportlink data during reverse sync
 ### reverse_sync_state
 
 Singleton table tracking the last reverse sync detection run.
+
+### parent_slot_sync_jobs
+
+Durable queue for writing Rondo parent/guardian relationships into one of Sportlink's two `MemberParentalInfo` slots. Jobs are unique per child/parent pair and retain the desired payload hash, state, selected slot, retry count, next attempt, last error, and synchronization timestamps.
+
+### parent_slot_sync_state
+
+Singleton cursor for incremental parent-relationship detection. This cursor is separate from `reverse_sync_state`, because relationship changes may originate on either the child or the parent record.
 
 | Column | Type | Description |
 |---|---|---|
