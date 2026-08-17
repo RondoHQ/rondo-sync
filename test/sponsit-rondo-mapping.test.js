@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildRondoSponsorCandidates,
+  buildRondoSponsorCompanyCandidate,
   deriveSponsorPassVariant,
   splitStreetAddress
 } = require('../lib/sponsit-rondo-mapping');
@@ -40,41 +40,33 @@ function baseRecord() {
   };
 }
 
-test('maps a Sponsit contact person to a reviewable Rondo sponsor candidate', () => {
-  const candidates = buildRondoSponsorCandidates(baseRecord());
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0].sourceKey, 'sponsit:400:900');
-  assert.equal(candidates[0].sponsorFields.is_sponsor, true);
-  assert.equal(candidates[0].sponsorFields.sponsor_pass_variant, 'businessclub');
-  assert.equal(candidates[0].sponsorFields.company_name, 'Example BV');
-  assert.equal(candidates[0].createFields.person_type, 'contact');
-  assert.equal(candidates[0].createFields.first_name, 'Jan');
-  assert.equal(candidates[0].createFields.gender, 'male');
-  assert.equal(candidates[0].createFields.birthdate, '1980-01-02');
-  assert.deepEqual(candidates[0].createFields.addresses[0], {
-    address_label: 'Hoofdadres',
-    street_name: 'Dorpsstraat',
-    house_number: '12',
-    house_number_addition: 'A',
-    postal_code: '1234 AB',
-    city: 'Wijchen',
-    state: '',
-    country: '',
-    country_code: 'NL'
-  });
+test('maps one Sponsit contact to a company plus a real contact relation', () => {
+  const company = buildRondoSponsorCompanyCandidate(baseRecord());
+  assert.equal(company.sourceKey, 'sponsit:400');
+  assert.equal(company.title, 'Example BV');
+  assert.equal(company.fields.sponsor_role, 'businessclub');
+  assert.equal(company.fields.sponsit_contact_id, '400');
+  assert.equal(company.fields.address_street_name, 'Dorpsstraat');
+  assert.equal(company.fields.address_house_number, '12');
+  assert.equal(company.fields.address_house_number_addition, 'A');
+  assert.equal(company.people.length, 1);
+  assert.equal(company.people[0].sourceKey, 'sponsit-person:900');
+  assert.equal(company.people[0].fields.person_type, 'contact');
+  assert.equal(company.people[0].fields.first_name, 'Jan');
+  assert.equal(company.people[0].fields.gender, 'male');
+  assert.equal(company.people[0].fields.birthdate, '1980-01-02');
+  assert.equal(company.people[0].relation.sponsit_person_id, '900');
+  assert.equal('is_sponsor' in company.people[0].fields, false);
 });
 
-test('company-only contacts remain valid sponsor candidates', () => {
+test('company-only contacts create a valid company without a fake person', () => {
   const record = baseRecord();
   record.people = [];
   record.contact.tags = [];
-  const [candidate] = buildRondoSponsorCandidates(record);
-  assert.equal(candidate.sourceKey, 'sponsit:400:contact');
-  assert.equal(candidate.sponsorFields.company_name, 'Example BV');
-  assert.equal(candidate.sponsorFields.sponsor_pass_variant, 'awc_sponsor');
-  assert.equal('sponsit_person_id' in candidate.sponsorFields, false);
-  assert.equal('gender' in candidate.createFields, false);
-  assert.equal('birthdate' in candidate.createFields, false);
+  const company = buildRondoSponsorCompanyCandidate(record);
+  assert.equal(company.title, 'Example BV');
+  assert.equal(company.fields.sponsor_role, 'awc_sponsor');
+  assert.deepEqual(company.people, []);
 });
 
 test('business club custom field also selects the businessclub pass', () => {
@@ -85,14 +77,6 @@ test('business club custom field also selects the businessclub pass', () => {
 });
 
 test('splitStreetAddress preserves unstructured addresses safely', () => {
-  assert.deepEqual(splitStreetAddress('Postbus 12'), {
-    streetName: 'Postbus',
-    houseNumber: '12',
-    addition: ''
-  });
-  assert.deepEqual(splitStreetAddress('Sportpark De Wijchert'), {
-    streetName: 'Sportpark De Wijchert',
-    houseNumber: '',
-    addition: ''
-  });
+  assert.deepEqual(splitStreetAddress('Postbus 12'), { streetName: 'Postbus', houseNumber: '12', addition: '' });
+  assert.deepEqual(splitStreetAddress('Sportpark De Wijchert'), { streetName: 'Sportpark De Wijchert', houseNumber: '', addition: '' });
 });

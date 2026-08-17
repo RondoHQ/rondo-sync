@@ -1,0 +1,30 @@
+# Sponsit: sponsorbedrijven en Laposta
+
+De wekelijkse Sponsit-pipeline behandelt een sponsorbedrijf, zijn contactpersonen en hun relaties
+als afzonderlijke gegevens. De synchronisatie schrijft geen `is_sponsor`, bedrijfsnaam of
+sponsorrol meer op een persoon.
+
+## Volgorde
+
+1. Download actieve Sponsit-contacten en hun personen.
+2. Lees zowel Rondo-personen als sponsorbedrijven.
+3. Koppel personen eerst op de Sponsit-persoon-ID in bestaande sponsorrelaties, daarna op de
+   tijdelijke legacy-ID en als gecontroleerde terugval op uniek e-mailadres plus naam.
+4. Maak ontbrekende externe personen aan en werk alleen bestaande externe contacten bij. Velden
+   van leden en ouders blijven eigendom van Sportlink.
+5. Maak of wijzig één sponsorbedrijf per `sponsit_contact_id` en schrijf de contactrelaties.
+6. Archiveer alleen verdwenen bedrijven mét een Sponsit-ID. Handmatige Rondo-bedrijven worden
+   nooit automatisch gearchiveerd.
+7. Bouw de Laposta-doelgroep uit dezelfde bedrijfs- en relatiegegevens.
+
+Een Sponsit-bedrijf zonder personen blijft een geldig sponsorbedrijf en veroorzaakt geen fictief
+persoonrecord. Een dubbel e-mailadres of meervoudige Rondo-match wordt in quarantaine gezet; het
+bedrijf zelf kan dan nog wel zonder die onzekere relatie worden gesynchroniseerd.
+
+## Dry-run en uitvoeren
+
+`npm run preview-sponsit-rondo` toont afzonderlijke aantallen voor bedrijven, personen, relaties,
+archiveringen en quarantaines. `npm run sync-sponsit-rondo` voert hetzelfde plan uit.
+
+De volledige `sync-sponsit`-pipeline voert de Rondo-stap vóór Laposta uit. Daardoor kan een volgende
+run altijd op de stabiele relatie-ID's aansluiten en wordt een nieuw persoon niet opnieuw gemaakt.

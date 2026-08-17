@@ -15,7 +15,7 @@ function printSummary(logger, stats) {
   logger.log(`Contacts stored: ${stats.download.contacts}`);
   logger.log(`Current sponsors: ${stats.download.activeSponsors}`);
   logger.log(`Contact people: ${stats.download.people}`);
-  logger.log(`Rondo Club: ${stats.rondoClub.created} created, ${stats.rondoClub.updated} updated, ${stats.rondoClub.deactivated} deactivated, ${stats.rondoClub.unchanged} unchanged`);
+  logger.log(`Rondo Club: ${stats.rondoClub.companiesCreated} companies created, ${stats.rondoClub.companiesUpdated} updated, ${stats.rondoClub.companiesArchived} archived; ${stats.rondoClub.peopleCreated} people created, ${stats.rondoClub.peopleUpdated} updated`);
   logger.log(`Laposta: ${stats.laposta.created} created, ${stats.laposta.updated} updated, ${stats.laposta.unsubscribed} unsubscribed, ${stats.laposta.unchanged} unchanged, ${stats.laposta.skippedOptOut} opted out`);
   logger.log(`Quarantined: ${stats.laposta.quarantined}`);
   if (stats.errors.length) logger.log(`Errors: ${stats.errors.length}`);
@@ -36,10 +36,14 @@ async function runSponsitSync(options = {}) {
       rondoCandidates: 0
     },
     rondoClub: {
-      candidates: 0,
-      created: 0,
-      updated: 0,
-      deactivated: 0,
+      companies: 0,
+      people: 0,
+      relations: 0,
+      companiesCreated: 0,
+      companiesUpdated: 0,
+      companiesArchived: 0,
+      peopleCreated: 0,
+      peopleUpdated: 0,
       unchanged: 0,
       quarantined: 0
     },
@@ -98,22 +102,26 @@ async function runSponsitSync(options = {}) {
       const summary = rondoResult.summary || {};
       const applied = rondoResult.applied || {};
       stats.rondoClub = {
-        candidates: summary.candidates || 0,
-        created: applied.created || 0,
-        updated: applied.updated || 0,
-        deactivated: applied.deactivated || 0,
-        unchanged: summary.unchanged || 0,
+        companies: summary.companies || 0,
+        people: summary.people || 0,
+        relations: summary.relations || 0,
+        companiesCreated: applied.companiesCreated || 0,
+        companiesUpdated: applied.companiesUpdated || 0,
+        companiesArchived: applied.companiesArchived || 0,
+        peopleCreated: applied.peopleCreated || 0,
+        peopleUpdated: applied.peopleUpdated || 0,
+        unchanged: (summary.peopleUnchanged || 0) + (summary.companiesUnchanged || 0),
         quarantined: summary.quarantined || 0
       };
       const errors = applied.errors || [];
       stats.errors.push(...errors.map((error) => ({ ...error, system: 'rondo-club' })));
       tracker.endStep(rondoStepId, {
         outcome: errors.length ? 'failure' : 'success',
-        created: stats.rondoClub.created,
-        updated: stats.rondoClub.updated + stats.rondoClub.deactivated,
+        created: stats.rondoClub.companiesCreated + stats.rondoClub.peopleCreated,
+        updated: stats.rondoClub.companiesUpdated + stats.rondoClub.companiesArchived + stats.rondoClub.peopleUpdated,
         skipped: stats.rondoClub.unchanged + stats.rondoClub.quarantined,
         failed: errors.length,
-        detail: { ...summary, deactivated: stats.rondoClub.deactivated }
+        detail: summary
       });
       tracker.recordErrors('rondo-club-sync', rondoStepId, errors);
     } catch (error) {

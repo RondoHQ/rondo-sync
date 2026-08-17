@@ -9,7 +9,7 @@ const {
 } = require('../lib/sponsit-db');
 const { readEnv } = require('../lib/utils');
 const { fetchFields, fetchMembers, upsertMember, updateMember, waitForRateLimit } = require('../lib/laposta-client');
-const { fetchRondoPeople } = require('./sync-sponsit-to-rondo-club');
+const { fetchRondoPeople, fetchRondoSponsors } = require('./sync-sponsit-to-rondo-club');
 const {
   buildSponsitLapostaPlan,
   validateLapostaFields,
@@ -41,8 +41,11 @@ async function runSponsitLapostaSync(options = {}) {
       return { success: true, dryRun: true, summary };
     }
 
-    const rondoPeople = await fetchRondoPeople(options);
-    const plan = buildSponsitLapostaPlan(records, rondoPeople);
+    const [rondoPeople, rondoSponsors] = await Promise.all([
+      fetchRondoPeople(options),
+      fetchRondoSponsors(options)
+    ]);
+    const plan = buildSponsitLapostaPlan(records, rondoPeople, rondoSponsors);
     const summary = {
       candidates: plan.members.length,
       quarantined: plan.quarantined.length,

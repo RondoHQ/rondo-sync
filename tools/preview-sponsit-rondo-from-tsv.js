@@ -26,17 +26,18 @@ function main() {
   try {
     const records = getContactRecords(db, { activeOnly: true });
     const plan = planRondoSponsorSync(records, people);
+    const quarantined = [...plan.people.quarantined, ...plan.sponsors.quarantined];
     console.log(JSON.stringify({
-      candidates: plan.candidates.length,
+      companies: plan.companies.length,
+      contactPeople: plan.peopleCandidates.length,
       existingPeople: people.length,
-      creates: plan.creates.length,
-      updates: plan.updates.length,
-      unchanged: plan.unchanged.length,
-      memberSponsorUpdates: plan.updates.filter((item) => (item.person.fields?.person_type || 'member') !== 'contact').length,
-      contactSponsorUpdates: plan.updates.filter((item) => item.person.fields?.person_type === 'contact').length,
-      deactivations: plan.deactivations.length,
-      quarantined: plan.quarantined.length,
-      quarantineReasons: plan.quarantined.reduce((counts, item) => {
+      peopleCreate: plan.people.creates.length,
+      peopleUpdate: plan.people.updates.length,
+      companiesCreate: plan.sponsors.creates.length,
+      companiesUpdate: plan.sponsors.updates.length,
+      companiesArchive: plan.sponsors.archives.length,
+      quarantined: quarantined.length,
+      quarantineReasons: quarantined.reduce((counts, item) => {
         counts[item.reason] = (counts[item.reason] || 0) + 1;
         return counts;
       }, {})

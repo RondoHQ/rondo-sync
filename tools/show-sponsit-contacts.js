@@ -2,7 +2,7 @@
 
 const { openDb, getContactRecords, getSponsitStats } = require('../lib/sponsit-db');
 const {
-  buildRondoSponsorCandidates,
+  buildRondoSponsorCompanyCandidate,
   PASS_VARIANT_BUSINESSCLUB,
   PASS_VARIANT_AWC_SPONSOR
 } = require('../lib/sponsit-rondo-mapping');
@@ -23,9 +23,9 @@ function main() {
   try {
     const stats = getSponsitStats(db);
     const activeRecords = getContactRecords(db, { activeOnly: true });
-    const candidates = activeRecords.flatMap(buildRondoSponsorCandidates);
+    const candidates = activeRecords.map(buildRondoSponsorCompanyCandidate);
     const variantCounts = candidates.reduce((counts, candidate) => {
-      const variant = candidate.sponsorFields.sponsor_pass_variant;
+      const variant = candidate.fields.sponsor_role;
       counts[variant] = (counts[variant] || 0) + 1;
       return counts;
     }, {});
@@ -34,7 +34,8 @@ function main() {
       contacts: stats.contacts,
       activeSponsors: stats.activeSponsors,
       contactPeople: stats.people,
-      rondoCandidates: stats.rondoCandidates,
+      rondoCompanies: candidates.length,
+      rondoContactPeople: candidates.reduce((sum, company) => sum + company.people.length, 0),
       passVariants: {
         [PASS_VARIANT_BUSINESSCLUB]: variantCounts[PASS_VARIANT_BUSINESSCLUB] || 0,
         [PASS_VARIANT_AWC_SPONSOR]: variantCounts[PASS_VARIANT_AWC_SPONSOR] || 0
@@ -62,7 +63,8 @@ function main() {
     console.log(`Contacts: ${summary.contacts}`);
     console.log(`Current sponsors: ${summary.activeSponsors}`);
     console.log(`Contact people: ${summary.contactPeople}`);
-    console.log(`Proposed Rondo records: ${summary.rondoCandidates}`);
+    console.log(`Proposed Rondo companies: ${summary.rondoCompanies}`);
+    console.log(`Proposed contact relations: ${summary.rondoContactPeople}`);
     console.log(`Businessclub passes: ${summary.passVariants.businessclub}`);
     console.log(`AWC sponsor passes: ${summary.passVariants.awc_sponsor}`);
     console.log('');

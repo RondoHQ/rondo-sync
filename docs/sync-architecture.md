@@ -16,6 +16,7 @@ This document describes what data flows from where to where, which fields are sy
 - [Pipeline 4: Functions (Commissies)](#pipeline-4-functions-commissies)
 - [Pipeline 5: FreeScout](#pipeline-5-freescout)
 - [Pipeline 6: Discipline](#pipeline-6-discipline)
+- [Sponsit sponsor companies](pipeline-sponsit.md)
 - [Reverse Sync (Rondo Club to Sportlink)](#reverse-sync-rondo-club-to-sportlink)
 - [Databases](#databases)
 - [Locking](#locking)
@@ -34,7 +35,7 @@ graph LR
     SL -->|Members, teams,<br>functions, discipline| SYNC
     NK -->|Contributions| SYNC
     SYNC -->|Members, custom fields| LP
-    SYNC -->|Members, parents, teams,<br>commissies, work history,<br>photos| ST
+    SYNC -->|Members, parents, teams,<br>commissies, sponsor companies,<br>work history, photos| ST
     SYNC -->|Customers| FS
     ST -->|Field changes| SYNC
     SYNC -->|Reverse sync| SL
@@ -56,7 +57,7 @@ All times are **Europe/Amsterdam** timezone.
 | Functions (full) | Weekly Sunday | `0 1 * * 0` | All members with `--all` |
 | FreeScout | Daily | `0 8 * * *` | Rondo Club members to FreeScout customers |
 | Teams | Weekly Sunday | `0 6 * * 0` | Team creation + work history |
-| Sponsit | Weekly Sunday | `0 10 * * 0` | Sponsor contacts to Rondo Club and Laposta |
+| Sponsit | Weekly Sunday | `0 10 * * 0` | Sponsor companies, contact relations and Laposta |
 | Discipline | Weekly Monday | `30 23 * * 1` | Discipline cases |
 | Reverse Sync | Hourly | `0 * * * *` | Rondo Club changes back to Sportlink (**currently disabled**) |
 
