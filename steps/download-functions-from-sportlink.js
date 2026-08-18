@@ -7,7 +7,9 @@ const {
   upsertMemberCommittees,
   upsertCommissies,
   clearMemberFunctions,
+  clearMemberFunctionsForMember,
   clearMemberCommittees,
+  clearMemberCommitteesForMember,
   upsertMemberFreeFields,
   clearMemberFreeFields,
   upsertMemberInvoiceData,
@@ -71,6 +73,62 @@ function parseFunctionsResponse(data, knvbId) {
   }
 
   return { functions, committees };
+}
+
+/**
+ * Store successful Sportlink function and committee responses as authoritative snapshots.
+ * Failed or missing endpoint responses are deliberately left untouched so a transient
+ * Sportlink error cannot remove valid assignments.
+ *
+ * @param {Object} db - Database connection
+ * @param {Object} snapshots - Snapshot data and completion state
+ * @returns {{functionsCount: number, committeesCount: number}}
+ */
+function storeMemberFunctionSnapshots(db, snapshots) {
+  const {
+    recentOnly,
+    processedMemberCount,
+    functions,
+    committees,
+    successfulFunctionMembers,
+    successfulCommitteeMembers
+  } = snapshots;
+
+  const replaceSnapshot = ({ rows, successfulMembers, clearAll, clearMember, upsert }) => {
+    const hasCompleteFullSnapshot = !recentOnly && successfulMembers.size === processedMemberCount;
+
+    if (hasCompleteFullSnapshot) {
+      clearAll(db);
+    } else {
+      for (const knvbId of successfulMembers) {
+        clearMember(db, knvbId);
+      }
+    }
+
+    if (rows.length > 0) {
+      upsert(db, rows);
+    }
+  };
+
+  replaceSnapshot({
+    rows: functions,
+    successfulMembers: successfulFunctionMembers,
+    clearAll: clearMemberFunctions,
+    clearMember: clearMemberFunctionsForMember,
+    upsert: upsertMemberFunctions
+  });
+  replaceSnapshot({
+    rows: committees,
+    successfulMembers: successfulCommitteeMembers,
+    clearAll: clearMemberCommittees,
+    clearMember: clearMemberCommitteesForMember,
+    upsert: upsertMemberCommittees
+  });
+
+  return {
+    functionsCount: functions.length,
+    committeesCount: committees.length
+  };
 }
 
 /**
@@ -504,7 +562,11 @@ async function fetchMemberFunctions(page, knvbId, logger) {
   if (functionsData || committeesData) {
     return {
       MemberFunctions: functionsData,
-      MemberCommittees: committeesData
+      MemberCommittees: committeesData,
+      snapshot_complete: {
+        functions: functionsData !== null,
+        committees: committeesData !== null
+      }
     };
   }
 
@@ -776,6 +838,8 @@ async function runFunctionsDownload(options = {}) {
     const allFreeFields = [];
     const allInvoiceData = [];
     const uniqueCommitteeNames = new Set();
+    const successfulFunctionMembers = new Set();
+    const successfulCommitteeMembers = new Set();
 
     try {
       // Process each member
@@ -791,6 +855,13 @@ async function runFunctionsDownload(options = {}) {
 
           if (data) {
             const parsed = parseFunctionsResponse(data, member.knvb_id);
+
+            if (data.snapshot_complete?.functions) {
+              successfulFunctionMembers.add(member.knvb_id);
+            }
+            if (data.snapshot_complete?.committees) {
+              successfulCommitteeMembers.add(member.knvb_id);
+            }
 
             if (parsed.functions.length > 0 || parsed.committees.length > 0) {
               allFunctions.push(...parsed.functions);
@@ -851,29 +922,27 @@ async function runFunctionsDownload(options = {}) {
       }
     }
 
-    // Store to database
-    // Full sync: atomic clear + replace (ensures stale data is removed)
-    // Recent-only: upsert only (preserve existing data for members not in this run)
+    // Store to database. Every successful endpoint response is a complete snapshot
+    // for that member, including an empty response. Failed endpoints retain their
+    // previous rows so a transient Sportlink error cannot cause false removals.
     const storeResults = db.transaction(() => {
+      const snapshotCounts = storeMemberFunctionSnapshots(db, {
+        recentOnly,
+        processedMemberCount: members.length,
+        functions: allFunctions,
+        committees: allCommittees,
+        successfulFunctionMembers,
+        successfulCommitteeMembers
+      });
+      result.functionsCount = snapshotCounts.functionsCount;
+      result.committeesCount = snapshotCounts.committeesCount;
+
       if (!recentOnly) {
-        // Full sync: clear all tables first
-        clearMemberFunctions(db);
-        clearMemberCommittees(db);
         clearMemberFreeFields(db);
         if (withInvoice) {
           clearMemberInvoiceData(db);
         }
       }
-
-      if (allFunctions.length > 0) {
-        upsertMemberFunctions(db, allFunctions);
-      }
-      result.functionsCount = allFunctions.length;
-
-      if (allCommittees.length > 0) {
-        upsertMemberCommittees(db, allCommittees);
-      }
-      result.committeesCount = allCommittees.length;
 
       if (allFreeFields.length > 0) {
         upsertMemberFreeFields(db, allFreeFields);
@@ -935,6 +1004,7 @@ module.exports = {
   fetchMemberDataFromOtherPage,
   fetchMemberFinancialData,
   parseFunctionsResponse,
+  storeMemberFunctionSnapshots,
   parseFreeFieldsResponse,
   parseInvoiceAddressResponse,
   parseInvoiceInfoResponse,

@@ -6,8 +6,6 @@ const {
   getAllCommissies,
   getAllActiveMemberFunctions,
   getAllActiveMemberCommittees,
-  getMemberCommittees,
-  getMemberFunctions,
   upsertCommissieWorkHistory,
   getCommissieWorkHistoryNeedingSync,
   getMemberCommissieWorkHistory,
@@ -63,6 +61,64 @@ function buildWorkHistoryEntry(commissieRondoClubId, jobTitle, isActive, startDa
   };
 }
 
+function makeCommissieKey(commissieName, roleName) {
+  return `${commissieName}|${roleName || ''}`;
+}
+
+/**
+ * Find the current Rondo work-history row belonging to a tracked commissie role.
+ * The stored index is only a hint because manual repeater edits can move rows.
+ */
+function findCommissieWorkHistoryIndex(rows, preferredIndex, commissieRondoClubId, roleName) {
+  const matches = (row) => (
+    row &&
+    String(row.team_id || '') === String(commissieRondoClubId || '') &&
+    (row.job_title || '') === (roleName || '')
+  );
+
+  if (preferredIndex >= 0 && preferredIndex < rows.length && matches(rows[preferredIndex]) && rows[preferredIndex].is_current) {
+    return preferredIndex;
+  }
+
+  return rows.findIndex(row => matches(row) && row.is_current);
+}
+
+/**
+ * Build the work-history queue from changed source hashes plus tracked roles
+ * that disappeared from the latest successful Sportlink snapshots.
+ */
+function buildCommissieSyncQueue(needsSync, allTracked, memberCommissies) {
+  const memberMap = new Map();
+  const enqueue = (record) => {
+    if (!memberMap.has(record.knvb_id)) {
+      memberMap.set(record.knvb_id, {
+        knvb_id: record.knvb_id,
+        rondo_club_id: record.rondo_club_id
+      });
+    }
+  };
+
+  for (const record of needsSync) {
+    enqueue(record);
+  }
+
+  for (const tracked of allTracked) {
+    if (tracked.rondo_club_work_history_id === null) {
+      continue;
+    }
+
+    const currentKeys = new Set(
+      (memberCommissies.get(tracked.knvb_id) || [])
+        .map(item => makeCommissieKey(item.commissie_name, item.role_name))
+    );
+    if (!currentKeys.has(makeCommissieKey(tracked.commissie_name, tracked.role_name))) {
+      enqueue(tracked);
+    }
+  }
+
+  return Array.from(memberMap.values());
+}
+
 /**
  * Detect commissie changes for a member.
  * Compares current commissies vs SYNCED records in SQLite.
@@ -80,13 +136,12 @@ function detectCommissieChanges(db, knvbId, currentCommissies) {
   const syncedHistory = trackedHistory.filter(h => h.rondo_club_work_history_id !== null);
 
   // Create composite keys for matching (commissie_name + role_name)
-  const makeKey = (commissieName, roleName) => `${commissieName}|${roleName || ''}`;
-  const syncedKeys = new Set(syncedHistory.map(h => makeKey(h.commissie_name, h.role_name)));
-  const currentKeys = new Set(currentCommissies.map(c => makeKey(c.commissie_name, c.role_name)));
+  const syncedKeys = new Set(syncedHistory.map(h => makeCommissieKey(h.commissie_name, h.role_name)));
+  const currentKeys = new Set(currentCommissies.map(c => makeCommissieKey(c.commissie_name, c.role_name)));
 
-  const added = currentCommissies.filter(c => !syncedKeys.has(makeKey(c.commissie_name, c.role_name)));
-  const removed = syncedHistory.filter(h => !currentKeys.has(makeKey(h.commissie_name, h.role_name)));
-  const unchanged = currentCommissies.filter(c => syncedKeys.has(makeKey(c.commissie_name, c.role_name)));
+  const added = currentCommissies.filter(c => !syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
+  const removed = syncedHistory.filter(h => !currentKeys.has(makeCommissieKey(h.commissie_name, h.role_name)));
+  const unchanged = currentCommissies.filter(c => syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
 
   return { added, removed, unchanged };
 }
@@ -104,6 +159,7 @@ function detectCommissieChanges(db, knvbId, currentCommissies) {
 async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, commissieMap, options, force = false) {
   const { knvb_id, rondo_club_id } = member;
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+  const request = options.request || rondoClubRequest;
 
   // Skip if member not yet synced to Rondo Club
   if (!rondo_club_id) {
@@ -120,17 +176,20 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
   let existingFirstName = '';
   let existingLastName = '';
   try {
-    const response = await rondoClubRequest(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
+    const response = await request(`wp/v2/people/${rondo_club_id}`, 'GET', null, options);
     existingWorkHistory = response.body.fields?.work_history || [];
     existingFirstName = response.body.fields?.first_name || '';
     existingLastName = response.body.fields?.last_name || '';
   } catch (error) {
     logVerbose(`Could not fetch existing data for ${knvb_id}: ${error.message}`);
+    throw error;
   }
 
   let addedCount = 0;
   let endedCount = 0;
   let modified = false;
+  const trackingDeletes = [];
+  const trackingUpdates = [];
 
   // Build new work_history array
   const newWorkHistory = [...existingWorkHistory];
@@ -139,8 +198,14 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
   for (const removed of changes.removed) {
     if (removed.rondo_club_work_history_id !== null && removed.rondo_club_work_history_id !== undefined) {
       // This is a sync-created entry, we can modify it
-      const index = removed.rondo_club_work_history_id;
-      if (index < newWorkHistory.length) {
+      const commissieRondoClubId = commissieMap.get(removed.commissie_name);
+      const index = findCommissieWorkHistoryIndex(
+        newWorkHistory,
+        removed.rondo_club_work_history_id,
+        commissieRondoClubId,
+        removed.role_name
+      );
+      if (index >= 0) {
         newWorkHistory[index] = {
           ...newWorkHistory[index],
           is_current: false,
@@ -148,14 +213,23 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
         };
         endedCount++;
         modified = true;
+        trackingDeletes.push(removed);
+        logVerbose(`Ended work_history for commissie ${removed.commissie_name} (index ${index})`);
+      } else {
+        const alreadyEnded = newWorkHistory.some(row => (
+          String(row.team_id || '') === String(commissieRondoClubId || '') &&
+          (row.job_title || '') === (removed.role_name || '') &&
+          row.is_current === false
+        ));
+        if (alreadyEnded) {
+          trackingDeletes.push(removed);
+          logVerbose(`Work_history for commissie ${removed.commissie_name} was already ended`);
+        } else {
+          logVerbose(`Could not safely locate work_history for commissie ${removed.commissie_name}; keeping tracking for retry`);
+        }
       }
-      // Delete from tracking
-      deleteCommissieWorkHistory(db, knvb_id, removed.commissie_name, removed.role_name);
-      logVerbose(`Ended work_history for commissie ${removed.commissie_name} (index ${index})`);
     } else {
-      // Manual entry, don't modify but remove from tracking
-      deleteCommissieWorkHistory(db, knvb_id, removed.commissie_name, removed.role_name);
-      logVerbose(`Removed tracking for manual entry: ${removed.commissie_name}`);
+      logVerbose(`Ignoring untracked manual entry: ${removed.commissie_name}`);
     }
   }
 
@@ -182,14 +256,13 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
     const newIndex = newWorkHistory.length;
     newWorkHistory.push(entry);
 
-    // Update tracking with rondo_club_work_history_id
     const sourceHash = computeCommissieWorkHistoryHash(
       knvb_id,
       commissie.commissie_name,
       commissie.role_name,
       commissie.is_active
     );
-    updateCommissieWorkHistorySyncState(db, knvb_id, commissie.commissie_name, commissie.role_name, sourceHash, newIndex);
+    trackingUpdates.push({ commissie, sourceHash, newIndex });
 
     addedCount++;
     modified = true;
@@ -231,7 +304,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
   // Update WordPress if modified
   if (modified) {
     try {
-      await rondoClubRequest(
+      await request(
         `wp/v2/people/${rondo_club_id}`,
         'PUT',
         { fields: { first_name: existingFirstName, last_name: existingLastName, work_history: newWorkHistory } },
@@ -245,6 +318,28 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
       logVerbose('Payload was:', JSON.stringify(newWorkHistory, null, 2));
       throw error;
     }
+  }
+
+  // Only commit local tracking after the remote state is confirmed. If the PUT
+  // fails, the next scheduled run sees the same pending work and retries it.
+  const commitTracking = db.transaction(() => {
+    for (const removed of trackingDeletes) {
+      deleteCommissieWorkHistory(db, knvb_id, removed.commissie_name, removed.role_name);
+    }
+    for (const { commissie, sourceHash, newIndex } of trackingUpdates) {
+      updateCommissieWorkHistorySyncState(
+        db,
+        knvb_id,
+        commissie.commissie_name,
+        commissie.role_name,
+        sourceHash,
+        newIndex
+      );
+    }
+  });
+  commitTracking();
+
+  if (modified) {
     return { action: 'updated', added: addedCount, ended: endedCount };
   }
 
@@ -349,20 +444,9 @@ async function runSync(options = {}) {
       }
 
       // Get members needing sync
-      const needsSync = getCommissieWorkHistoryNeedingSync(db, force);
-
-      // Group by knvb_id
-      const memberMap = new Map();
-      for (const record of needsSync) {
-        if (!memberMap.has(record.knvb_id)) {
-          memberMap.set(record.knvb_id, {
-            knvb_id: record.knvb_id,
-            rondo_club_id: record.rondo_club_id
-          });
-        }
-      }
-
-      const membersToSync = Array.from(memberMap.values());
+      const allTracked = getCommissieWorkHistoryNeedingSync(db, true);
+      const needsSync = force ? allTracked : getCommissieWorkHistoryNeedingSync(db, false);
+      const membersToSync = buildCommissieSyncQueue(needsSync, allTracked, memberCommissies);
       result.total = membersToSync.length;
       logVerbose(`${result.total} members need commissie work history sync`);
 
@@ -413,7 +497,13 @@ async function runSync(options = {}) {
   }
 }
 
-module.exports = { runSync, syncCommissieWorkHistoryForMember };
+module.exports = {
+  runSync,
+  syncCommissieWorkHistoryForMember,
+  detectCommissieChanges,
+  buildCommissieSyncQueue,
+  findCommissieWorkHistoryIndex
+};
 
 // CLI entry point
 if (require.main === module) {
