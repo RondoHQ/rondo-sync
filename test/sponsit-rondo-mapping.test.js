@@ -44,6 +44,7 @@ test('maps one Sponsit contact to a company plus a real contact relation', () =>
   const company = buildRondoSponsorCompanyCandidate(baseRecord());
   assert.equal(company.sourceKey, 'sponsit:400');
   assert.equal(company.title, 'Example BV');
+  assert.equal(company.fields.sponsor_type, 'organization');
   assert.equal(company.fields.sponsor_role, 'businessclub');
   assert.equal(company.fields.sponsit_contact_id, '400');
   assert.equal(company.fields.address_street_name, 'Dorpsstraat');
@@ -57,6 +58,26 @@ test('maps one Sponsit contact to a company plus a real contact relation', () =>
   assert.equal(company.people[0].fields.birthdate, '1980-01-02');
   assert.equal(company.people[0].relation.sponsit_person_id, '900');
   assert.equal('is_sponsor' in company.people[0].fields, false);
+});
+
+test('maps a personal Sponsit sponsor to a sponsor plus its own person relation', () => {
+  const record = baseRecord();
+  record.contact = {
+    ...record.contact,
+    type: 'person',
+    name: 'Piet Sponsor',
+    firstname: 'Piet',
+    lastname: 'Sponsor',
+    email1: 'piet@example.test'
+  };
+  record.people = [];
+  const sponsor = buildRondoSponsorCompanyCandidate(record);
+  assert.equal(sponsor.fields.sponsor_type, 'person');
+  assert.equal(sponsor.people.length, 1);
+  assert.equal(sponsor.people[0].sourceKey, 'sponsit-contact-person:400');
+  assert.equal(sponsor.people[0].relation.contact_role, 'Sponsor');
+  assert.equal(sponsor.people[0].relation.sponsit_person_id, 'contact:400');
+  assert.equal(sponsor.people[0].fields.email_1, 'piet@example.test');
 });
 
 test('company-only contacts create a valid company without a fake person', () => {

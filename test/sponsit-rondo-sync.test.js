@@ -37,6 +37,7 @@ test('stable relationship source ID leaves a current company unchanged', () => {
     title: 'Example BV',
     status: 'publish',
     fields: {
+      sponsor_type: 'organization',
       sponsor_role: 'awc_sponsor',
       sponsit_contact_id: '10',
       contacts: [{
@@ -55,15 +56,25 @@ test('stable relationship source ID leaves a current company unchanged', () => {
   assert.equal(plan.sponsors.unchanged.length, 1);
 });
 
-test('shared Sponsit emails quarantine people but preserve both companies', () => {
+test('shared Sponsit emails with different names remain separate stable people', () => {
   const second = record({
     contact: { id: 11, type: 'company', name: 'Other BV', status: { code: 'sponsor' } },
     people: [{ id: 21, firstname: 'Piet', lastname: 'Pieters', email1: 'jan@example.test' }]
   });
   const plan = planRondoSponsorSync([record(), second], [], []);
-  assert.equal(plan.people.quarantined.length, 2);
-  assert.equal(plan.people.creates.length, 0);
+  assert.equal(plan.people.quarantined.length, 0);
+  assert.equal(plan.people.creates.length, 2);
   assert.equal(plan.sponsors.creates.length, 2);
+});
+
+test('same person identity across sponsors resolves to one person', () => {
+  const second = record({
+    contact: { id: 11, type: 'company', name: 'Other BV', status: { code: 'sponsor' } },
+    people: [{ id: 21, firstname: 'Jan', lastname: 'Jansen', email1: 'jan@example.test' }]
+  });
+  const plan = planRondoSponsorSync([record(), second], [], []);
+  assert.equal(plan.people.creates.length, 1);
+  assert.equal(plan.people.creates[0].aliases.length, 2);
 });
 
 test('only Sponsit-owned missing companies are archived', () => {
@@ -73,24 +84,43 @@ test('only Sponsit-owned missing companies are archived', () => {
   assert.deepEqual(plan.sponsors.archives.map((sponsor) => sponsor.id), [1]);
 });
 
-test('apply creates a person before writing its company relationship', async () => {
+test('apply creates a sponsor before atomically creating its person relation', async () => {
   const requests = [];
   const plan = planRondoSponsorSync([record()], [], []);
   const result = await applyPlan(plan, {
     request: async (endpoint, method, body) => {
       requests.push([endpoint, method, body]);
-      if (endpoint === 'wp/v2/people') return { body: { id: 42 } };
-      return { body: { id: 84 } };
+      if (endpoint === 'rondo/v1/sponsors') return { body: { id: 84 } };
+      if (endpoint === 'rondo/v1/sponsors/84/contacts') {
+        return { body: { fields: { contacts: [{ person_id: 42, sponsit_person_id: '20' }] } } };
+      }
+      return { body: {} };
     }
   });
 
   assert.equal(result.peopleCreated, 1);
   assert.equal(result.companiesCreated, 1);
   assert.equal(result.relationsWritten, 1);
-  assert.equal(requests[0][0], 'wp/v2/people');
-  assert.equal(requests[1][0], 'rondo/v1/sponsors');
-  assert.equal(requests[1][2].fields.contacts[0].person_id, 42);
-  assert.equal('is_sponsor' in requests[0][2].fields, false);
+  assert.equal(requests[0][0], 'rondo/v1/sponsors');
+  assert.equal(requests[1][0], 'rondo/v1/sponsors/84/contacts');
+  assert.equal(requests[2][0], 'rondo/v1/sponsors/84');
+  assert.equal(requests[2][2].fields.contacts[0].person_id, 42);
+  assert.equal(requests.some(([endpoint]) => endpoint === 'wp/v2/people'), false);
+});
+
+test('failed atomic contact creation cannot leave a standalone person', async () => {
+  const requests = [];
+  const plan = planRondoSponsorSync([record()], [], []);
+  const result = await applyPlan(plan, {
+    request: async (endpoint, method, body) => {
+      requests.push([endpoint, method, body]);
+      if (endpoint === 'rondo/v1/sponsors') return { body: { id: 84 } };
+      throw new Error('Contact relation failed');
+    }
+  });
+  assert.equal(result.peopleCreated, 0);
+  assert.equal(result.errors.length, 1);
+  assert.equal(requests.some(([endpoint]) => endpoint === 'wp/v2/people'), false);
 });
 
 test('archiving a company never clears or deletes its people', async () => {

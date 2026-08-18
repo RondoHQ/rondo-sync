@@ -81,7 +81,7 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
 
 `npm run sync-sponsit` refreshes the local encrypted-transport/0600 SQLite mirror only. Use `npm run preview-sponsit-rondo` and `npm run preview-sponsit-laposta` before their corresponding `sync-*` apply commands.
 
-Sponsorship is an independent Rondo role: existing Sportlink people remain `person_type=member` and receive `is_sponsor=true`; new external sponsors are created as `person_type=contact`. Matching prefers stable Sponsit IDs and otherwise requires a unique email plus matching identity. Shared emails are quarantined.
+Sponsit records with `type=company` become organization sponsors; records with `type=person` become personal sponsors linked to one Rondo person. Existing Sportlink people retain their own `person_type`; new external people are created through the sponsor-contact endpoint so a standalone sponsor contact cannot be left behind. Matching prefers stable relation IDs and otherwise uses email plus identity. An uncertain match blocks only that sponsor's relationship write and never removes an existing relation.
 
 The dedicated Laposta list must expose `voornaam`, `achternaam`, `businessclub`, `bedrijfsnaam`, `sponsorvariant`, `sponsitcontactid`, `sponsitpersoonid`, and `islid`. Never remove the opt-out protections: upserts use `suppress_reactivation`, cleaned/unsubscribed relations are skipped, and automatic unsubscription is limited to active relations carrying a Sponsit source ID.
 

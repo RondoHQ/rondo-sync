@@ -1,25 +1,26 @@
-# Sponsit: sponsorbedrijven en Laposta
+# Sponsit: sponsoren en Laposta
 
-De wekelijkse Sponsit-pipeline behandelt een sponsorbedrijf, zijn contactpersonen en hun relaties
+De wekelijkse Sponsit-pipeline behandelt organisaties en persoonlijke sponsoren, hun personen en relaties
 als afzonderlijke gegevens. De synchronisatie schrijft geen `is_sponsor`, bedrijfsnaam of
 sponsorrol meer op een persoon.
 
 ## Volgorde
 
-1. Download actieve Sponsit-contacten en hun personen.
+1. Download actieve Sponsit-contacten en hun personen. Een contact van type `company` wordt een
+   organisatie; een contact van type `person` wordt een persoonlijke sponsor met één persoonsrelatie.
 2. Lees zowel Rondo-personen als sponsorbedrijven.
 3. Koppel personen eerst op de Sponsit-persoon-ID in bestaande sponsorrelaties, daarna op de
    tijdelijke legacy-ID en als gecontroleerde terugval op uniek e-mailadres plus naam.
-4. Maak ontbrekende externe personen aan en werk alleen bestaande externe contacten bij. Velden
+4. Maak ontbrekende externe personen via de sponsorrelatie aan en werk alleen bestaande externe contacten bij. Velden
    van leden en ouders blijven eigendom van Sportlink.
 5. Maak of wijzig één sponsorbedrijf per `sponsit_contact_id` en schrijf de contactrelaties.
 6. Archiveer alleen verdwenen bedrijven mét een Sponsit-ID. Handmatige Rondo-bedrijven worden
    nooit automatisch gearchiveerd.
 7. Bouw de Laposta-doelgroep uit dezelfde bedrijfs- en relatiegegevens.
 
-Een Sponsit-bedrijf zonder personen blijft een geldig sponsorbedrijf en veroorzaakt geen fictief
-persoonrecord. Een dubbel e-mailadres of meervoudige Rondo-match wordt in quarantaine gezet; het
-bedrijf zelf kan dan nog wel zonder die onzekere relatie worden gesynchroniseerd.
+Een Sponsit-organisatie zonder personen blijft een geldige sponsor en veroorzaakt geen fictief
+persoonrecord. Bij een onzekere match blijft de bestaande relatie ongemoeid. Een nieuwe persoon
+wordt alleen via een bestaande sponsor aangemaakt, zodat Sync geen los sponsorcontact kan achterlaten.
 
 ## Dry-run en uitvoeren
 

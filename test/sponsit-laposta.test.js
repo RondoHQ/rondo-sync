@@ -27,8 +27,15 @@ test('builds the requested Businessclub and member fields', () => {
 
 test('uses the person name when the mandatory company field has no company', () => {
   const personal = record();
-  personal.contact.type = 'person';
-  personal.contact.name = 'Jan Jansen';
+  personal.contact = {
+    ...personal.contact,
+    type: 'person',
+    name: 'Jan Jansen',
+    firstname: 'Jan',
+    lastname: 'Jansen',
+    email1: 'jan@example.test'
+  };
+  personal.people = [];
   const plan = buildSponsitLapostaPlan([personal]);
   assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Jan Jansen');
 });
@@ -60,9 +67,20 @@ test('quarantines duplicate shared email addresses', () => {
   const other = record();
   other.contact.id = 11;
   other.people[0].id = 21;
+  other.people[0].firstname = 'Piet';
+  other.people[0].lastname = 'Pieters';
   const plan = buildSponsitLapostaPlan([record(), other]);
   assert.equal(plan.members.length, 0);
   assert.equal(plan.quarantined.length, 2);
+});
+
+test('deduplicates one person registered under multiple sponsors', () => {
+  const other = record();
+  other.contact.id = 11;
+  other.people[0].id = 21;
+  const plan = buildSponsitLapostaPlan([record(), other]);
+  assert.equal(plan.members.length, 1);
+  assert.equal(plan.quarantined.length, 0);
 });
 
 test('requires the complete dedicated Laposta schema', () => {
