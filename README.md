@@ -32,6 +32,7 @@ graph LR
 - **Hash-based change detection** — SHA-256 diffing ensures only records that actually changed get synced, minimizing API calls and avoiding unnecessary updates
 - **State tracking** — 4 SQLite databases maintain ID mappings, sync history, and photo upload state across systems
 - **Pipeline locking** — flock-based concurrency prevention ensures parallel cron jobs don't collide
+- **Operations dashboard** — Manual starts confirm that the sync wrapper stayed alive and show immediate lock or launch failures inline
 - **Email reports** — HTML summaries via Lettermint after every sync run
 - **Photo sync** — Downloads member photos from Sportlink, uploads to WordPress with a state machine tracking each photo's lifecycle
 - **Reverse sync** — Pushes Rondo Club field changes back to Sportlink via browser automation

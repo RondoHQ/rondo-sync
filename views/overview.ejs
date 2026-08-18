@@ -73,26 +73,47 @@
 </div>
 
 <script>
+function clearPipelineStartError(btn) {
+  btn.closest('.pipeline-card')?.querySelector('.pipeline-start-error')?.remove();
+}
+
+function showPipelineStartError(btn, message) {
+  const card = btn.closest('.pipeline-card');
+  if (!card) return;
+  let error = card.querySelector('.pipeline-start-error');
+  if (!error) {
+    error = document.createElement('div');
+    error.className = 'pipeline-start-error';
+    error.setAttribute('role', 'alert');
+    card.querySelector('.pipeline-header')?.insertAdjacentElement('afterend', error);
+  }
+  error.textContent = message || 'The pipeline could not be started.';
+}
+
 async function startPipeline(name, btn) {
+  clearPipelineStartError(btn);
   btn.disabled = true;
   btn.textContent = 'Starting\u2026';
   try {
     const res = await fetch('/api/pipeline/' + encodeURIComponent(name) + '/start', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
     if (res.status === 409) {
       btn.textContent = 'Running';
       btn.disabled = true;
+      showPipelineStartError(btn, data.error);
       return;
     }
-    const data = await res.json();
     if (data.ok) {
       btn.textContent = 'Started';
       setTimeout(() => { window.location.reload(); }, 1000);
     } else {
       btn.textContent = 'Error';
+      showPipelineStartError(btn, data.error);
       setTimeout(() => { btn.textContent = 'Start'; btn.disabled = false; }, 3000);
     }
   } catch (e) {
     btn.textContent = 'Error';
+    showPipelineStartError(btn, 'The start request could not be completed.');
     setTimeout(() => { btn.textContent = 'Start'; btn.disabled = false; }, 3000);
   }
 }
