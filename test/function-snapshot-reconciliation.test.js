@@ -109,19 +109,22 @@ test('a fully successful full run removes rows for members outside the active sn
 test('work-history queue includes tracked roles that disappeared from Sportlink', () => {
   const current = new Map([
     ['MEMBER-A', [{ commissie_name: 'Verenigingsbreed', role_name: 'Kaderlid Algemeen' }]],
-    ['MEMBER-C', [{ commissie_name: 'Bestuur', role_name: 'Lid' }]]
+    ['MEMBER-C', [{ commissie_name: 'Bestuur', role_name: 'Lid' }]],
+    ['MEMBER-E', [{ commissie_name: 'Verenigingsbreed', role_name: 'Jeugdbegeleid(st)er', is_active: false }]]
   ]);
   const allTracked = [
     { knvb_id: 'MEMBER-A', rondo_club_id: 241, commissie_name: 'Verenigingsbreed', role_name: 'Jeugdbegeleid(st)er', rondo_club_work_history_id: 3 },
     { knvb_id: 'MEMBER-A', rondo_club_id: 241, commissie_name: 'Verenigingsbreed', role_name: 'Kaderlid Algemeen', rondo_club_work_history_id: 4 },
     { knvb_id: 'MEMBER-B', rondo_club_id: 846, commissie_name: 'Verenigingsbreed', role_name: 'Handmatig', rondo_club_work_history_id: null },
-    { knvb_id: 'MEMBER-C', rondo_club_id: 100, commissie_name: 'Bestuur', role_name: 'Lid', rondo_club_work_history_id: 1 }
+    { knvb_id: 'MEMBER-C', rondo_club_id: 100, commissie_name: 'Bestuur', role_name: 'Lid', rondo_club_work_history_id: 1 },
+    { knvb_id: 'MEMBER-E', rondo_club_id: 300, commissie_name: 'Verenigingsbreed', role_name: 'Jeugdbegeleid(st)er', rondo_club_work_history_id: 2 }
   ];
   const needsSync = [{ knvb_id: 'MEMBER-D', rondo_club_id: 200 }];
 
   assert.deepEqual(buildCommissieSyncQueue(needsSync, allTracked, current), [
     { knvb_id: 'MEMBER-D', rondo_club_id: 200 },
-    { knvb_id: 'MEMBER-A', rondo_club_id: 241 }
+    { knvb_id: 'MEMBER-A', rondo_club_id: 241 },
+    { knvb_id: 'MEMBER-E', rondo_club_id: 300 }
   ]);
 });
 
@@ -180,7 +183,12 @@ test('failed Rondo update keeps removal tracking for retry and preserves manual 
   };
   const args = [
     { knvb_id: 'MEMBER-A', rondo_club_id: 241 },
-    [],
+    [{
+      commissie_name: 'Verenigingsbreed',
+      role_name: 'Jeugdbegeleid(st)er',
+      is_active: false,
+      relation_end: '2026-08-01T00:00:00'
+    }],
     db,
     new Map([['Verenigingsbreed', 2662]]),
     { request }
@@ -201,7 +209,7 @@ test('failed Rondo update keeps removal tracking for retry and preserves manual 
   const writtenRows = putPayloads.at(-1).fields.work_history;
   assert.deepEqual(writtenRows[0], remoteFields.work_history[0], 'manual row is unchanged');
   assert.equal(writtenRows[1].is_current, false);
-  assert.match(writtenRows[1].end_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(writtenRows[1].end_date, '2026-08-01', 'Sportlink end date is authoritative when available');
 
   const rerun = await syncCommissieWorkHistoryForMember(...args);
   assert.deepEqual(rerun, { action: 'unchanged', added: 0, ended: 0 });

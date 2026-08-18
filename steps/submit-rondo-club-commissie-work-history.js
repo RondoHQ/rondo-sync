@@ -4,8 +4,8 @@ const { rondoClubRequest } = require('../lib/rondo-club-client');
 const {
   openDb,
   getAllCommissies,
-  getAllActiveMemberFunctions,
-  getAllActiveMemberCommittees,
+  getAllMemberFunctions,
+  getAllMemberCommittees,
   upsertCommissieWorkHistory,
   getCommissieWorkHistoryNeedingSync,
   getMemberCommissieWorkHistory,
@@ -109,6 +109,7 @@ function buildCommissieSyncQueue(needsSync, allTracked, memberCommissies) {
 
     const currentKeys = new Set(
       (memberCommissies.get(tracked.knvb_id) || [])
+        .filter(item => item.is_active !== false)
         .map(item => makeCommissieKey(item.commissie_name, item.role_name))
     );
     if (!currentKeys.has(makeCommissieKey(tracked.commissie_name, tracked.role_name))) {
@@ -137,11 +138,12 @@ function detectCommissieChanges(db, knvbId, currentCommissies) {
 
   // Create composite keys for matching (commissie_name + role_name)
   const syncedKeys = new Set(syncedHistory.map(h => makeCommissieKey(h.commissie_name, h.role_name)));
-  const currentKeys = new Set(currentCommissies.map(c => makeCommissieKey(c.commissie_name, c.role_name)));
+  const activeCommissies = currentCommissies.filter(c => c.is_active !== false);
+  const currentKeys = new Set(activeCommissies.map(c => makeCommissieKey(c.commissie_name, c.role_name)));
 
-  const added = currentCommissies.filter(c => !syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
+  const added = activeCommissies.filter(c => !syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
   const removed = syncedHistory.filter(h => !currentKeys.has(makeCommissieKey(h.commissie_name, h.role_name)));
-  const unchanged = currentCommissies.filter(c => syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
+  const unchanged = activeCommissies.filter(c => syncedKeys.has(makeCommissieKey(c.commissie_name, c.role_name)));
 
   return { added, removed, unchanged };
 }
@@ -206,10 +208,14 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
         removed.role_name
       );
       if (index >= 0) {
+        const endedSource = currentCommissies.find(item => (
+          item.is_active === false &&
+          makeCommissieKey(item.commissie_name, item.role_name) === makeCommissieKey(removed.commissie_name, removed.role_name)
+        ));
         newWorkHistory[index] = {
           ...newWorkHistory[index],
           is_current: false,
-          end_date: formatDateForFields(new Date())
+          end_date: convertDateForFields(endedSource?.relation_end) || formatDateForFields(new Date())
         };
         endedCount++;
         modified = true;
@@ -384,8 +390,8 @@ async function runSync(options = {}) {
       }
 
       // Load member functions and committees
-      const memberFunctions = getAllActiveMemberFunctions(db);
-      const memberCommittees = getAllActiveMemberCommittees(db);
+      const memberFunctions = getAllMemberFunctions(db);
+      const memberCommittees = getAllMemberCommittees(db);
 
       logVerbose(`Found ${memberFunctions.length} member functions, ${memberCommittees.length} committee memberships`);
 
@@ -402,10 +408,13 @@ async function runSync(options = {}) {
         memberCommissies.get(func.knvb_id).push({
           commissie_name: 'Verenigingsbreed',
           role_name: func.function_description,
-          is_active: true,
+          is_active: func.is_active === 1,
           relation_start: func.relation_start,
           relation_end: func.relation_end
         });
+        if (func.is_active !== 1) {
+          continue;
+        }
         workHistoryRecords.push({
           knvb_id: func.knvb_id,
           commissie_name: 'Verenigingsbreed',
@@ -423,10 +432,13 @@ async function runSync(options = {}) {
         memberCommissies.get(comm.knvb_id).push({
           commissie_name: comm.committee_name,
           role_name: comm.role_name,
-          is_active: true,
+          is_active: comm.is_active === 1,
           relation_start: comm.relation_start,
           relation_end: comm.relation_end
         });
+        if (comm.is_active !== 1) {
+          continue;
+        }
         workHistoryRecords.push({
           knvb_id: comm.knvb_id,
           commissie_name: comm.committee_name,
