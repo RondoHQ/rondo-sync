@@ -123,6 +123,78 @@ test('failed atomic contact creation cannot leave a standalone person', async ()
   assert.equal(requests.some(([endpoint]) => endpoint === 'wp/v2/people'), false);
 });
 
+test('logo import downloads from Sponsit and uploads only after the sponsor exists', async () => {
+  const source = record();
+  source.contact.logo = { id: 117280, filename: 'Example logo.jpg' };
+  const plan = planRondoSponsorSync([source], [], []);
+  const calls = [];
+  const result = await applyPlan(plan, {
+    request: async (endpoint) => {
+      calls.push(endpoint);
+      if (endpoint === 'rondo/v1/sponsors') return { body: { id: 84 } };
+      if (endpoint === 'rondo/v1/sponsors/84/contacts') {
+        return { body: { fields: { contacts: [{ person_id: 42, sponsit_person_id: '20' }] } } };
+      }
+      return { body: {} };
+    },
+    downloadSponsorLogo: async (logo) => {
+      calls.push(`download:${logo.sourceId}`);
+      return { buffer: Buffer.from('image'), contentType: 'image/jpeg' };
+    },
+    uploadSponsorLogo: async (sponsorId, logo) => {
+      calls.push(`upload:${sponsorId}:${logo.sourceId}`);
+      return { body: { logo_attachment_id: 99 } };
+    }
+  });
+
+  assert.equal(result.logosImported, 1);
+  assert.ok(calls.indexOf('rondo/v1/sponsors') < calls.indexOf('download:117280'));
+  assert.ok(calls.includes('upload:84:117280'));
+});
+
+test('matching Sponsit logo ID and an attached logo prevent a redundant import', () => {
+  const source = record();
+  source.contact.logo = { id: 117280, filename: 'Example logo.jpg' };
+  const sponsor = {
+    id: 84,
+    title: 'Example BV',
+    status: 'publish',
+    logo_attachment_id: 99,
+    fields: {
+      sponsor_type: 'organization',
+      sponsor_role: 'awc_sponsor',
+      sponsit_contact_id: '10',
+      sponsit_logo_id: '117280',
+      website: '',
+      contacts: []
+    }
+  };
+  const plan = planRondoSponsorSync([source], [], [sponsor]);
+  const item = [...plan.sponsors.updates, ...plan.sponsors.unchanged][0];
+  assert.equal(item.logoNeedsImport, false);
+});
+
+test('an existing manual logo is not overwritten by Sponsit', () => {
+  const source = record();
+  source.contact.logo = { id: 117280, filename: 'Example logo.jpg' };
+  const sponsor = {
+    id: 84,
+    title: 'Example BV',
+    status: 'publish',
+    logo_attachment_id: 99,
+    fields: {
+      sponsor_type: 'organization',
+      sponsor_role: 'awc_sponsor',
+      sponsit_contact_id: '10',
+      website: '',
+      contacts: []
+    }
+  };
+  const plan = planRondoSponsorSync([source], [], [sponsor]);
+  const item = [...plan.sponsors.updates, ...plan.sponsors.unchanged][0];
+  assert.equal(item.logoNeedsImport, false);
+});
+
 test('archiving a company never clears or deletes its people', async () => {
   const plan = planRondoSponsorSync([], [], [{ id: 42, status: 'publish', fields: { sponsit_contact_id: '99' } }]);
   const requests = [];

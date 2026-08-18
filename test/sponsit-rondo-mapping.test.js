@@ -15,6 +15,8 @@ function baseRecord() {
       type: 'company',
       name: 'Example BV',
       email1: 'office@example.test',
+      website: 'www.example.test',
+      logo: { id: 117280, filename: 'Example logo.jpg' },
       status: { code: 'sponsor', name: 'Sponsor' },
       tags: [{ id: 1, name: 'BCAWC' }],
       customfields: {}
@@ -47,6 +49,12 @@ test('maps one Sponsit contact to a company plus a real contact relation', () =>
   assert.equal(company.fields.sponsor_type, 'organization');
   assert.equal(company.fields.sponsor_role, 'businessclub');
   assert.equal(company.fields.sponsit_contact_id, '400');
+  assert.equal(company.fields.website, 'https://www.example.test/');
+  assert.deepEqual(company.logo, {
+    sourceId: '117280',
+    filename: 'Example logo.jpg',
+    relativeUrl: '/uploads/117280/preview/Example%20logo.jpg'
+  });
   assert.equal(company.fields.address_street_name, 'Dorpsstraat');
   assert.equal(company.fields.address_house_number, '12');
   assert.equal(company.fields.address_house_number_addition, 'A');
@@ -100,4 +108,10 @@ test('business club custom field also selects the businessclub pass', () => {
 test('splitStreetAddress preserves unstructured addresses safely', () => {
   assert.deepEqual(splitStreetAddress('Postbus 12'), { streetName: 'Postbus', houseNumber: '12', addition: '' });
   assert.deepEqual(splitStreetAddress('Sportpark De Wijchert'), { streetName: 'Sportpark De Wijchert', houseNumber: '', addition: '' });
+});
+
+test('invalid or unsafe sponsor websites are not imported', () => {
+  const record = baseRecord();
+  record.contact.website = 'javascript:alert(1)';
+  assert.equal(buildRondoSponsorCompanyCandidate(record).fields.website, '');
 });

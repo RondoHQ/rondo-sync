@@ -3,7 +3,8 @@ require('dotenv/config');
 
 const { openDb, getContactRecords } = require('../lib/sponsit-db');
 const { buildSponsorPayload, sponsorPayloadMatches, planRondoSponsorSync } = require('../lib/sponsit-rondo-sync');
-const { rondoClubRequestWithRetry } = require('../lib/rondo-club-client');
+const { rondoClubRequestWithRetry, rondoClubMultipartRequest } = require('../lib/rondo-club-client');
+const { SponsitSession } = require('../lib/sponsit-session');
 
 async function fetchRondoPeople(options = {}) {
   await rondoClubRequestWithRetry('wp/v2/users/me?_fields=id', 'GET', null, options);
@@ -51,10 +52,13 @@ async function applyPlan(plan, options = {}) {
     companiesCreated: 0,
     companiesUpdated: 0,
     companiesArchived: 0,
+    logosImported: 0,
     relationsWritten: 0,
     errors: []
   };
   const request = options.request || rondoClubRequestWithRetry;
+  const downloadLogo = options.downloadSponsorLogo;
+  const uploadLogo = options.uploadSponsorLogo || uploadSponsorLogo;
   const createdIds = new Map();
   const sponsorIds = new Map();
   const updatedSponsorIds = new Set();
@@ -83,6 +87,20 @@ async function applyPlan(plan, options = {}) {
       }
     } catch (error) {
       result.errors.push(buildApplyError(error, { sourceKey: item.company.sourceKey, action: existing ? 'update_sponsor' : 'create_sponsor' }));
+    }
+  }
+
+  for (const item of companyWork) {
+    if (!item.logoNeedsImport || !item.company.logo) continue;
+    const sponsorId = sponsorIds.get(item.company.sourceKey);
+    if (!sponsorId) continue;
+    try {
+      if (typeof downloadLogo !== 'function') throw new Error('No Sponsit logo downloader configured');
+      const file = await downloadLogo(item.company.logo);
+      await uploadLogo(sponsorId, item.company.logo, file, options);
+      result.logosImported += 1;
+    } catch (error) {
+      result.errors.push(buildApplyError(error, { sourceKey: item.company.sourceKey, action: 'import_sponsor_logo' }));
     }
   }
 
@@ -156,6 +174,20 @@ async function applyPlan(plan, options = {}) {
   return result;
 }
 
+function uploadSponsorLogo(sponsorId, logo, file, options = {}) {
+  return rondoClubMultipartRequest(
+    `rondo/v1/sponsors/${sponsorId}/logo/upload`,
+    {
+      fieldName: 'logo',
+      buffer: file.buffer,
+      filename: logo.filename,
+      contentType: file.contentType
+    },
+    { sponsit_logo_id: logo.sourceId },
+    options
+  );
+}
+
 function buildContactCreatePayload(candidate, relation) {
   const fields = candidate.fields || {};
   return {
@@ -192,6 +224,7 @@ function buildApplyError(error, context) {
 
 function summarizePlan(plan, existingPeople, existingSponsors) {
   const quarantined = [...plan.people.quarantined, ...plan.sponsors.quarantined];
+  const sponsorWork = [...plan.sponsors.creates, ...plan.sponsors.updates, ...plan.sponsors.unchanged];
   return {
     companies: plan.companies.length,
     organizationSponsors: plan.companies.filter((company) => company.fields.sponsor_type === 'organization').length,
@@ -207,6 +240,8 @@ function summarizePlan(plan, existingPeople, existingSponsors) {
     companiesUpdate: plan.sponsors.updates.length,
     companiesUnchanged: plan.sponsors.unchanged.length,
     companiesArchive: plan.sponsors.archives.length,
+    logosAvailable: plan.companies.filter((company) => Boolean(company.logo)).length,
+    logosImport: sponsorWork.filter((item) => item.logoNeedsImport).length,
     relationWritesBlocked: [...plan.sponsors.creates, ...plan.sponsors.updates, ...plan.sponsors.unchanged]
       .filter((item) => item.relationsBlocked).length,
     quarantined: quarantined.length,
@@ -219,6 +254,7 @@ function summarizePlan(plan, existingPeople, existingSponsors) {
 
 async function runSponsitRondoSync(options = {}) {
   const db = openDb();
+  let sponsitSession = null;
   try {
     const records = getContactRecords(db, { activeOnly: true });
     const [people, sponsors] = await Promise.all([
@@ -229,15 +265,23 @@ async function runSponsitRondoSync(options = {}) {
     const summary = summarizePlan(plan, people, sponsors);
     console.log(JSON.stringify(summary, null, 2));
     if (!options.apply) return { success: true, dryRun: true, summary };
-    const applied = await applyPlan(plan, options);
+    if (summary.logosImport > 0 && typeof options.downloadSponsorLogo !== 'function') {
+      sponsitSession = new SponsitSession({ logger: options.logger, verbose: options.verbose });
+    }
+    const applied = await applyPlan(plan, {
+      ...options,
+      downloadSponsorLogo: options.downloadSponsorLogo
+        || ((logo) => sponsitSession.requestFile(logo.relativeUrl))
+    });
     console.log(JSON.stringify({ applied }, null, 2));
     return { success: applied.errors.length === 0, dryRun: false, summary, applied };
   } finally {
+    if (sponsitSession) await sponsitSession.close();
     db.close();
   }
 }
 
-module.exports = { fetchRondoPeople, fetchRondoSponsors, applyPlan, summarizePlan, runSponsitRondoSync };
+module.exports = { fetchRondoPeople, fetchRondoSponsors, applyPlan, summarizePlan, uploadSponsorLogo, runSponsitRondoSync };
 
 if (require.main === module) {
   runSponsitRondoSync({
