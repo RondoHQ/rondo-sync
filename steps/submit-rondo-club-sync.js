@@ -6,6 +6,7 @@ const { runPrepare: runPrepareParents } = require('./prepare-rondo-club-parents'
 const {
   openDb,
   upsertMembers,
+  adoptParentMappingsForMembers,
   getMembersNeedingSync,
   updateSyncState,
   deleteMember,
@@ -811,7 +812,7 @@ async function getParentsWithStaleRelationships(db, knvbIdToRondoClubId, options
  * @returns {Promise<Object>} - Parent sync result
  */
 async function syncParents(db, knvbIdToRondoClubId, options = {}) {
-  const { logger, verbose = false, force = false } = options;
+  const { logger, verbose = false, force = false, preparedParents = null } = options;
   const logVerbose = logger?.verbose.bind(logger) || (verbose ? console.log : () => {});
 
   const result = {
@@ -825,7 +826,9 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
   };
 
   // Prepare parents from Sportlink
-  const prepared = await runPrepareParents({ logger, verbose });
+  const prepared = Array.isArray(preparedParents)
+    ? { success: true, parents: preparedParents }
+    : await runPrepareParents({ logger, verbose });
   if (!prepared.success) {
     result.errors.push({ message: prepared.error });
     return result;
@@ -999,6 +1002,8 @@ async function runSync(options = {}) {
   try {
     const db = openDb();
     try {
+      let preparedParentsForRun = null;
+
       // Members sync
       if (includeMembers) {
         // Step 1: Prepare members from Sportlink
@@ -1015,9 +1020,39 @@ async function runSync(options = {}) {
         // Step 2: Upsert to tracking database
         upsertMembers(db, members);
 
+        // Refresh parent identities from the same Sportlink snapshot before
+        // resolving transitions. This keeps the child guard current when a
+        // newly added child shares a family email and name with their parent.
+        const parentPreparation = await runPrepareParents({ logger, verbose });
+        if (!parentPreparation.success) {
+          result.success = false;
+          result.errors.push({ message: parentPreparation.error || 'Parent preparation failed' });
+          return result;
+        }
+        preparedParentsForRun = parentPreparation.parents;
+        upsertParents(db, preparedParentsForRun);
+
+        // A standalone parent can later receive their own Sportlink membership.
+        // Reuse that Rondo post before syncPerson would create a duplicate.
+        const transitions = adoptParentMappingsForMembers(db, members.map(member => member.knvb_id));
+        for (const transition of transitions.adopted) {
+          logVerbose(
+            `Reusing parent person ${transition.rondo_club_id} for new member ${transition.knvb_id}`
+          );
+        }
+        for (const transition of transitions.ambiguous) {
+          result.errors.push({
+            knvb_id: transition.knvb_id,
+            email: transition.email,
+            message: 'Ambiguous parent-to-member transition; member creation was blocked'
+          });
+        }
+
         // Step 3: Get members needing sync (hash changed or force)
         // This now includes rondo_club_id from database for each member
-        const needsSync = getMembersNeedingSync(db, force);
+        const ambiguousKnvbIds = new Set(transitions.ambiguous.map(transition => transition.knvb_id));
+        const needsSync = getMembersNeedingSync(db, force)
+          .filter(member => !ambiguousKnvbIds.has(member.knvb_id));
         result.skipped = result.total - needsSync.length;
 
         logVerbose(`${needsSync.length} members need sync (${result.skipped} unchanged)`);
@@ -1077,7 +1112,10 @@ async function runSync(options = {}) {
         });
 
         logVerbose('Starting parent sync...');
-        const parentResult = await syncParents(db, knvbIdToRondoClubId, options);
+        const parentResult = await syncParents(db, knvbIdToRondoClubId, {
+          ...options,
+          preparedParents: preparedParentsForRun
+        });
         result.parents = parentResult;
       }
 

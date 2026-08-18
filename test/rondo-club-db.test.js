@@ -4,7 +4,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 
-const { getMembersNeedingSync, initDb } = require('../lib/rondo-club-db');
+const {
+  adoptParentMappingsForMembers,
+  getMembersNeedingSync,
+  initDb
+} = require('../lib/rondo-club-db');
 
 // Build a minimal rondo_club_members table — just the columns the query reads.
 // We don't run the full schema migration here because it includes 50+ columns
@@ -30,6 +34,142 @@ function insert(db, row) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(row.knvb_id, row.rondo_club_id, row.email, row.data_json, row.source_hash, row.last_synced_hash);
 }
+
+function makeTransitionDb() {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE rondo_club_members (
+      knvb_id TEXT NOT NULL UNIQUE,
+      rondo_club_id INTEGER,
+      email TEXT,
+      data_json TEXT NOT NULL
+    );
+    CREATE TABLE rondo_club_parents (
+      email TEXT NOT NULL UNIQUE,
+      rondo_club_id INTEGER,
+      data_json TEXT NOT NULL
+    );
+  `);
+  return db;
+}
+
+function insertTransitionMember(db, { knvbId, rondoClubId = null, email, firstName, lastName = '' }) {
+  db.prepare(`
+    INSERT INTO rondo_club_members (knvb_id, rondo_club_id, email, data_json)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    knvbId,
+    rondoClubId,
+    email,
+    JSON.stringify({ fields: { first_name: firstName, last_name: lastName } })
+  );
+}
+
+function insertTransitionParent(db, { email, rondoClubId, firstName, lastName = '', childKnvbIds = [] }) {
+  db.prepare(`
+    INSERT INTO rondo_club_parents (email, rondo_club_id, data_json)
+    VALUES (?, ?, ?)
+  `).run(
+    email,
+    rondoClubId,
+    JSON.stringify({
+      data: { fields: { first_name: firstName, last_name: lastName } },
+      childKnvbIds
+    })
+  );
+}
+
+test('adopts an existing standalone parent post when that parent becomes a member', () => {
+  const db = makeTransitionDb();
+  insertTransitionMember(db, {
+    knvbId: 'SZGN36W',
+    rondoClubId: 769,
+    email: 'linda.atema88@example.test',
+    firstName: 'Job',
+    lastName: 'Atema'
+  });
+  insertTransitionMember(db, {
+    knvbId: 'NEW-LINDA',
+    email: 'linda.atema88@example.test',
+    firstName: 'Linda',
+    lastName: 'Atema'
+  });
+  insertTransitionParent(db, {
+    email: 'linda.atema88@example.test',
+    rondoClubId: 1232,
+    firstName: 'Linda Atema',
+    childKnvbIds: ['SZGN36W']
+  });
+
+  const result = adoptParentMappingsForMembers(db, ['NEW-LINDA']);
+
+  assert.deepEqual(result, {
+    adopted: [{
+      knvb_id: 'NEW-LINDA',
+      email: 'linda.atema88@example.test',
+      rondo_club_id: 1232
+    }],
+    ambiguous: []
+  });
+  assert.equal(
+    db.prepare('SELECT rondo_club_id FROM rondo_club_members WHERE knvb_id = ?').get('NEW-LINDA').rondo_club_id,
+    1232
+  );
+  db.close();
+});
+
+test('does not adopt a parent post for a known child sharing the family email', () => {
+  const db = makeTransitionDb();
+  insertTransitionMember(db, {
+    knvbId: 'CHILD1',
+    email: 'family@example.test',
+    firstName: 'Alex',
+    lastName: 'Jansen'
+  });
+  insertTransitionParent(db, {
+    email: 'family@example.test',
+    rondoClubId: 9001,
+    firstName: 'Alex Jansen',
+    childKnvbIds: ['CHILD1']
+  });
+
+  const result = adoptParentMappingsForMembers(db, ['CHILD1']);
+
+  assert.deepEqual(result, { adopted: [], ambiguous: [] });
+  assert.equal(
+    db.prepare('SELECT rondo_club_id FROM rondo_club_members WHERE knvb_id = ?').get('CHILD1').rondo_club_id,
+    null
+  );
+  db.close();
+});
+
+test('does not adopt one parent post for two indistinguishable new members', () => {
+  const db = makeTransitionDb();
+  for (const knvbId of ['NEW1', 'NEW2']) {
+    insertTransitionMember(db, {
+      knvbId,
+      email: 'same@example.test',
+      firstName: 'Sam',
+      lastName: 'Jansen'
+    });
+  }
+  insertTransitionParent(db, {
+    email: 'same@example.test',
+    rondoClubId: 9001,
+    firstName: 'Sam Jansen',
+    childKnvbIds: ['OTHER-CHILD']
+  });
+
+  const result = adoptParentMappingsForMembers(db, ['NEW1', 'NEW2']);
+
+  assert.equal(result.adopted.length, 0);
+  assert.equal(result.ambiguous.length, 2);
+  assert.deepEqual(
+    db.prepare('SELECT rondo_club_id FROM rondo_club_members ORDER BY knvb_id').all(),
+    [{ rondo_club_id: null }, { rondo_club_id: null }]
+  );
+  db.close();
+});
 
 // Regression: on 2026-05-28 the People sync wasted 2h12m and produced 1,477
 // rest_invalid_type errors because getMembersNeedingSync returned every former

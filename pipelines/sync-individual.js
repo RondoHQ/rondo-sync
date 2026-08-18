@@ -9,6 +9,7 @@ const {
   getMemberInvoiceDataByKnvbId,
   getFreeFieldMappings,
   upsertMembers,
+  adoptParentMappingsForMembers,
   upsertParents,
   getParentsNeedingSync,
   updateSyncState,
@@ -419,6 +420,24 @@ async function syncIndividual(knvbId, options = {}) {
 
     // Upsert to tracking database to get current state
     upsertMembers(rondoClubDb, [prepared]);
+    const parentPreparation = await runPrepareParents({
+      verbose,
+      memberOverrides: freshMemberData ? [freshMemberData] : []
+    });
+    if (!parentPreparation.success) {
+      console.error('Could not refresh parent identities before member sync');
+      return { success: false, error: parentPreparation.error || 'Parent preparation failed' };
+    }
+    upsertParents(rondoClubDb, parentPreparation.parents);
+
+    const transitions = adoptParentMappingsForMembers(rondoClubDb, [prepared.knvb_id]);
+    for (const transition of transitions.adopted) {
+      log(`Reusing parent person ${transition.rondo_club_id} for this new member`);
+    }
+    if (transitions.ambiguous.length > 0) {
+      console.error('Parent-to-member match was ambiguous; member creation was blocked');
+      return { success: false, error: 'Ambiguous parent-to-member transition' };
+    }
 
     // Get rondo_club_id from database
     const stmt = rondoClubDb.prepare('SELECT rondo_club_id FROM rondo_club_members WHERE knvb_id = ?');
