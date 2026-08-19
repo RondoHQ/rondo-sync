@@ -14,6 +14,7 @@ const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync')
 const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runSync: runTeamSync } = require('../steps/submit-rondo-club-teams');
 const { runSync: runWorkHistorySync } = require('../steps/submit-rondo-club-work-history');
+const { runSync: runPlayerHistorySync } = require('../steps/submit-rondo-club-player-history');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
 const { runPhotoSync } = require('../steps/upload-photos-to-rondo-club');
 const { runFunctionsDownload } = require('../steps/download-functions-from-sportlink');
@@ -127,6 +128,24 @@ function printSummary(logger, stats) {
     }
   } else {
     logger.log('Work history synced: 0 changes');
+  }
+  logger.log('');
+
+  logger.log('PLAYER HISTORY DETAIL SYNC');
+  logger.log(minorDivider);
+  logger.log(`Sportlink details fetched: ${stats.playerHistory.downloaded}/${stats.playerHistory.total}`);
+  logger.log(`Members updated: ${stats.playerHistory.synced}`);
+  if (stats.playerHistory.created > 0) {
+    logger.log(`  Work history rows created: ${stats.playerHistory.created}`);
+  }
+  if (stats.playerHistory.reconciled > 0) {
+    logger.log(`  Work history rows reconciled: ${stats.playerHistory.reconciled}`);
+  }
+  if (stats.playerHistory.skippedUnchanged > 0) {
+    logger.log(`  Skipped: ${stats.playerHistory.skippedUnchanged} (team data unchanged)`);
+  }
+  if (stats.playerHistory.skippedQuarantined > 0) {
+    logger.log(`  Skipped: ${stats.playerHistory.skippedQuarantined} (quarantined)`);
   }
   logger.log('');
 
@@ -267,6 +286,7 @@ function printSummary(logger, stats) {
     ...stats.rondoClub.errors,
     ...stats.teams.errors,
     ...stats.workHistory.errors,
+    ...stats.playerHistory.errors,
     ...stats.functions.errors,
     ...stats.commissies.errors,
     ...stats.commissieWorkHistory.errors,
@@ -374,6 +394,18 @@ async function runSyncAll(options = {}) {
       created: 0,
       ended: 0,
       skipped: 0,
+      errors: []
+    },
+    playerHistory: {
+      total: 0,
+      downloaded: 0,
+      synced: 0,
+      created: 0,
+      reconciled: 0,
+      textFallback: 0,
+      skippedDuplicate: 0,
+      skippedUnchanged: 0,
+      skippedQuarantined: 0,
       errors: []
     },
     functions: {
@@ -664,7 +696,42 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 4d: Functions Download from Sportlink (NON-CRITICAL, uses shared session)
+    // Step 4d: Enrich work history with RelationStart/RelationEnd from member details.
+    // The fast team-roster endpoint does not include these dates.
+    logger.verbose('Syncing dated player history to Rondo Club...');
+    try {
+      const playerHistoryPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
+      const playerHistoryResult = await runPlayerHistorySync({
+        logger,
+        verbose,
+        force,
+        page: playerHistoryPage
+      });
+      stats.playerHistory = {
+        total: playerHistoryResult.total,
+        downloaded: playerHistoryResult.downloaded,
+        synced: playerHistoryResult.synced,
+        created: playerHistoryResult.created,
+        reconciled: playerHistoryResult.reconciled,
+        textFallback: playerHistoryResult.textFallback,
+        skippedDuplicate: playerHistoryResult.skippedDuplicate,
+        skippedUnchanged: playerHistoryResult.skippedUnchanged,
+        skippedQuarantined: playerHistoryResult.skippedQuarantined,
+        errors: (playerHistoryResult.errors || []).map(error => ({
+          knvb_id: error.knvb_id,
+          message: error.message,
+          system: 'player-history-sync'
+        }))
+      };
+    } catch (err) {
+      logger.error(`Player history detail sync failed: ${err.message}`);
+      stats.playerHistory.errors.push({
+        message: `Player history detail sync failed: ${err.message}`,
+        system: 'player-history-sync'
+      });
+    }
+
+    // Step 4e: Functions Download from Sportlink (NON-CRITICAL, uses shared session)
     logger.verbose('Downloading functions from Sportlink...');
     try {
       const functionsPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
@@ -688,7 +755,7 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 4e: Commissie Sync (NON-CRITICAL)
+    // Step 4f: Commissie Sync (NON-CRITICAL)
     logger.verbose('Syncing commissies to Rondo Club...');
     try {
       const commissieResult = await runCommissieSync({ logger, verbose, force });
@@ -713,7 +780,7 @@ async function runSyncAll(options = {}) {
       });
     }
 
-    // Step 4f: Commissie Work History Sync (NON-CRITICAL)
+    // Step 4g: Commissie Work History Sync (NON-CRITICAL)
     logger.verbose('Syncing commissie work history to Rondo Club...');
     try {
       const commissieWorkHistoryResult = await runCommissieWorkHistorySync({ logger, verbose, force });
@@ -911,6 +978,7 @@ async function runSyncAll(options = {}) {
       stats.rondoClub.errors,
       stats.teams.errors,
       stats.workHistory.errors,
+      stats.playerHistory.errors,
       stats.functions.errors,
       stats.commissies.errors,
       stats.commissieWorkHistory.errors,

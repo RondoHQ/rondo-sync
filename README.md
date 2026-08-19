@@ -45,7 +45,7 @@ graph LR
 | Functions | 4x daily + weekly full | Commissies, free fields, work history → Rondo Club |
 | Nikki | Daily | Financial contributions → Rondo Club |
 | FreeScout | Daily | Members → FreeScout helpdesk customers |
-| Teams | Weekly | Team rosters + work history → Rondo Club |
+| Teams | Weekly | Team rosters + work history with Sportlink relation dates → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
 ### Daily Timeline
@@ -82,7 +82,7 @@ scripts/sync.sh functions        # Commissies + free fields (recent)
 scripts/sync.sh functions --all  # Full commissie sync (all members)
 scripts/sync.sh nikki            # Nikki contributions
 scripts/sync.sh freescout        # FreeScout customers
-scripts/sync.sh teams            # Team rosters
+scripts/sync.sh teams            # Team rosters + dated work history
 scripts/sync.sh discipline       # Discipline cases
 scripts/sync.sh all              # Everything
 ```

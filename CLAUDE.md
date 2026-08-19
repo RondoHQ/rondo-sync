@@ -304,6 +304,8 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 **Team work-history indexes are hints, not identities.** The `work_history` native field repeater is shared by team, player-history, and commissie syncs, so another pipeline can insert rows and shift every later array index. Team cleanup must verify `rondo_club_work_history_id` against the expected Rondo team ID and fall back to finding the current row by team ID. Player-history must reconcile a newly ended Sportlink relation with an existing current row; an append-only merge recreates the stale-role bug by adding an ended duplicate while leaving the old row current. Disappearance-only team changes also need explicit set comparison because they create no new source row/hash mismatch.
 
+**Run player-history immediately after team work-history.** Sportlink's fast team-roster response contains the member, team, and role but not `RelationStart` or `RelationEnd`. The member-details memberships response contains those dates. Both the `teams` and `all` pipelines must therefore run `submit-rondo-club-player-history.js` directly after the quick work-history step. Signature skipping keeps this detail pass limited to changed team memberships; the monthly standalone run remains a safety net.
+
 ## Documentation Maintenance
 
 After functional changes, update:

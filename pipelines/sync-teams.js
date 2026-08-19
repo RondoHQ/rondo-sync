@@ -7,6 +7,7 @@ const { runPipelineCli } = require('../lib/pipeline-cli');
 const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
 const { runSync: runTeamSync } = require('../steps/submit-rondo-club-teams');
 const { runSync: runWorkHistorySync } = require('../steps/submit-rondo-club-work-history');
+const { runSync: runPlayerHistorySync } = require('../steps/submit-rondo-club-player-history');
 
 /**
  * Print summary report for team sync
@@ -66,10 +67,29 @@ function printSummary(logger, stats) {
   }
   logger.log('');
 
+  logger.log('PLAYER HISTORY DETAIL SYNC');
+  logger.log(minorDivider);
+  logger.log(`Sportlink details fetched: ${stats.playerHistory.downloaded}/${stats.playerHistory.total}`);
+  logger.log(`Members updated: ${stats.playerHistory.synced}`);
+  if (stats.playerHistory.created > 0) {
+    logger.log(`  Work history rows created: ${stats.playerHistory.created}`);
+  }
+  if (stats.playerHistory.reconciled > 0) {
+    logger.log(`  Work history rows reconciled: ${stats.playerHistory.reconciled}`);
+  }
+  if (stats.playerHistory.skippedUnchanged > 0) {
+    logger.log(`  Skipped: ${stats.playerHistory.skippedUnchanged} (team data unchanged)`);
+  }
+  if (stats.playerHistory.skippedQuarantined > 0) {
+    logger.log(`  Skipped: ${stats.playerHistory.skippedQuarantined} (quarantined)`);
+  }
+  logger.log('');
+
   const allErrors = [
     ...stats.download.errors,
     ...stats.teams.errors,
-    ...stats.workHistory.errors
+    ...stats.workHistory.errors,
+    ...stats.playerHistory.errors
   ];
   if (allErrors.length > 0) {
     logger.log(`ERRORS (${allErrors.length})`);
@@ -89,7 +109,7 @@ function printSummary(logger, stats) {
  * Run team sync pipeline (weekly)
  * - Download teams from Sportlink (with player/staff roles)
  * - Sync teams to Rondo Club
- * - Sync work history
+ * - Sync work history, then enrich it with Sportlink relation dates
  *
  * Uses cached member data from last people sync (hourly download)
  */
@@ -124,6 +144,18 @@ async function runTeamsSync(options = {}) {
       created: 0,
       ended: 0,
       skipped: 0,
+      errors: []
+    },
+    playerHistory: {
+      total: 0,
+      downloaded: 0,
+      synced: 0,
+      created: 0,
+      reconciled: 0,
+      textFallback: 0,
+      skippedDuplicate: 0,
+      skippedUnchanged: 0,
+      skippedQuarantined: 0,
       errors: []
     }
   };
@@ -251,11 +283,56 @@ async function runTeamsSync(options = {}) {
       });
     }
 
+    // Step 4: Enrich work history with RelationStart/RelationEnd from member details.
+    // The fast team-roster endpoint does not include these dates.
+    logger.verbose('Syncing dated player history to Rondo Club...');
+    const playerHistoryStepId = tracker.startStep('player-history-sync');
+    try {
+      const playerHistoryResult = await runPlayerHistorySync({ logger, verbose, force });
+      stats.playerHistory = {
+        total: playerHistoryResult.total,
+        downloaded: playerHistoryResult.downloaded,
+        synced: playerHistoryResult.synced,
+        created: playerHistoryResult.created,
+        reconciled: playerHistoryResult.reconciled,
+        textFallback: playerHistoryResult.textFallback,
+        skippedDuplicate: playerHistoryResult.skippedDuplicate,
+        skippedUnchanged: playerHistoryResult.skippedUnchanged,
+        skippedQuarantined: playerHistoryResult.skippedQuarantined,
+        errors: (playerHistoryResult.errors || []).map(error => ({
+          knvb_id: error.knvb_id,
+          message: error.message,
+          system: 'player-history-sync'
+        }))
+      };
+      tracker.endStep(playerHistoryStepId, {
+        outcome: stats.playerHistory.errors.length === 0 ? 'success' : 'partial',
+        created: stats.playerHistory.created,
+        updated: stats.playerHistory.reconciled,
+        skipped: stats.playerHistory.skippedUnchanged + stats.playerHistory.skippedQuarantined,
+        failed: stats.playerHistory.errors.length
+      });
+      tracker.recordErrors('player-history-sync', playerHistoryStepId, stats.playerHistory.errors);
+    } catch (err) {
+      logger.error(`Player history detail sync failed: ${err.message}`);
+      stats.playerHistory.errors.push({
+        message: `Player history detail sync failed: ${err.message}`,
+        system: 'player-history-sync'
+      });
+      tracker.endStep(playerHistoryStepId, { outcome: 'failure' });
+      tracker.recordError({
+        stepName: 'player-history-sync',
+        stepId: playerHistoryStepId,
+        errorMessage: err.message,
+        errorStack: err.stack
+      });
+    }
+
     // Complete
     stats.completedAt = formatTimestamp();
     stats.duration = formatDuration(Date.now() - startTime);
 
-    const totalErrors = stats.download.errors.length + stats.teams.errors.length + stats.workHistory.errors.length;
+    const totalErrors = stats.download.errors.length + stats.teams.errors.length + stats.workHistory.errors.length + stats.playerHistory.errors.length;
     const success = totalErrors === 0;
     const outcome = totalErrors === 0 ? 'success' : 'partial';
 
