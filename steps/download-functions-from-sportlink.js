@@ -722,6 +722,33 @@ function filterRecentlyUpdated(members, memberDataMap, days = 2) {
 }
 
 /**
+ * Select the quarter of tracked members assigned to the current Amsterdam
+ * schedule slot. The four daily functions runs therefore cover every active
+ * member once per day, even when Sportlink does not update LastUpdate after a
+ * function or committee assignment changes.
+ *
+ * @param {Array<{knvb_id: string}>} members - All active tracked members
+ * @param {Date} [now] - Current time (injectable for tests)
+ * @returns {Array<{knvb_id: string}>} Members for this run's coverage slot
+ */
+function selectDailyCoverageMembers(members, now = new Date()) {
+  const hour = Number.parseInt(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Amsterdam',
+    hour: '2-digit',
+    hour12: false
+  }).format(now), 10);
+
+  let slot = 3;
+  if (hour < 9) slot = 0;
+  else if (hour < 12) slot = 1;
+  else if (hour < 15) slot = 2;
+
+  return [...members]
+    .sort((a, b) => String(a.knvb_id).localeCompare(String(b.knvb_id)))
+    .filter((member, index) => index % 4 === slot);
+}
+
+/**
  * Main download orchestration
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance
@@ -800,8 +827,23 @@ async function runFunctionsDownload(options = {}) {
             }
           }
 
+          // Sportlink's member LastUpdate does not reliably change when a
+          // function or committee assignment changes. Add one deterministic
+          // quarter of all members per scheduled run so everyone is checked
+          // once each day without turning every run into a full sync.
+          const coverageMembers = selectDailyCoverageMembers(members);
+          let coverageAddedCount = 0;
+          for (const member of coverageMembers) {
+            if (!recentKnvbIds.has(member.knvb_id)) {
+              recentMembers.push(member);
+              recentKnvbIds.add(member.knvb_id);
+              coverageAddedCount++;
+            }
+          }
+
           members = recentMembers;
-          logger.log(`Processing ${members.length} of ${allMembersCount} members (${members.length - vogAddedCount} recent + ${vogAddedCount} VOG-filtered)`);
+          const recentCount = members.length - vogAddedCount - coverageAddedCount;
+          logger.log(`Processing ${members.length} of ${allMembersCount} members (${recentCount} recent + ${vogAddedCount} VOG-filtered + ${coverageAddedCount} daily coverage)`);
         } catch (err) {
           logger.verbose(`Error filtering members, processing all: ${err.message}`);
           logger.log(`Processing ${members.length} members (full sync)`);
@@ -1008,7 +1050,8 @@ module.exports = {
   parseFreeFieldsResponse,
   parseInvoiceAddressResponse,
   parseInvoiceInfoResponse,
-  filterRecentlyUpdated
+  filterRecentlyUpdated,
+  selectDailyCoverageMembers
 };
 
 // CLI entry point
