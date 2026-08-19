@@ -12,6 +12,7 @@ const {
   deleteMember,
   getMembersNotInList,
   getAllTrackedMembers,
+  getMemberOwnedPersonIds,
   upsertParents,
   getParentsNeedingSync,
   updateParentSyncState,
@@ -668,13 +669,18 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
 
 /**
  * Delete parents that no longer have children in Sportlink
+ *
+ * @returns {Promise<{deleted: Array, detached: Array, errors: Array}>}
  */
 async function deleteOrphanParents(db, currentParentEmails, options) {
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
+  const request = options.rondoClubRequest || rondoClubRequest;
   const deleted = [];
+  const detached = [];
   const errors = [];
 
   const toDelete = getParentsNotInList(db, currentParentEmails);
+  const memberOwnedPersonIds = getMemberOwnedPersonIds(db);
 
   for (const parent of toDelete) {
     if (!parent.rondo_club_id) {
@@ -682,9 +688,23 @@ async function deleteOrphanParents(db, currentParentEmails, options) {
       continue;
     }
 
+    // Parent tracking is secondary to member tracking. A stale parent row may
+		// point at a person owned by a current or former Sportlink member row.
+    // Remove only the stale parent mapping; never delete the member profile.
+    if (memberOwnedPersonIds.has(Number(parent.rondo_club_id))) {
+      logVerbose(`Detaching orphan parent ${parent.email}: person ${parent.rondo_club_id} is member-owned`);
+      deleteParent(db, parent.email);
+      detached.push({
+        email: parent.email,
+        rondo_club_id: parent.rondo_club_id,
+        reason: 'member_profile'
+      });
+      continue;
+    }
+
     logVerbose(`Deleting orphan parent: ${parent.email}`);
     try {
-      await rondoClubRequest(
+      await request(
         `wp/v2/people/${parent.rondo_club_id}`,
         'DELETE',
         null,
@@ -698,13 +718,25 @@ async function deleteOrphanParents(db, currentParentEmails, options) {
         logVerbose(`  Already deleted from WordPress (404)`);
         deleteParent(db, parent.email);
         deleted.push({ email: parent.email, rondo_club_id: parent.rondo_club_id });
+      } else if (error.details?.code === 'rondo_person_has_relationships') {
+        // Rondo deliberately protects linked people from deletion. Keep the
+        // person and their relationships, but stop retrying an obsolete parent
+        // mapping on every people sync. If the parent returns in Sportlink,
+        // email discovery will safely attach the existing person again.
+        logVerbose(`  Keeping linked person ${parent.rondo_club_id}; removing obsolete parent tracking for ${parent.email}`);
+        deleteParent(db, parent.email);
+        detached.push({
+          email: parent.email,
+          rondo_club_id: parent.rondo_club_id,
+          reason: 'linked_person'
+        });
       } else {
         errors.push({ email: parent.email, message: formatSyncError(error) });
       }
     }
   }
 
-  return { deleted, errors };
+  return { deleted, detached, errors };
 }
 
 /**
@@ -822,6 +854,7 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
     updated: 0,
     skipped: 0,
     deleted: 0,
+    detached: 0,
     errors: []
   };
 
@@ -908,6 +941,7 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
   const currentEmails = parents.map(p => p.email);
   const deleteResult = await deleteOrphanParents(db, currentEmails, options);
   result.deleted = deleteResult.deleted.length;
+  result.detached = deleteResult.detached.length;
   result.errors.push(...deleteResult.errors);
 
   return result;
@@ -1139,7 +1173,8 @@ module.exports = {
   syncParent,
   logFinancialBlockActivity,
   isTrackedParentKnownChild,
-  mergeParentChildRelationships
+  mergeParentChildRelationships,
+  deleteOrphanParents
 };
 
 // CLI entry point
@@ -1183,6 +1218,7 @@ if (require.main === module) {
         console.log(`  Updated: ${result.parents.updated}`);
         console.log(`  Skipped: ${result.parents.skipped}`);
         console.log(`  Deleted: ${result.parents.deleted}`);
+        console.log(`  Detached safely: ${result.parents.detached}`);
       }
       if (result.errors.length > 0) {
         console.error(`  Errors: ${result.errors.length}`);

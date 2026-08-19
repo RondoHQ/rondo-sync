@@ -99,6 +99,8 @@ pipelines/sync-people.js
    - Identified by email (no KNVB ID)
    - Linked to children via native field `relationships` field
    - Deduplicated across multiple children's parent fields
+   - Orphan tracking never deletes a person ID owned by a current or former member
+   - Linked orphan profiles are retained in Rondo while their obsolete sync-tracking row is detached; a later Sportlink reappearance reuses the existing profile by email
 
 **Output:** `{ total, synced, created, updated, skipped, errors, parents: { ... } }`
 
