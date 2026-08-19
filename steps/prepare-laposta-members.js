@@ -14,6 +14,10 @@ const { normalizeEmail, isValidEmail, buildChildFullName, hasValue } = require('
 const { openDb: openRondoClubDb, getVolunteerStatusMap } = require('../lib/rondo-club-db');
 const { readEnv, parseCliArgs } = require('../lib/utils');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const {
+  fetchVolunteerObligationMaps,
+  resolveLapostaObligationValue
+} = require('../lib/volunteer-obligation-sync');
 
 const DEFAULT_MAPPING = path.join(process.cwd(), 'config/field-mapping.json');
 const MAX_LISTS = 4;
@@ -408,7 +412,7 @@ function buildAggregationMaps(members, mapping) {
  * @param {Object} aggregationMaps - Maps from buildAggregationMaps
  * @returns {{listMembers: Array[], excludedCount: number}}
  */
-function processMembers(members, mapping, aggregationMaps, volunteerStatusMap) {
+function processMembers(members, mapping, aggregationMaps, volunteerStatusMap, volunteerObligationMaps) {
   const { parentNamesMap, parentTeamsMap, parentAgeClassMap, memberNameMap } = aggregationMaps;
 
   // Build set of primary emails
@@ -486,6 +490,15 @@ function processMembers(members, mapping, aggregationMaps, volunteerStatusMap) {
         isStandaloneParent
       });
 
+      const obligationValue = resolveLapostaObligationValue(volunteerObligationMaps, {
+        knvbId,
+        email: emailValue,
+        emailType: type
+      });
+      if (obligationValue !== undefined) {
+        newEntry.custom_fields.vrijwilligersplicht = obligationValue;
+      }
+
       const usedCount = emailAssignmentCount.get(normalized) || 0;
       if (usedCount >= MAX_LISTS) {
         excludedCount += 1;
@@ -552,7 +565,27 @@ async function runPrepare(options = {}) {
       logVerbose('Could not load volunteer status from Rondo Club DB, defaulting all to 0');
     }
 
-    const { listMembers, excludedCount } = processMembers(members, mapping, aggregationMaps, volunteerStatusMap);
+    // Load the current-season, derived volunteer obligation from Rondo Club.
+    // If this read fails, omit the field entirely so Laposta keeps its last known
+    // value instead of replacing it with an incorrect blank/default.
+    let volunteerObligationMaps = null;
+    try {
+      volunteerObligationMaps = await fetchVolunteerObligationMaps({ logger, verbose });
+      logVerbose(
+        `Loaded ${volunteerObligationMaps.unitCount} volunteer obligation units`
+        + (volunteerObligationMaps.season ? ` for ${volunteerObligationMaps.season}` : '')
+      );
+    } catch (e) {
+      logVerbose(`Could not load volunteer obligations from Rondo Club: ${e.message}`);
+    }
+
+    const { listMembers, excludedCount } = processMembers(
+      members,
+      mapping,
+      aggregationMaps,
+      volunteerStatusMap,
+      volunteerObligationMaps
+    );
 
     // Persist to database and calculate update counts
     const db = openDb();
