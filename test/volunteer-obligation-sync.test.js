@@ -33,7 +33,7 @@ test('buildPersonObligationValues refuses an old API response without exemption 
   );
 });
 
-test('recipient maps use blank for people outside the obligation target group', () => {
+test('recipient maps use -1 for people outside the obligation target group', () => {
   const personValues = new Map([['101', 2], ['202', -1]]);
   const maps = buildRecipientObligationMaps(
     personValues,
@@ -48,9 +48,9 @@ test('recipient maps use blank for people outside the obligation target group', 
   );
 
   assert.equal(maps.byKnvbId.get('A'), 2);
-  assert.equal(maps.byKnvbId.get('B'), '');
+  assert.equal(maps.byKnvbId.get('B'), -1);
   assert.equal(maps.byParentEmail.get('ouder@example.nl'), -1);
-  assert.equal(maps.byParentEmail.get('geenplicht@example.nl'), '');
+  assert.equal(maps.byParentEmail.get('geenplicht@example.nl'), -1);
 });
 
 test('parent relations prefer the parent value and fall back to the child value', () => {
@@ -69,6 +69,11 @@ test('parent relations prefer the parent value and fall back to the child value'
     email: 'onbekend@example.nl',
     emailType: 'parent2'
   }), 3);
+  assert.equal(resolveLapostaObligationValue(maps, {
+    knvbId: 'UNKNOWN',
+    email: 'onbekend@example.nl',
+    emailType: 'primary'
+  }), -1);
   assert.equal(resolveLapostaObligationValue(maps, {
     knvbId: 'CHILD',
     email: 'kind@example.nl',
