@@ -13,8 +13,8 @@ const { fetchRondoPeople, fetchRondoSponsors } = require('./sync-sponsit-to-rond
 const {
   buildSponsitLapostaPlan,
   validateLapostaFields,
-  getMemberCustomField,
-  lapostaMemberMatches
+  lapostaMemberMatches,
+  shouldUnsubscribeSponsitMember
 } = require('../lib/sponsit-laposta');
 
 function memberEmail(member) {
@@ -88,10 +88,7 @@ async function runSponsitLapostaSync(options = {}) {
         return lapostaMemberMatches(activeByEmail.get(member.email), member);
       }),
       skipOptOut: plan.members.filter((member) => blocked.has(member.email)),
-      unsubscribe: active.filter((member) => {
-        const email = memberEmail(member);
-        return getMemberCustomField(member, 'sponsitcontactid') && !desiredEmails.has(email);
-      })
+      unsubscribe: active.filter((member) => shouldUnsubscribeSponsitMember(member, desiredEmails))
     };
     Object.assign(summary, Object.fromEntries(Object.entries(actions).map(([key, value]) => [key, value.length])));
     console.log(JSON.stringify({ ...summary, configured: true, apply: Boolean(options.apply) }, null, 2));

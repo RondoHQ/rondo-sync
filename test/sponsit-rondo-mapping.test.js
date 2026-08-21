@@ -110,6 +110,20 @@ test('splitStreetAddress preserves unstructured addresses safely', () => {
   assert.deepEqual(splitStreetAddress('Sportpark De Wijchert'), { streetName: 'Sportpark De Wijchert', houseNumber: '', addition: '' });
 });
 
+test('contact values use the same email and phone normalization as Rondo', () => {
+  const source = baseRecord();
+  source.people[0].email1 = 'JAN@Example.Test';
+  source.people[0].email2 = 'SECOND@Example.Test';
+  source.people[0].telephone1 = '06-12 34 56 78';
+  source.people[0].telephone2 = '0032 (0) 12 34 56';
+  const person = buildRondoSponsorCompanyCandidate(source).people[0];
+
+  assert.equal(person.fields.email_1, 'jan@example.test');
+  assert.equal(person.fields.email_2, 'second@example.test');
+  assert.equal(person.fields.telephone_1, '+31612345678');
+  assert.equal(person.fields.telephone_2, '+320123456');
+});
+
 test('invalid or unsafe sponsor websites are not imported', () => {
   const record = baseRecord();
   record.contact.website = 'javascript:alert(1)';

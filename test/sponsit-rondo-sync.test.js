@@ -75,6 +75,38 @@ test('same person identity across sponsors resolves to one person', () => {
   const plan = planRondoSponsorSync([record(), second], [], []);
   assert.equal(plan.people.creates.length, 1);
   assert.equal(plan.people.creates[0].aliases.length, 2);
+  const relations = plan.companies.flatMap((company) => company.people.map((person) => person.relation));
+  assert.equal(relations.filter((relation) => relation.is_primary_pass).length, 1);
+});
+
+test('WordPress title entity encoding does not trigger a sponsor update', () => {
+  const source = record({
+    contact: { id: 10, type: 'company', name: "Example & Partner's", status: { code: 'sponsor' } }
+  });
+  const person = { id: 7, fields: { person_type: 'contact', first_name: 'Jan', last_name: 'Jansen', email_1: 'jan@example.test' } };
+  const sponsor = {
+    id: 70,
+    title: 'Example &#038; Partner&#8217;s',
+    status: 'publish',
+    fields: {
+      sponsor_type: 'organization',
+      sponsor_role: 'awc_sponsor',
+      sponsit_contact_id: '10',
+      website: '',
+      contacts: [{
+        person_id: 7,
+        contact_role: 'Contactpersoon',
+        is_primary: true,
+        receives_pass: true,
+        is_primary_pass: true,
+        sponsit_person_id: '20'
+      }]
+    }
+  };
+
+  const plan = planRondoSponsorSync([source], [person], [sponsor]);
+  assert.equal(plan.sponsors.updates.length, 0);
+  assert.equal(plan.sponsors.unchanged.length, 1);
 });
 
 test('only Sponsit-owned missing companies are archived', () => {

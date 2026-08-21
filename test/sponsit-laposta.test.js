@@ -5,6 +5,7 @@ const {
   buildSponsitLapostaPlan,
   isValidLapostaEmail,
   lapostaMemberMatches,
+  shouldUnsubscribeSponsitMember,
   validateLapostaFields
 } = require('../lib/sponsit-laposta');
 
@@ -86,4 +87,24 @@ test('deduplicates one person registered under multiple sponsors', () => {
 test('requires the complete dedicated Laposta schema', () => {
   const fields = SPONSIT_LAPOSTA_FIELDS.slice(0, -1).map((custom_name) => ({ custom_name }));
   assert.deepEqual(validateLapostaFields(fields), ['islid']);
+});
+
+test('only stale person-backed rows are automatically unsubscribed', () => {
+  const desiredEmails = new Set(['current@example.test']);
+  const legacyCompany = {
+    email: 'company@example.test',
+    custom_fields: { sponsitcontactid: '10', sponsitpersoonid: '' }
+  };
+  const formerPerson = {
+    email: 'former@example.test',
+    custom_fields: { sponsitcontactid: '10', sponsitpersoonid: '20' }
+  };
+  const currentPerson = {
+    email: 'current@example.test',
+    custom_fields: { sponsitcontactid: '10', sponsitpersoonid: '21' }
+  };
+
+  assert.equal(shouldUnsubscribeSponsitMember(legacyCompany, desiredEmails), false);
+  assert.equal(shouldUnsubscribeSponsitMember(formerPerson, desiredEmails), true);
+  assert.equal(shouldUnsubscribeSponsitMember(currentPerson, desiredEmails), false);
 });
