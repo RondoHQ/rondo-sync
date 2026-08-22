@@ -38,7 +38,7 @@ async function runDownloadInactive(options = {}) {
       const memberSearchPageUrl = 'https://club.sportlink.com/member/search';
       logDebug('Navigating to member search page:', memberSearchPageUrl);
       await page.goto(memberSearchPageUrl, { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
       const waitSeconds = Math.floor(Math.random() * 4) + 1; // Random between 1-5 seconds
       logDebug(`Waiting ${waitSeconds} seconds before clicking search button...`);
@@ -46,6 +46,7 @@ async function runDownloadInactive(options = {}) {
 
       logVerbose('Toggling status filter to INACTIVE members...');
 
+      await page.waitForSelector('#btnShowMore:not([disabled])', { timeout: 20000 });
       await page.click('#btnShowMore');
       await page.waitForSelector('#chipStatusACTIVE', { timeout: 20000 });
       await page.click('#chipStatusACTIVE');

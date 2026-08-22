@@ -7,6 +7,9 @@ const Database = require('better-sqlite3');
 const {
   adoptParentMappingsForMembers,
   getMembersNeedingSync,
+  getTrackedDeathStates,
+  updateTrackedDeathState,
+  upsertMembers,
   initDb
 } = require('../lib/rondo-club-db');
 
@@ -78,6 +81,30 @@ function insertTransitionParent(db, { email, rondoClubId, firstName, lastName = 
     })
   );
 }
+
+test('death-date tracking changes only after a verified reconciliation', () => {
+  const db = new Database(':memory:');
+  initDb(db);
+
+  upsertMembers(db, [{
+    knvb_id: 'PEEX433',
+    email: 'history@example.test',
+    data: { fields: { datum_overlijden: '2026-08-20' } }
+  }]);
+  db.prepare('UPDATE rondo_club_members SET rondo_club_id = 4685 WHERE knvb_id = ?').run('PEEX433');
+
+  assert.equal(getTrackedDeathStates(db)[0].date_of_passing, null);
+  updateTrackedDeathState(db, 'PEEX433', '2026-08-20');
+
+  upsertMembers(db, [{
+    knvb_id: 'PEEX433',
+    email: 'history@example.test',
+    data: { fields: { datum_overlijden: '2026-08-20' } }
+  }]);
+  assert.equal(getTrackedDeathStates(db)[0].date_of_passing, '2026-08-20');
+
+  db.close();
+});
 
 test('adopts an existing standalone parent post when that parent becomes a member', () => {
   const db = makeTransitionDb();

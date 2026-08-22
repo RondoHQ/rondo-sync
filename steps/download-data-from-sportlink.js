@@ -42,6 +42,7 @@ async function captureSportlinkDebug(page, label, log) {
  */
 async function runDownload(options = {}) {
   const { logger, verbose = false, page: sharedPage, session: sharedSession } = options;
+  const ownsSession = !sharedPage;
 
   const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
   const logDebug = createDebugLogger();
@@ -216,7 +217,7 @@ async function runDownload(options = {}) {
       log(`Downloaded ${memberCount} members from Sportlink (${successCount} searches OK, ${errorCount} failed/expanded)`);
       return { success: true, memberCount };
     } finally {
-      if (session) {
+      if (ownsSession && session) {
         await session.close();
       }
     }

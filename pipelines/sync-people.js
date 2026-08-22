@@ -9,9 +9,11 @@ const { SportlinkSession } = require('../lib/sportlink-session');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { openDb: openRondoClubDb, bulkSetVolunteerStatus } = require('../lib/rondo-club-db');
 const { runDownload } = require('../steps/download-data-from-sportlink');
+const { runDownloadInactive } = require('../steps/download-inactive-members');
 const { runPrepare } = require('../steps/prepare-laposta-members');
 const { runSubmit } = require('../steps/submit-laposta-list');
 const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync');
+const { syncDeceasedToRondoClub, syncDeceasedToLaposta } = require('../steps/sync-deceased-members');
 const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
 const { runPhotoSync } = require('../steps/upload-photos-to-rondo-club');
@@ -73,6 +75,16 @@ function printSummary(logger, stats) {
   logger.log(`Members downloaded: ${stats.downloaded}`);
   logger.log('');
 
+  logger.log('DECEASED-MEMBER SAFETY');
+  logger.log(minorDivider);
+  logger.log(`Inactive members checked: ${stats.deceased.inactiveDownloaded}`);
+  logger.log(`Death dates updated: ${stats.deceased.rondoUpdated}`);
+  logger.log(`Laposta relations unsubscribed: ${stats.deceased.lapostaUnsubscribed}`);
+  if (stats.deceased.sharedEmailsKept > 0) {
+    logger.log(`Shared email/list combinations kept active: ${stats.deceased.sharedEmailsKept}`);
+  }
+  logger.log('');
+
   logger.log('LAPOSTA SYNC');
   logger.log(minorDivider);
   logger.log(`Members prepared: ${stats.prepared} (${stats.excluded} excluded as duplicates)`);
@@ -117,6 +129,7 @@ function printSummary(logger, stats) {
 
   const allErrors = [
     ...stats.errors,
+    ...stats.deceased.errors,
     ...stats.lapostaDeliverability.errors,
     ...stats.rondoClub.errors,
     ...stats.photos.errors
@@ -162,6 +175,14 @@ async function runPeopleSync(options = {}) {
     updated: 0,
     errors: [],
     lists: [],
+    deceased: {
+      inactiveDownloaded: 0,
+      rondoUpdated: 0,
+      rondoUnchanged: 0,
+      lapostaUnsubscribed: 0,
+      sharedEmailsKept: 0,
+      errors: []
+    },
     lapostaDeliverability: {
       scanned: 0,
       pending: 0,
@@ -244,6 +265,30 @@ async function runPeopleSync(options = {}) {
     logger.verbose(`Downloaded ${downloadResult.memberCount} members`);
     tracker.endStep(downloadStepId, { outcome: 'success', created: stats.downloaded });
 
+    // The active-member search no longer contains people once they die. Fetch
+    // inactive relations too, so DateOfPassing remains available for a narrow
+    // death-date reconciliation without re-importing all former-member data.
+    let inactiveMembers = [];
+    const inactiveDownloadStepId = tracker.startStep('sportlink-inactive-download');
+    const inactiveResult = await runDownloadInactive({ logger, verbose, page: sportlinkPage });
+    if (inactiveResult.success) {
+      inactiveMembers = inactiveResult.members;
+      stats.deceased.inactiveDownloaded = inactiveResult.memberCount;
+      tracker.endStep(inactiveDownloadStepId, { outcome: 'success', created: inactiveResult.memberCount });
+    } else {
+      const error = {
+        message: inactiveResult.error || 'Inactive-member download failed',
+        system: 'deceased-sportlink'
+      };
+      stats.deceased.errors.push(error);
+      tracker.endStep(inactiveDownloadStepId, { outcome: 'failure' });
+      tracker.recordError({
+        stepName: 'sportlink-inactive-download',
+        stepId: inactiveDownloadStepId,
+        errorMessage: error.message
+      });
+    }
+
     // Step 2: Refresh volunteer status from Rondo Club before Laposta prepare
     // Must run before prepare so Laposta gets current status for all members, not just those synced this run.
     try {
@@ -313,6 +358,24 @@ async function runPeopleSync(options = {}) {
     });
     tracker.recordErrors('laposta-submit', submitStepId, stats.errors);
 
+    // Removing a stale row from the local desired-state DB does not change the
+    // remote Laposta subscription. Explicitly unsubscribe deceased addresses,
+    // except when the same address is still desired for a living relation.
+    if (inactiveMembers.length > 0) {
+      const deceasedLapostaStepId = tracker.startStep('deceased-laposta');
+      const deceasedLapostaResult = await syncDeceasedToLaposta(inactiveMembers, { logger, verbose });
+      stats.deceased.lapostaUnsubscribed = deceasedLapostaResult.unsubscribed;
+      stats.deceased.sharedEmailsKept = deceasedLapostaResult.keptShared;
+      stats.deceased.errors.push(...deceasedLapostaResult.errors);
+      tracker.endStep(deceasedLapostaStepId, {
+        outcome: deceasedLapostaResult.errors.length > 0 ? 'partial' : 'success',
+        updated: deceasedLapostaResult.unsubscribed,
+        skipped: deceasedLapostaResult.keptShared,
+        failed: deceasedLapostaResult.errors.length
+      });
+      tracker.recordErrors('deceased-laposta', deceasedLapostaStepId, deceasedLapostaResult.errors);
+    }
+
     // Step 5: Sync to Rondo Club
     logger.verbose('Syncing to Rondo Club...');
     const rondoClubStepId = tracker.startStep('rondo-club-sync');
@@ -371,6 +434,21 @@ async function runPeopleSync(options = {}) {
         errorMessage: err.message,
         errorStack: err.stack
       });
+    }
+
+    if (inactiveMembers.length > 0) {
+      const deceasedRondoStepId = tracker.startStep('deceased-rondo');
+      const deceasedRondoResult = await syncDeceasedToRondoClub(inactiveMembers, { logger, verbose });
+      stats.deceased.rondoUpdated = deceasedRondoResult.updated;
+      stats.deceased.rondoUnchanged = deceasedRondoResult.unchanged;
+      stats.deceased.errors.push(...deceasedRondoResult.errors);
+      tracker.endStep(deceasedRondoStepId, {
+        outcome: deceasedRondoResult.errors.length > 0 ? 'partial' : 'success',
+        updated: deceasedRondoResult.updated,
+        skipped: deceasedRondoResult.unchanged,
+        failed: deceasedRondoResult.errors.length
+      });
+      tracker.recordErrors('deceased-rondo', deceasedRondoStepId, deceasedRondoResult.errors);
     }
 
     // Step 6: Create follow-up todos for Laposta bounces/unsubscribes
@@ -520,6 +598,7 @@ async function runPeopleSync(options = {}) {
 
     const totalErrors =
       stats.errors.length +
+      stats.deceased.errors.length +
       stats.lapostaDeliverability.errors.length +
       stats.rondoClub.errors.length +
       stats.photos.errors.length;

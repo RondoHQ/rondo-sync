@@ -257,7 +257,9 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   if (memberSince) fields['lid_sinds'] = memberSince;
   // Always include lid-tot so previously set values are cleared when a member rejoins.
   fields['lid_tot'] = relationEnd || null;
-  if (dateOfPassing) fields['datum_overlijden'] = dateOfPassing;
+  // Always include the source-owned death date so a corrected Sportlink value
+  // can clear a previously stored date in Rondo Club.
+  fields['datum_overlijden'] = dateOfPassing;
   if (ageClass) fields['leeftijdsgroep'] = ageClass;
   if (personImageDate) fields['datum_foto'] = personImageDate;
   if (memberType) fields['type_lid'] = memberType;

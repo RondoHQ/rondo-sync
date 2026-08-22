@@ -12,6 +12,7 @@ test('member payload uses only writable canonical fields and null date clears', 
       FirstName: 'Ada',
       LastName: 'Lovelace',
       DateOfBirth: '1990-01-02',
+      DateOfPassing: '2026-08-20',
       RelationEnd: ''
     },
     null,
@@ -23,6 +24,7 @@ test('member payload uses only writable canonical fields and null date clears', 
   );
 
   assert.equal(prepared.data.fields.birthdate, '1990-01-02');
+  assert.equal(prepared.data.fields.datum_overlijden, '2026-08-20');
   assert.equal(prepared.data.fields.lid_tot, null);
   assert.equal(prepared.data.fields.birth_year, undefined);
   assert.equal(prepared.data.fields.factuur_email, undefined);
