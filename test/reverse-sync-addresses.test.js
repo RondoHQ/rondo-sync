@@ -6,6 +6,7 @@ const {
   clickSaveButton,
   groupChangesByMemberAndPage
 } = require('../lib/reverse-sync-sportlink');
+const { TRACKED_FIELDS } = require('../lib/sync-origin');
 
 test('groups address changes on the address section of the general page', () => {
   const grouped = groupChangesByMemberAndPage([
@@ -20,6 +21,16 @@ test('groups address changes on the address section of the general page', () => 
   );
   assert.equal(SPORTLINK_FIELD_MAP.street_name.selector, 'input[name="StreetName"]');
   assert.equal(SPORTLINK_FIELD_MAP.postal_code.selector, 'input[name="ZipCode"]');
+});
+
+test('keeps the second landline local to Rondo', () => {
+  assert.equal(TRACKED_FIELDS.includes('telephone_2'), false);
+  assert.equal(Object.hasOwn(SPORTLINK_FIELD_MAP, 'telephone_2'), false);
+
+  const grouped = groupChangesByMemberAndPage([
+    { knvb_id: 'TEST001', field_name: 'telephone_2', new_value: '+31201234567' }
+  ]);
+  assert.equal(grouped.size, 0);
 });
 
 test('waits for Sportlink address lookup to restore the save control', async () => {

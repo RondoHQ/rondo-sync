@@ -26,14 +26,14 @@ test('a corrected contact slot supersedes its stale pending value', () => {
   const db = new Database(':memory:');
   initDb(db);
 
-  logPendingChange(db, 'telephone_2', '+31612345678');
+  logPendingChange(db, 'telephone_1', '+31241234567');
   logPendingChange(db, 'mobile_1', '+31612345678');
   logPendingChange(db, 'email_2', 'current@example.test');
 
   const pending = getUnsyncedChanges(db);
   const superseded = reconcilePendingChanges(db, pending, {
     fields: {
-      telephone_2: '',
+      telephone_1: '',
       mobile_1: '+31612345678',
       email_2: 'current@example.test'
     }
@@ -48,10 +48,24 @@ test('a corrected contact slot supersedes its stale pending value', () => {
   const stale = db.prepare(`
     SELECT synced_at, superseded_at
     FROM rondo_club_change_detections
-    WHERE field_name = 'telephone_2'
+    WHERE field_name = 'telephone_1'
   `).get();
   assert.equal(stale.synced_at, null);
   assert.ok(stale.superseded_at);
+
+  db.close();
+});
+
+test('an explicit empty value remains a writable pending change', () => {
+  const db = new Database(':memory:');
+  initDb(db);
+
+  logPendingChange(db, 'mobile_1', null);
+
+  assert.deepEqual(
+    getUnsyncedChanges(db).map(change => ({ field: change.field_name, value: change.new_value })),
+    [{ field: 'mobile_1', value: null }]
+  );
 
   db.close();
 });
