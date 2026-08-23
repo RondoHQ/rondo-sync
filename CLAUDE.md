@@ -211,6 +211,8 @@ temp DB across cases.
 
 **Required fields on native field updates:** When updating a person via PUT, `first_name` and `last_name` are always required, even for single-field updates. Partial native field updates require a GET first.
 
+**Reverse-sync pending rows must be refreshed before browser writes.** A user can save an intermediate contact layout and correct it before the five-minute reverse-sync run. `runReverseSyncMultiPage()` re-reads each pending Rondo person and marks queued values that no longer match the current canonical field as `superseded_at`; only rows with both `synced_at IS NULL` and `superseded_at IS NULL` may reach Sportlink. Never mark obsolete rows as synced: that corrupts the audit trail and makes `hasRecentSyncedNoOp()` suppress a future legitimate value.
+
 **Relationship type term IDs:** The `relationship_type` taxonomy in WordPress has these term IDs (verified in production):
 - `2` = Parent (the related person is a parent of this person)
 - `3` = Child (the related person is a child of this person)

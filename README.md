@@ -35,7 +35,7 @@ graph LR
 - **Operations dashboard** — Manual starts confirm that the sync wrapper stayed alive and show immediate lock or launch failures inline
 - **Email reports** — HTML summaries via Lettermint after every sync run
 - **Photo sync** — Downloads member photos from Sportlink, uploads to WordPress with a state machine tracking each photo's lifecycle
-- **Reverse sync** — Pushes Rondo Club field changes back to Sportlink via browser automation
+- **Reverse sync** — Pushes Rondo Club field changes back to Sportlink via browser automation, superseding queued intermediate values when a newer edit corrects or reverts them
 
 ## Sync Pipelines
 
