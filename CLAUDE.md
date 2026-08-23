@@ -213,6 +213,8 @@ temp DB across cases.
 
 **Reverse-sync pending rows must be refreshed before browser writes.** A user can save an intermediate contact layout and correct it before the five-minute reverse-sync run. `runReverseSyncMultiPage()` re-reads each pending Rondo person and marks queued values that no longer match the current canonical field as `superseded_at`; only rows with both `synced_at IS NULL` and `superseded_at IS NULL` may reach Sportlink. Never mark obsolete rows as synced: that corrupts the audit trail and makes `hasRecentSyncedNoOp()` suppress a future legitimate value.
 
+**Reverse-sync change detection retries transient Rondo Club reads.** `fetchModifiedMembers()` must use `rondoClubRequestWithRetry()`, which retries 5xx responses, socket timeouts, hard request deadlines, DNS lookup failures, and connection resets with bounded 1s/2s/4s backoff. Permanent 4xx errors fail immediately. This keeps a short production API stall from failing the five-minute reverse-sync run without hiding authentication or validation failures.
+
 **Relationship type term IDs:** The `relationship_type` taxonomy in WordPress has these term IDs (verified in production):
 - `2` = Parent (the related person is a parent of this person)
 - `3` = Child (the related person is a child of this person)
