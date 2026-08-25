@@ -48,27 +48,30 @@ async function runAllFieldsReverseSync(options = {}) {
       success: fieldResult.success && parentResult.success,
       synced: fieldResult.synced + parentResult.synced,
       failed: fieldResult.failed + parentResult.failed,
+      actionRequired: fieldResult.actionRequired || 0,
       results: [...fieldResult.results, ...parentResult.results],
       fields: fieldResult,
       parents: parentResult
     };
 
-    if (result.synced === 0 && result.failed === 0) {
+    if (result.synced === 0 && result.failed === 0 && result.actionRequired === 0) {
       logger.log('No changes to sync');
     } else {
-      logger.log(`Reverse sync complete: ${result.synced} members synced, ${result.failed} failed`);
+      logger.log(`Reverse sync complete: ${result.synced} members synced, ${result.failed} failed, ${result.actionRequired} action required`);
     }
 
     tracker.endStep(stepId, {
       outcome: result.failed > 0 ? 'partial' : 'success',
       updated: result.synced,
-      failed: result.failed
+      failed: result.failed,
+      actionRequired: result.actionRequired
     });
 
     const outcome = result.failed > 0 ? 'partial' : 'success';
     tracker.endRun(outcome, {
       synced: result.synced,
-      failed: result.failed
+      failed: result.failed,
+      actionRequired: result.actionRequired
     });
 
     return result;

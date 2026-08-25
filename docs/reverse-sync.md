@@ -109,6 +109,7 @@ Change detection skips members where `sync_origin == 'sync_sportlink_to_rondo_cl
 - Up to 3 attempts per member with exponential backoff (1s, 3s, 7s)
 - Session timeout detection: if redirected to Sportlink login page, re-authenticate and retry
 - **Fail-fast for multi-page:** if any page fails, no timestamps are updated; all changes remain unsynced for retry on next run
+- A disabled Sportlink save button is treated as an action-required validation block. The pending change is deferred for 24 hours, Rondo's change log is updated to **Actie nodig**, and the operator receives one repair request. The five-minute pipeline remains successful and does not repeat failure mail for the parked item.
 
 ## Conflict Resolution
 

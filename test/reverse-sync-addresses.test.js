@@ -90,3 +90,25 @@ test('never falls back to an arbitrary submit button', async () => {
   );
   assert.equal(attemptedSelectors.includes('button[type="submit"]'), false);
 });
+
+test('reports disabled Sportlink validation as action required', async () => {
+  const saveButton = {
+    count: async () => 1,
+    waitFor: async () => {},
+    isDisabled: async () => true
+  };
+  const page = {
+    waitForSelector: async () => {},
+    locator: selector => {
+      if (selector.includes('[role="alert"]')) {
+        return { allTextContents: async () => ['Een e-mailadres van een ouder/verzorger is verplicht'] };
+      }
+      return { first: () => saveButton };
+    }
+  };
+
+  await assert.rejects(
+    clickSaveButton(page),
+    error => error.code === 'sportlink_validation_blocked' && /ouder\/verzorger/.test(error.message)
+  );
+});
