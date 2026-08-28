@@ -83,6 +83,19 @@ function isRetryableMembershipFetchError(error) {
 }
 
 /**
+ * Overlay fresh /general values on the latest complete SearchMembers record.
+ * The /general response omits bulk-only fields such as KernelGameActivities
+ * and AgeClassDescription; keeping the snapshot values prevents an individual
+ * refresh from turning an incomplete response into destructive empty values.
+ */
+function mergeFreshMemberData(snapshotMember, freshMemberData) {
+  return {
+    ...(snapshotMember || {}),
+    ...(freshMemberData || {})
+  };
+}
+
+/**
  * Fetch fresh data from Sportlink for a single member
  * This includes functions, committees, and free fields (VOG, FreeScout ID, etc.)
  */
@@ -380,23 +393,27 @@ async function syncIndividual(knvbId, options = {}) {
       console.log('Fresh data fetched successfully');
     }
 
-    // Use fresh member data from /general if available, otherwise fall back to bulk download
+    // /general is intentionally partial. Overlay it on the latest complete
+    // SearchMembers snapshot so bulk-only fields remain available.
+    const resultsJson = getLatestSportlinkResults(lapostaDb);
+    let snapshotMember = null;
+    if (resultsJson) {
+      const data = JSON.parse(resultsJson);
+      const members = data.Members || data;
+      snapshotMember = members.find(m => m.PublicPersonId === knvbId) || null;
+    }
+
     let member;
     if (freshMemberData) {
-      member = freshMemberData;
+      member = mergeFreshMemberData(snapshotMember, freshMemberData);
       log(`Using fresh data: ${member.FirstName} ${member.Infix || ''} ${member.LastName}`);
     } else {
-      const resultsJson = getLatestSportlinkResults(lapostaDb);
       if (!resultsJson) {
         console.error('No Sportlink data found. Run download-data-from-sportlink.js first.');
         return { success: false, error: 'No Sportlink data' };
       }
 
-      const data = JSON.parse(resultsJson);
-      const members = data.Members || data;
-      log(`Found ${members.length} members in Sportlink data`);
-
-      member = members.find(m => m.PublicPersonId === knvbId);
+      member = snapshotMember;
       if (!member) {
         console.error(`Member with KNVB ID "${knvbId}" not found in Sportlink data`);
         return { success: false, error: 'Member not found' };
@@ -733,7 +750,7 @@ function findMemberByName(searchTerm) {
   }
 }
 
-module.exports = { syncIndividual, findMemberByName };
+module.exports = { syncIndividual, findMemberByName, mergeFreshMemberData };
 
 // CLI
 if (require.main === module) {

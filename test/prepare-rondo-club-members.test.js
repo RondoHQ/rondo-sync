@@ -79,6 +79,17 @@ test('empty Sportlink game activity clears a previously stored activity', () => 
   assert.equal(prepared.data.fields.former_member, false);
 });
 
+test('omitted game activity in a partial Sportlink response is not written as empty', () => {
+  const prepared = preparePerson({
+    PublicPersonId: 'KNVB-PARTIAL',
+    FirstName: 'Bas',
+    LastName: 'Example',
+    TypeOfMemberDescription: 'Bondslid'
+  });
+
+  assert.equal(prepared.data.fields.spelactiviteit, undefined);
+});
+
 test('youth age class follows the KNVB season boundary instead of the birthday', () => {
   assert.equal(
     deriveYouthAgeClass('2019-08-25', new Date('2026-06-30T12:00:00Z')),

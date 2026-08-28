@@ -48,9 +48,11 @@ graph LR
 | Teams | Weekly | Team rosters + work history with Sportlink relation dates → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
-Sportlink-owned member fields are synchronized as desired state: when a member
-remains active but loses their game activity, the People and individual syncs
-send `spelactiviteit: null` so Rondo Club clears the previous value.
+Sportlink-owned member fields are synchronized as desired state: when a complete
+Sportlink response explicitly contains an empty game activity, the sync sends
+`spelactiviteit: null` so Rondo Club clears the previous value. The individual
+sync overlays its partial `/general` response on the latest complete member
+snapshot; an omitted field is never treated as an explicitly empty value.
 After a successful individual sync, its locally computed source hash is recorded
 as synchronized so the next People run does not process the same payload again.
 

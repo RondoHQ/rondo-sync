@@ -312,7 +312,10 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const dateOfPassing = (sportlinkMember.DateOfPassing || '').trim() || null;
   const ageClass = ageClassResolution.value;
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
-  const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
+  const hasGameActivities = Object.prototype.hasOwnProperty.call(sportlinkMember, 'KernelGameActivities');
+  const gameActivities = hasGameActivities
+    ? (sportlinkMember.KernelGameActivities || '').trim() || null
+    : undefined;
   const tooltip = (sportlinkMember.Tooltip || '').trim();
 
   if (memberSince) fields['lid_sinds'] = memberSince;
@@ -327,9 +330,10 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   }
   if (personImageDate) fields['datum_foto'] = personImageDate;
   if (memberType) fields['type_lid'] = memberType;
-  // Always include the Sportlink-owned game activity so a member who remains
-  // active but stops playing does not retain a stale value in Rondo Club.
-  fields['spelactiviteit'] = gameActivities;
+  // An explicitly empty Sportlink value clears stale activity. Partial source
+  // responses, such as the individual /general fetch, omit this property and
+  // must not be interpreted as an empty value.
+  if (hasGameActivities) fields['spelactiviteit'] = gameActivities;
 
   // Sportlink Tooltip "Actie van een ander (overschrijving)" marks members who
   // were transferred in from another club and still need their KNVB transfer
