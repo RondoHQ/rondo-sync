@@ -33,6 +33,63 @@ function extractBirthdate(dateOfBirth) {
   return trimmed;
 }
 
+/**
+ * Derive a KNVB youth age class from a birthdate and season boundary.
+ * The KNVB season starts on 1 July and is named after its ending year, so a
+ * player born in 2019 is Onder 8 throughout the 2026/27 season.
+ *
+ * Only youth classes Onder 6 through Onder 19 are derived. Adult and special
+ * categories remain owned by Sportlink.
+ *
+ * @param {string|null} dateOfBirth - Date in YYYY-MM-DD format
+ * @param {Date} referenceDate - Date used to determine the current KNVB season
+ * @returns {string|null} Derived age class or null outside the youth range
+ */
+function deriveYouthAgeClass(dateOfBirth, referenceDate = new Date()) {
+  const birthdate = extractBirthdate(dateOfBirth);
+  if (!birthdate || !(referenceDate instanceof Date) || Number.isNaN(referenceDate.getTime())) {
+    return null;
+  }
+
+  const birthYear = Number(birthdate.slice(0, 4));
+  const seasonEndYear = referenceDate.getUTCFullYear() + (referenceDate.getUTCMonth() >= 6 ? 1 : 0);
+  const ageClassNumber = seasonEndYear - birthYear;
+
+  if (ageClassNumber < 6 || ageClassNumber > 19) return null;
+  return `Onder ${ageClassNumber}`;
+}
+
+/**
+ * Resolve Sportlink's age class with a birthdate-based youth fallback.
+ *
+ * @param {Object} member - Raw Sportlink member record
+ * @param {Date} referenceDate - Date used to determine the current KNVB season
+ * @returns {{value: string|null, correction: string|null}}
+ */
+function resolveAgeClass(member, referenceDate = new Date()) {
+  const sourceValue = (member.AgeClassDescription || '').trim() || null;
+  const derivedValue = deriveYouthAgeClass(member.DateOfBirth, referenceDate);
+
+  if (!derivedValue) return { value: sourceValue, correction: null };
+  if (!sourceValue) {
+    return {
+      value: derivedValue,
+      correction: `Sportlink omitted AgeClassDescription; derived ${derivedValue} from ${member.DateOfBirth}`
+    };
+  }
+
+  const youthMatch = sourceValue.match(/^Onder (\d{1,2})$/i);
+  const sourceNumber = youthMatch ? Number(youthMatch[1]) : null;
+  if (sourceNumber !== null && sourceNumber >= 6 && sourceNumber <= 19 && sourceValue !== derivedValue) {
+    return {
+      value: derivedValue,
+      correction: `Sportlink returned ${sourceValue}; derived ${derivedValue} from ${member.DateOfBirth}`
+    };
+  }
+
+  return { value: sourceValue, correction: null };
+}
+
 function normalizeDate(value) {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
@@ -207,13 +264,17 @@ function buildInvoiceAddress(invoiceData) {
  * @param {Object} sportlinkMember - Raw Sportlink member record
  * @param {Object} [freeFields] - Optional free fields from Sportlink /other tab
  * @param {Object} [invoiceData] - Optional invoice data from Sportlink /financial tab
+ * @param {Object} [options]
+ * @param {{log: Function}} [options.logger] - Logger for age-class corrections
+ * @param {Date} [options.referenceDate] - Date used to determine the KNVB season
  * @returns {{knvb_id: string, email: string|null, person_image_date: string|null, data: Object}}
  */
-function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, freeFieldMappings = []) {
+function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, freeFieldMappings = [], options = {}) {
   const name = buildName(sportlinkMember);
   const gender = mapGender(sportlinkMember.GenderCode);
   const birthdate = extractBirthdate(sportlinkMember.DateOfBirth);
   const teams = extractTeams(sportlinkMember);
+  const ageClassResolution = resolveAgeClass(sportlinkMember, options.referenceDate || new Date());
 
   const fields = {
     first_name: name.first_name,
@@ -249,7 +310,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const memberSince = (sportlinkMember.MemberSince || '').trim() || null;
   const relationEnd = (sportlinkMember.RelationEnd || '').trim() || null;
   const dateOfPassing = (sportlinkMember.DateOfPassing || '').trim() || null;
-  const ageClass = (sportlinkMember.AgeClassDescription || '').trim() || null;
+  const ageClass = ageClassResolution.value;
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
   const gameActivities = (sportlinkMember.KernelGameActivities || '').trim() || null;
   const tooltip = (sportlinkMember.Tooltip || '').trim();
@@ -261,6 +322,9 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   // can clear a previously stored date in Rondo Club.
   fields['datum_overlijden'] = dateOfPassing;
   if (ageClass) fields['leeftijdsgroep'] = ageClass;
+  if (ageClassResolution.correction && options.logger?.log) {
+    options.logger.log(`Age-class correction for ${sportlinkMember.PublicPersonId}: ${ageClassResolution.correction}`);
+  }
   if (personImageDate) fields['datum_foto'] = personImageDate;
   if (memberType) fields['type_lid'] = memberType;
   if (gameActivities) fields['spelactiviteit'] = gameActivities;
@@ -386,7 +450,7 @@ async function runPrepare(options = {}) {
           invoiceDataCount++;
         }
 
-        const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings);
+        const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings, { logger: { log } });
         validMembers.push(prepared);
       });
     } finally {
@@ -418,7 +482,7 @@ async function runPrepare(options = {}) {
   }
 }
 
-module.exports = { runPrepare, preparePerson, isValidMember };
+module.exports = { runPrepare, preparePerson, isValidMember, deriveYouthAgeClass, resolveAgeClass };
 
 // CLI entry point
 if (require.main === module) {

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { preparePerson } = require('../steps/prepare-rondo-club-members');
+const { preparePerson, deriveYouthAgeClass } = require('../steps/prepare-rondo-club-members');
 
 test('member payload uses only writable canonical fields and null date clears', () => {
   const prepared = preparePerson(
@@ -64,4 +64,91 @@ test('active Sportlink member types remain active', () => {
   });
 
   assert.equal(prepared.data.fields.former_member, false);
+});
+
+test('youth age class follows the KNVB season boundary instead of the birthday', () => {
+  assert.equal(
+    deriveYouthAgeClass('2019-08-25', new Date('2026-06-30T12:00:00Z')),
+    'Onder 7'
+  );
+  assert.equal(
+    deriveYouthAgeClass('2019-08-25', new Date('2026-07-01T12:00:00Z')),
+    'Onder 8'
+  );
+  assert.equal(
+    deriveYouthAgeClass('2019-08-25', new Date('2026-08-24T12:00:00Z')),
+    'Onder 8'
+  );
+});
+
+test('missing Sportlink youth age class is derived and logged', () => {
+  const messages = [];
+  const prepared = preparePerson(
+    {
+      PublicPersonId: 'KNVB-YOUTH-MISSING',
+      FirstName: 'Noud',
+      LastName: 'Test',
+      DateOfBirth: '2019-08-25'
+    },
+    null,
+    null,
+    [],
+    {
+      referenceDate: new Date('2026-08-28T12:00:00Z'),
+      logger: { log: (message) => messages.push(message) }
+    }
+  );
+
+  assert.equal(prepared.data.fields.leeftijdsgroep, 'Onder 8');
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /omitted AgeClassDescription/);
+});
+
+test('contradictory Sportlink youth age class is corrected from the birth year', () => {
+  const prepared = preparePerson(
+    {
+      PublicPersonId: 'KNVB-YOUTH-STALE',
+      FirstName: 'Noud',
+      LastName: 'Test',
+      DateOfBirth: '2019-08-25',
+      AgeClassDescription: 'Onder 7'
+    },
+    null,
+    null,
+    [],
+    { referenceDate: new Date('2026-08-28T12:00:00Z') }
+  );
+
+  assert.equal(prepared.data.fields.leeftijdsgroep, 'Onder 8');
+});
+
+test('adult and special Sportlink age classes are never derived or overwritten', () => {
+  const missingAdult = preparePerson(
+    {
+      PublicPersonId: 'KNVB-ADULT',
+      FirstName: 'Ada',
+      LastName: 'Adult',
+      DateOfBirth: '1990-01-02'
+    },
+    null,
+    null,
+    [],
+    { referenceDate: new Date('2026-08-28T12:00:00Z') }
+  );
+  const specialClass = preparePerson(
+    {
+      PublicPersonId: 'KNVB-SPECIAL',
+      FirstName: 'Grace',
+      LastName: 'Special',
+      DateOfBirth: '2008-01-02',
+      AgeClassDescription: 'Onder 23'
+    },
+    null,
+    null,
+    [],
+    { referenceDate: new Date('2026-08-28T12:00:00Z') }
+  );
+
+  assert.equal(missingAdult.data.fields.leeftijdsgroep, undefined);
+  assert.equal(specialClass.data.fields.leeftijdsgroep, 'Onder 23');
 });

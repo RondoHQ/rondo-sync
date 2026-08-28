@@ -415,7 +415,9 @@ async function syncIndividual(knvbId, options = {}) {
     log(`Invoice data: ${invoiceData ? 'found' : 'none'}`);
 
     // Prepare the person data
-    const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings);
+    const prepared = preparePerson(member, freeFields, invoiceData, freeFieldMappings, {
+      logger: { log: console.log }
+    });
     log(`Prepared data for ${prepared.knvb_id}`);
 
     // Upsert to tracking database to get current state
