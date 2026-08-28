@@ -41,3 +41,27 @@ test('retired computed fields are ignored in configurable field mappings', () =>
 
   assert.equal(prepared.data.fields.birth_year, undefined);
 });
+
+test('former Sportlink member types are marked as former immediately', () => {
+  for (const memberType of ['Oud bondslid', 'Oud verenigingslid']) {
+    const prepared = preparePerson({
+      PublicPersonId: `KNVB-${memberType}`,
+      FirstName: 'Ada',
+      LastName: 'Lovelace',
+      TypeOfMemberDescription: memberType
+    });
+
+    assert.equal(prepared.data.fields.former_member, true);
+  }
+});
+
+test('active Sportlink member types remain active', () => {
+  const prepared = preparePerson({
+    PublicPersonId: 'KNVB-ACTIVE',
+    FirstName: 'Grace',
+    LastName: 'Hopper',
+    TypeOfMemberDescription: 'Bondslid'
+  });
+
+  assert.equal(prepared.data.fields.former_member, false);
+});

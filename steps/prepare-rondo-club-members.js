@@ -282,9 +282,10 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
     }
   }
 
-  // Active members are explicitly marked as not former
-  // (Members no longer in Sportlink are marked as former in separate step)
-  fields.former_member = false;
+  // Individual refreshes can still open a person after Sportlink has changed
+  // their member type. Reflect that transition immediately instead of waiting
+  // for the separate former-member import.
+  fields.former_member = ['Oud bondslid', 'Oud verenigingslid'].includes(memberType);
 
   // Invoice data from Sportlink /financial tab
   if (invoiceData) {
