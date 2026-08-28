@@ -51,6 +51,8 @@ graph LR
 Sportlink-owned member fields are synchronized as desired state: when a member
 remains active but loses their game activity, the People and individual syncs
 send `spelactiviteit: null` so Rondo Club clears the previous value.
+After a successful individual sync, its locally computed source hash is recorded
+as synchronized so the next People run does not process the same payload again.
 
 ### Daily Timeline
 

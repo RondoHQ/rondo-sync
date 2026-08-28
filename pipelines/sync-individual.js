@@ -421,7 +421,8 @@ async function syncIndividual(knvbId, options = {}) {
     log(`Prepared data for ${prepared.knvb_id}`);
 
     // Upsert to tracking database to get current state
-    upsertMembers(rondoClubDb, [prepared]);
+    const [trackedMember] = upsertMembers(rondoClubDb, [prepared]);
+    const sourceHash = trackedMember.source_hash;
     const parentPreparation = await runPrepareParents({
       verbose,
       memberOverrides: freshMemberData ? [freshMemberData] : []
@@ -538,7 +539,7 @@ async function syncIndividual(knvbId, options = {}) {
         const rondoClubData = extractTrackedFieldValues(existingData);
 
         const resolution = resolveFieldConflicts(
-          { knvb_id: knvbId, source_hash: prepared.source_hash },
+          { knvb_id: knvbId, source_hash: sourceHash },
           sportlinkData,
           rondoClubData,
           rondoClubDb
@@ -561,7 +562,7 @@ async function syncIndividual(knvbId, options = {}) {
         }
 
         await rondoClubRequest(`wp/v2/people/${rondoClubId}`, 'PUT', updateData, { verbose });
-        updateSyncState(rondoClubDb, knvbId, prepared.source_hash, rondoClubId);
+        updateSyncState(rondoClubDb, knvbId, sourceHash, rondoClubId);
 
         // Capture volunteer status from Rondo Club
         const volunteerStatus = toBooleanFlag(existingData.fields?.['huidig_vrijwilliger']) ? 1 : 0;
@@ -634,7 +635,7 @@ async function syncIndividual(knvbId, options = {}) {
     log('Creating new person');
     const response = await rondoClubRequest('wp/v2/people', 'POST', prepared.data, { verbose });
     const newId = response.body.id;
-    updateSyncState(rondoClubDb, knvbId, prepared.source_hash, newId);
+    updateSyncState(rondoClubDb, knvbId, sourceHash, newId);
 
     // Capture volunteer status from newly created person
     const createVolunteerStatus = toBooleanFlag(response.body.fields?.['huidig_vrijwilliger']) ? 1 : 0;

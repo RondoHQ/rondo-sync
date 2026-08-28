@@ -106,6 +106,24 @@ test('death-date tracking changes only after a verified reconciliation', () => {
   db.close();
 });
 
+test('member upsert returns the exact source hash stored for sync completion', () => {
+  const db = new Database(':memory:');
+  initDb(db);
+
+  const [trackedMember] = upsertMembers(db, [{
+    knvb_id: 'KNVB-NON-PLAYING',
+    email: 'non-playing@example.test',
+    data: { fields: { spelactiviteit: null } }
+  }]);
+  const stored = db.prepare('SELECT source_hash, data_json FROM rondo_club_members WHERE knvb_id = ?')
+    .get('KNVB-NON-PLAYING');
+
+  assert.equal(trackedMember.source_hash, stored.source_hash);
+  assert.equal(JSON.parse(stored.data_json).fields.spelactiviteit, null);
+
+  db.close();
+});
+
 test('adopts an existing standalone parent post when that parent becomes a member', () => {
   const db = makeTransitionDb();
   insertTransitionMember(db, {
