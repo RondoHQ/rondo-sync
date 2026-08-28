@@ -314,7 +314,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   const memberType = (sportlinkMember.TypeOfMemberDescription || '').trim() || null;
   const hasGameActivities = Object.prototype.hasOwnProperty.call(sportlinkMember, 'KernelGameActivities');
   const gameActivities = hasGameActivities
-    ? (sportlinkMember.KernelGameActivities || '').trim() || null
+    ? (sportlinkMember.KernelGameActivities || '').trim().replace(/\s{2,}/g, ' ') || null
     : undefined;
   const tooltip = (sportlinkMember.Tooltip || '').trim();
 

@@ -79,6 +79,17 @@ test('empty Sportlink game activity clears a previously stored activity', () => 
   assert.equal(prepared.data.fields.former_member, false);
 });
 
+test('Sportlink game activity whitespace is normalized before writing', () => {
+  const prepared = preparePerson({
+    PublicPersonId: 'KNVB-PLAYING',
+    FirstName: 'Bas',
+    LastName: 'Example',
+    KernelGameActivities: 'Veld -  Algemeen'
+  });
+
+  assert.equal(prepared.data.fields.spelactiviteit, 'Veld - Algemeen');
+});
+
 test('omitted game activity in a partial Sportlink response is not written as empty', () => {
   const prepared = preparePerson({
     PublicPersonId: 'KNVB-PARTIAL',
