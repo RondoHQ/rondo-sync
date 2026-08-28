@@ -48,6 +48,10 @@ graph LR
 | Teams | Weekly | Team rosters + work history with Sportlink relation dates → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
+Sportlink-owned member fields are synchronized as desired state: when a member
+remains active but loses their game activity, the People and individual syncs
+send `spelactiviteit: null` so Rondo Club clears the previous value.
+
 ### Daily Timeline
 
 All times in Europe/Amsterdam timezone.

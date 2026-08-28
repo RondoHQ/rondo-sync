@@ -66,6 +66,19 @@ test('active Sportlink member types remain active', () => {
   assert.equal(prepared.data.fields.former_member, false);
 });
 
+test('empty Sportlink game activity clears a previously stored activity', () => {
+  const prepared = preparePerson({
+    PublicPersonId: 'KNVB-NON-PLAYING',
+    FirstName: 'Sem',
+    LastName: 'Example',
+    TypeOfMemberDescription: 'Bondslid',
+    KernelGameActivities: ''
+  });
+
+  assert.equal(prepared.data.fields.spelactiviteit, null);
+  assert.equal(prepared.data.fields.former_member, false);
+});
+
 test('youth age class follows the KNVB season boundary instead of the birthday', () => {
   assert.equal(
     deriveYouthAgeClass('2019-08-25', new Date('2026-06-30T12:00:00Z')),

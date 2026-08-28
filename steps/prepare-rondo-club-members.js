@@ -327,7 +327,9 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   }
   if (personImageDate) fields['datum_foto'] = personImageDate;
   if (memberType) fields['type_lid'] = memberType;
-  if (gameActivities) fields['spelactiviteit'] = gameActivities;
+  // Always include the Sportlink-owned game activity so a member who remains
+  // active but stops playing does not retain a stale value in Rondo Club.
+  fields['spelactiviteit'] = gameActivities;
 
   // Sportlink Tooltip "Actie van een ander (overschrijving)" marks members who
   // were transferred in from another club and still need their KNVB transfer
