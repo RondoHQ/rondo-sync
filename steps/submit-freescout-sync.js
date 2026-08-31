@@ -20,8 +20,14 @@ function getCustomFieldIds() {
     union_teams: parseInt(process.env.FREESCOUT_FIELD_UNION_TEAMS || '1', 10),
     public_person_id: parseInt(process.env.FREESCOUT_FIELD_PUBLIC_PERSON_ID || '4', 10),
     member_since: parseInt(process.env.FREESCOUT_FIELD_MEMBER_SINCE || '5', 10),
-    nikki_saldo: parseInt(process.env.FREESCOUT_FIELD_NIKKI_SALDO || '7', 10),
-    nikki_status: parseInt(process.env.FREESCOUT_FIELD_NIKKI_STATUS || '8', 10),
+    contribution_outstanding: parseInt(
+      process.env.FREESCOUT_FIELD_CONTRIBUTION_OUTSTANDING || process.env.FREESCOUT_FIELD_NIKKI_SALDO || '7',
+      10
+    ),
+    contribution_status: parseInt(
+      process.env.FREESCOUT_FIELD_CONTRIBUTION_STATUS || process.env.FREESCOUT_FIELD_NIKKI_STATUS || '8',
+      10
+    ),
     relation_end: parseInt(process.env.FREESCOUT_FIELD_RELATION_END || '9', 10)
   };
 }
@@ -37,8 +43,13 @@ function buildCustomFieldsPayload(customFields) {
     { id: fieldIds.union_teams, value: customFields.union_teams || '' },
     { id: fieldIds.public_person_id, value: customFields.public_person_id || '' },
     { id: fieldIds.member_since, value: customFields.member_since || '' },
-    { id: fieldIds.nikki_saldo, value: customFields.nikki_saldo !== null ? String(customFields.nikki_saldo) : '' },
-    { id: fieldIds.nikki_status, value: customFields.nikki_status || '' },
+    {
+      id: fieldIds.contribution_outstanding,
+      value: customFields.contribution_outstanding !== null && customFields.contribution_outstanding !== undefined
+        ? String(customFields.contribution_outstanding)
+        : ''
+    },
+    { id: fieldIds.contribution_status, value: customFields.contribution_status || '' },
     { id: fieldIds.relation_end, value: customFields.relation_end || '' }
   ];
 }
@@ -369,7 +380,7 @@ async function runSubmit(options = {}) {
   try {
     db = openDb();
 
-    // Step 1: Prepare customers from Rondo Club/Nikki data
+    // Step 1: Prepare customers from Rondo Club data
     const prepared = await runPrepare({ logger, verbose });
     if (!prepared.success) {
       result.success = false;
@@ -458,7 +469,7 @@ async function runSubmit(options = {}) {
   }
 }
 
-module.exports = { runSubmit };
+module.exports = { runSubmit, buildCustomFieldsPayload };
 
 // CLI entry point
 if (require.main === module) {

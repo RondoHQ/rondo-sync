@@ -8,9 +8,8 @@ PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 echo "Rondo Sync - Cron Installation"
 echo "==============================="
 echo ""
-echo "This will set up eleven sync schedules:"
+echo "This will set up ten sync schedules:"
 echo "  - People sync:            4x daily (members, parents, photos)"
-echo "  - Nikki sync:             daily at 7:00 AM"
 echo "  - FreeScout sync:         daily at 8:00 AM"
 echo "  - FreeScout conversations: daily at 9:00 AM"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
@@ -112,9 +111,6 @@ CRON_ENTRIES="
 # People sync: 4x daily during work hours (members, parents, photos)
 0 8,11,14,17 * * * $PROJECT_DIR/scripts/sync.sh people
 
-# Nikki sync: daily at 7:00 AM
-0 7 * * * $PROJECT_DIR/scripts/sync.sh nikki
-
 # FreeScout sync: daily at 8:00 AM
 0 8 * * * $PROJECT_DIR/scripts/sync.sh freescout
 
@@ -171,7 +167,6 @@ echo "Cron jobs installed successfully for user '$CRONTAB_USER'."
 echo ""
 echo "Scheduled jobs:"
 echo "  - People sync:            4x daily at 8am, 11am, 2pm, 5pm (members, parents, photos)"
-echo "  - Nikki sync:             daily at 7:00 AM (nikki contributions)"
 echo "  - FreeScout sync:         daily at 8:00 AM (customer sync)"
 echo "  - FreeScout conversations: daily at 9:00 AM (after customer sync)"
 echo "  - Team sync:              weekly on Sunday at 6:00 AM"
@@ -195,6 +190,6 @@ else
     echo "  View installed cron jobs:   crontab -l"
 fi
 echo "  View logs:                  ls -la $PROJECT_DIR/logs/cron/"
-echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|nikki|sponsit|freescout|reverse|discipline|all}"
+echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|sponsit|freescout|reverse|discipline|all}"
 echo "  Remove all cron jobs:       crontab -r"
 echo ""

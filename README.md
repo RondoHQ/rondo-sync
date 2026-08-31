@@ -11,18 +11,16 @@
 ```mermaid
 graph LR
     SL[Sportlink Club]
-    NK[Nikki]
     SYNC[Rondo Sync<br>+ SQLite databases]
     ST[Rondo Club WordPress]
     LP[Laposta]
     FS[FreeScout]
 
     SL -->|Members, teams,<br>functions, discipline| SYNC
-    NK -->|Contributions| SYNC
     SYNC -->|Members, custom fields| LP
     SYNC -->|Members, parents, teams,<br>commissies, work history,<br>photos| ST
     SYNC -->|Customers| FS
-    ST -->|Field changes| SYNC
+    ST -->|Field changes + contributions| SYNC
     SYNC -->|Reverse sync| SL
 ```
 
@@ -30,7 +28,7 @@ graph LR
 
 - **Browser automation** — Playwright (headless Chromium) with TOTP 2FA navigates Sportlink's UI to extract data from a system that has no API
 - **Hash-based change detection** — SHA-256 diffing ensures only records that actually changed get synced, minimizing API calls and avoiding unnecessary updates
-- **State tracking** — 4 SQLite databases maintain ID mappings, sync history, and photo upload state across systems
+- **State tracking** — SQLite databases maintain ID mappings, sync history, and photo upload state across systems
 - **Pipeline locking** — flock-based concurrency prevention ensures parallel cron jobs don't collide
 - **Operations dashboard** — Manual starts confirm that the sync wrapper stayed alive and show immediate lock or launch failures inline
 - **Email reports** — HTML summaries via Lettermint after every sync run
@@ -43,8 +41,7 @@ graph LR
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |
 | Functions | 4x daily + weekly full | Commissies, free fields, work history → Rondo Club |
-| Nikki | Daily | Financial contributions → Rondo Club |
-| FreeScout | Daily | Members → FreeScout helpdesk customers |
+| FreeScout | Daily | Members and current Rondo contribution status → FreeScout helpdesk customers |
 | Teams | Weekly | Team rosters + work history with Sportlink relation dates → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
@@ -61,7 +58,6 @@ as synchronized so the next People run does not process the same payload again.
 All times in Europe/Amsterdam timezone.
 
 ```
- 07:00         Nikki sync
  07:30         Functions sync (recent) → 08:00 People sync (1st) + FreeScout sync
  10:30         Functions sync (recent) → 11:00 People sync (2nd)
  13:30         Functions sync (recent) → 14:00 People sync (3rd)
@@ -88,7 +84,6 @@ Run a pipeline:
 scripts/sync.sh people           # Members, parents, photos
 scripts/sync.sh functions        # Commissies + free fields (recent)
 scripts/sync.sh functions --all  # Full commissie sync (all members)
-scripts/sync.sh nikki            # Nikki contributions
 scripts/sync.sh freescout        # FreeScout customers
 scripts/sync.sh teams            # Team rosters + dated work history
 scripts/sync.sh discipline       # Discipline cases
@@ -104,7 +99,6 @@ See the [Installation Guide](docs/installation.md) for full setup instructions i
 | [Installation](docs/installation.md) | Prerequisites, server setup, initial sync, cron |
 | [Architecture](docs/sync-architecture.md) | System overview, schedules, field mappings, data flow |
 | [People Pipeline](docs/pipeline-people.md) | 7-step flow, Laposta + Rondo Club field mappings |
-| [Nikki Pipeline](docs/pipeline-nikki.md) | Contribution download + Rondo Club sync |
 | [Teams Pipeline](docs/pipeline-teams.md) | Team download + work history |
 | [Functions Pipeline](docs/pipeline-functions.md) | Commissies, free fields, daily vs full mode |
 | [FreeScout Pipeline](docs/pipeline-freescout.md) | Customer sync with custom fields |

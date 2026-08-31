@@ -4,6 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { getNextRun, getPreviousScheduledRun, PIPELINE_SCHEDULES } = require('../lib/schedule');
 
+test('Nikki is no longer an active scheduled pipeline', () => {
+  assert.equal(PIPELINE_SCHEDULES.nikki, undefined);
+});
+
 test('Sponsit is scheduled weekly on Sunday at 10:00 Amsterdam time', () => {
   assert.deepEqual(PIPELINE_SCHEDULES.sponsit, {
     times: [{ hour: 10, minute: 0 }],

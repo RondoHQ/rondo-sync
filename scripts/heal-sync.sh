@@ -40,7 +40,6 @@ ALL_PIPELINES=(
   people
   functions
   functions-full
-  nikki
   freescout
   freescout-conversations
   teams
@@ -59,7 +58,6 @@ rerun_args_for() {
     people)                  echo "people" ;;
     functions)               echo "functions" ;;
     functions-full)          echo "functions --all --with-invoice" ;;
-    nikki)                   echo "nikki" ;;
     freescout)               echo "freescout" ;;
     freescout-conversations) echo "conversations" ;;
     teams)                   echo "teams" ;;
@@ -91,7 +89,6 @@ stale_after_hours_for() {
     people)                  echo 30 ;;   # 4x daily 08,11,14,17 — longest gap 15h
     functions)               echo 30 ;;   # 4x daily 07:30,10:30,13:30,16:30
     functions-full)          echo 180 ;;  # weekly Sun 01:00
-    nikki)                   echo 30 ;;   # daily 07:00
     freescout)               echo 30 ;;   # daily 08:00
     freescout-conversations) echo 30 ;;   # daily 09:00
     teams)                   echo 180 ;;  # weekly Sun 06:00

@@ -1,34 +1,10 @@
 require('dotenv/config');
 
-const path = require('path');
-const fs = require('fs');
-const { openDb: openRondoClubDb, getMemberFreeFieldsByKnvbId, getMemberWorkHistory, getAllTrackedMembers } = require('../lib/rondo-club-db');
+const { openDb: openRondoClubDb, getMemberFreeFieldsByKnvbId, getMemberWorkHistory } = require('../lib/rondo-club-db');
 const { openDb: openFreescoutDb, getCustomerByKnvbId } = require('../lib/freescout-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
 const { readEnv, normalizeDateToYYYYMMDD } = require('../lib/utils');
-const { rondoClubRequest } = require('../lib/rondo-club-client');
-
-// Nikki DB is optional - will be null if not available
-let openNikkiDb = null;
-let getContributionsByKnvbId = null;
-
-// Try to load nikki-db, but don't fail if it's not available
-try {
-  const nikkiDb = require('../lib/nikki-db');
-  openNikkiDb = nikkiDb.openDb;
-  getContributionsByKnvbId = nikkiDb.getContributionsByKnvbId;
-} catch (err) {
-  // nikki-db module not available - that's fine
-}
-
-/**
- * Check if Nikki database file exists
- * @returns {boolean}
- */
-function nikkiDbExists() {
-  const dbPath = path.join(process.cwd(), 'data', 'nikki-sync.sqlite');
-  return fs.existsSync(dbPath);
-}
+const { rondoClubRequest, rondoClubRequestWithRetry } = require('../lib/rondo-club-client');
 
 /**
  * Get existing FreeScout ID for a member
@@ -119,32 +95,67 @@ function getUnionTeams(rondoClubDb, knvbId) {
 }
 
 /**
- * Get most recent Nikki contribution data for a member
- * @param {Object|null} nikkiDb - Nikki database connection (may be null)
- * @param {string} knvbId - Member KNVB ID
- * @returns {{saldo: number|null, status: string|null}}
+ * Validate and index the current Rondo contribution feed.
+ * @param {Object} body - Response body from GET /rondo/v1/fees
+ * @returns {{season: string, byPersonId: Map<number, Object>}}
  */
-function getMostRecentNikkiData(nikkiDb, knvbId) {
-  if (!nikkiDb || !getContributionsByKnvbId) {
-    return { saldo: null, status: null };
+function parseRondoContributionFeed(body) {
+  if (!body || !/^\d{4}-\d{4}$/.test(body.season) || !Array.isArray(body.members)) {
+    throw new Error('Rondo contribution feed returned an invalid response');
   }
 
-  try {
-    const contributions = getContributionsByKnvbId(nikkiDb, knvbId);
-    if (!contributions || contributions.length === 0) {
-      return { saldo: null, status: null };
+  const byPersonId = new Map();
+  for (const member of body.members) {
+    const personId = Number(member?.id);
+    if (Number.isInteger(personId) && personId > 0) {
+      byPersonId.set(personId, member);
     }
-
-    // Contributions are ordered by year DESC, so first is most recent
-    const mostRecent = contributions[0];
-    return {
-      saldo: mostRecent.saldo,
-      status: mostRecent.status
-    };
-  } catch (err) {
-    // If any error occurs, return null values
-    return { saldo: null, status: null };
   }
+
+  return { season: body.season, byPersonId };
+}
+
+/** Fetch current contribution data once for the complete FreeScout run. */
+async function fetchRondoContributionFeed(options = {}, request = rondoClubRequestWithRetry) {
+  const response = await request('rondo/v1/fees', 'GET', null, options);
+  return parseRondoContributionFeed(response.body);
+}
+
+/**
+ * Format one Rondo fee/invoice row for FreeScout's two contribution fields.
+ * @param {Object|null} contribution - Rondo fee-list member row
+ * @param {string} season - Current Rondo season
+ * @returns {{outstanding: number|null, status: string|null}}
+ */
+function formatRondoContribution(contribution, season) {
+  if (!contribution) {
+    return { outstanding: null, status: null };
+  }
+
+  const invoiceStatus = contribution.invoice_status;
+  const labels = {
+    draft: 'Concept',
+    sent: 'Openstaand',
+    overdue: 'Achterstallig',
+    paid: 'Betaald',
+    cancelled: 'Vervallen'
+  };
+  let label = labels[invoiceStatus] || 'Nog niet gefactureerd';
+  const installmentCount = Number(contribution.installment_count || 0);
+  const paidInstallments = Number(contribution.paid_installments || 0);
+  if (['sent', 'overdue'].includes(invoiceStatus) && installmentCount > 1) {
+    label += ` (${paidInstallments}/${installmentCount} termijnen betaald)`;
+  }
+
+  const rawOutstanding = contribution.invoice_outstanding;
+  const outstanding = rawOutstanding === null || rawOutstanding === undefined || rawOutstanding === ''
+    ? null
+    : Number(rawOutstanding);
+
+  return {
+    outstanding: Number.isFinite(outstanding) ? outstanding : null,
+    status: `${season} · ${label}`
+  };
 }
 
 /**
@@ -152,11 +163,11 @@ function getMostRecentNikkiData(nikkiDb, knvbId) {
  * @param {Object} member - Member record from rondo_club_members
  * @param {Object} freescoutDb - FreeScout database connection
  * @param {Object} rondoClubDb - Rondo Club database connection
- * @param {Object|null} nikkiDb - Nikki database connection (may be null)
+ * @param {{season: string, byPersonId: Map<number, Object>}} contributionFeed - Current Rondo contribution data
  * @param {Object} options - Options with logger and verbose
  * @returns {Promise<Object|null>} - FreeScout customer object or null if no email
  */
-async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, options = {}) {
+async function prepareCustomer(member, freescoutDb, rondoClubDb, contributionFeed, options = {}) {
   const data = member.data || {};
   const fields = data.fields || {};
 
@@ -203,8 +214,11 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
   // Get union teams
   const unionTeams = getUnionTeams(rondoClubDb, member.knvb_id);
 
-  // Get Nikki data
-  const nikkiData = getMostRecentNikkiData(nikkiDb, member.knvb_id);
+  // Get the current contribution and invoice status from Rondo Club.
+  const contribution = formatRondoContribution(
+    contributionFeed.byPersonId.get(Number(member.rondo_club_id)) || null,
+    contributionFeed.season
+  );
 
   // Get RelationEnd date
   const relationEndRaw = fields['lid_tot'] || null;
@@ -244,8 +258,8 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
       union_teams: unionTeams,
       public_person_id: member.knvb_id,
       member_since: fields['lid_sinds'] || null,
-      nikki_saldo: nikkiData.saldo,
-      nikki_status: nikkiData.status,
+      contribution_outstanding: contribution.outstanding,
+      contribution_status: contribution.status,
       relation_end: relationEnd
     }
   };
@@ -261,12 +275,11 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, option
 async function runPrepare(options = {}) {
   const { logger, verbose = false } = options;
 
-  const { log, verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
+  const { verbose: logVerbose, error: logError } = createLoggerAdapter({ logger, verbose });
 
   let rondoClubDb = null;
   let freescoutDb = null;
-  let nikkiDb = null;
-  let nikkiWarningLogged = false;
+  let contributionFeed = null;
 
   try {
     // Open Rondo Club database
@@ -275,19 +288,10 @@ async function runPrepare(options = {}) {
     // Open FreeScout database
     freescoutDb = openFreescoutDb();
 
-    // Try to open Nikki database (optional)
-    if (nikkiDbExists() && openNikkiDb) {
-      try {
-        nikkiDb = openNikkiDb();
-        logVerbose('Nikki database loaded successfully');
-      } catch (err) {
-        logVerbose(`Warning: Could not open Nikki database: ${err.message}`);
-        nikkiDb = null;
-      }
-    } else {
-      logVerbose('Nikki database not available - Nikki fields will be null');
-      nikkiWarningLogged = true;
-    }
+    // A failed Rondo read is fatal: never clear valid FreeScout finance fields
+    // merely because the source API was temporarily unavailable.
+    contributionFeed = await fetchRondoContributionFeed({ logger, verbose });
+    logVerbose(`Loaded ${contributionFeed.byPersonId.size} Rondo contribution records for ${contributionFeed.season}`);
 
     // Get all tracked members from rondo_club_members
     const stmt = rondoClubDb.prepare(`
@@ -312,7 +316,7 @@ async function runPrepare(options = {}) {
         data: JSON.parse(row.data_json)
       };
 
-      const customer = await prepareCustomer(member, freescoutDb, rondoClubDb, nikkiDb, { logger, verbose });
+      const customer = await prepareCustomer(member, freescoutDb, rondoClubDb, contributionFeed, { logger, verbose });
       if (customer) {
         customers.push(customer);
       } else {
@@ -340,11 +344,15 @@ async function runPrepare(options = {}) {
     // Close all database connections
     if (rondoClubDb) rondoClubDb.close();
     if (freescoutDb) freescoutDb.close();
-    if (nikkiDb) nikkiDb.close();
   }
 }
 
-module.exports = { runPrepare };
+module.exports = {
+  runPrepare,
+  parseRondoContributionFeed,
+  fetchRondoContributionFeed,
+  formatRondoContribution
+};
 
 // CLI entry point
 if (require.main === module) {
