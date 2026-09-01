@@ -5,8 +5,10 @@ const Database = require('better-sqlite3');
 const {
   ensureParentSyncSchema,
   buildDesiredParent,
+  findTrackedParentSource,
   upsertParentJob,
   cancelMissingParentJobs,
+  reconcileChild,
   extractParentSlots,
   selectParentSlot,
   parentValuesMatch,
@@ -87,6 +89,88 @@ test('slot selection completes one compatible partially occupied slot', () => {
 
   assert.deepEqual(selectParentSlot(slots, desired), { slot: 2, existing: true });
   assert.equal(parentValuesMatch({ ...slots[1], email: desired.email }, desired), true);
+});
+
+test('slot selection follows the tracked source email after a parent email change', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Joep Jan Thijssen',
+    EmailAddressParent1: 'old@example.org',
+    TelephoneParent1: '0612345678',
+    NameParent2: '',
+    EmailAddressParent2: '',
+    TelephoneParent2: ''
+  });
+
+  assert.deepEqual(selectParentSlot(slots, {
+    name: 'Joep Jan Thijssen',
+    email: 'new@example.org',
+    sourceEmail: 'old@example.org',
+    phone: '0698765432'
+  }), { slot: 1, existing: true });
+});
+
+test('slot selection disambiguates a shared parent email with compatible identity fields', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Eerste ouder',
+    EmailAddressParent1: 'gezin@example.org',
+    TelephoneParent1: '0611111111',
+    NameParent2: 'Tweede ouder',
+    EmailAddressParent2: 'gezin@example.org',
+    TelephoneParent2: '0622222222'
+  });
+
+  assert.deepEqual(selectParentSlot(slots, {
+    name: 'Tweede ouder',
+    email: 'gezin@example.org',
+    phone: '+31622222222'
+  }), { slot: 2, existing: true });
+});
+
+test('tracked parent source authorizes and queues a changed parent email for its child', async () => {
+  const db = new Database(':memory:');
+  ensureParentSyncSchema(db);
+  db.exec(`
+    CREATE TABLE rondo_club_parents (
+      id INTEGER PRIMARY KEY,
+      email TEXT NOT NULL,
+      rondo_club_id INTEGER,
+      data_json TEXT,
+      last_seen_at TEXT
+    )
+  `);
+  db.prepare(`
+    INSERT INTO rondo_club_parents (email, rondo_club_id, data_json, last_seen_at)
+    VALUES (?, ?, ?, ?)
+  `).run('old@example.org', 88, JSON.stringify({ childKnvbIds: ['CHILD01'] }), '2026-09-01T07:00:00Z');
+
+  assert.deepEqual(findTrackedParentSource(db, 88, 'CHILD01'), { email: 'old@example.org' });
+  const reported = [];
+  const result = await reconcileChild(db, {
+    id: 42,
+    fields: {
+      knvb_id: 'CHILD01',
+      former_member: false,
+      relationships: [{ relationship_slug: 'parent', related_person_id: 88 }]
+    },
+    parent_sync_statuses: []
+  }, {
+    fetchPerson: async () => ({
+      id: 88,
+      fields: {
+        first_name: 'Joep Jan',
+        last_name: 'Thijssen',
+        email_1: 'new@example.org',
+        mobile_1: '0698765432'
+      }
+    }),
+    reportParentStatus: async (job, state) => reported.push({ job, state })
+  });
+
+  assert.deepEqual(result, { queued: 1, blocked: 0 });
+  const job = getReadyParentJobs(db)[0];
+  assert.equal(JSON.parse(job.desired_json).sourceEmail, 'old@example.org');
+  assert.equal(reported[0].state, 'pending');
+  db.close();
 });
 
 test('slot selection rejects a partially occupied slot with conflicting contact data', () => {

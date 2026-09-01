@@ -103,7 +103,7 @@ See the [Installation Guide](docs/installation.md) for full setup instructions i
 | [Functions Pipeline](docs/pipeline-functions.md) | Commissies, free fields, daily vs full mode |
 | [FreeScout Pipeline](docs/pipeline-freescout.md) | Customer sync with custom fields |
 | [Discipline Pipeline](docs/pipeline-discipline.md) | Discipline cases + season taxonomy |
-| [Reverse Sync](docs/reverse-sync.md) | Rondo Club → Sportlink browser automation with safe parent-slot reconciliation |
+| [Reverse Sync](docs/reverse-sync.md) | Rondo Club → Sportlink browser automation with parent e-mail propagation |
 | [Database Schema](docs/database-schema.md) | All 4 databases, 21 tables |
 | [Operations](docs/operations.md) | Server ops, monitoring, deploys |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
