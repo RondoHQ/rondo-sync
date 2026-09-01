@@ -13,6 +13,8 @@ const {
   selectParentSlot,
   parentValuesMatch,
   getReadyParentJobs,
+  markParentJobSynced,
+  hasUnresolvedParentJobs,
   markParentJobFailed
 } = require('../lib/parent-slot-sync');
 
@@ -235,6 +237,26 @@ test('removed relationship cancels pending work but does not clear a synced slot
     { parent_rondo_id: 21, state: 'cancelled' },
     { parent_rondo_id: 22, state: 'synced' }
   ]);
+  db.close();
+});
+
+test('parent audit stays open until every child job is resolved', () => {
+  const db = new Database(':memory:');
+  ensureParentSyncSchema(db);
+  const parent = {
+    parentRondoId: 24,
+    name: 'Ouder met twee kinderen',
+    email: 'ouder@example.org',
+    phone: ''
+  };
+  upsertParentJob(db, { ...parent, childKnvbId: 'CHILD01', childRondoId: 13 });
+  upsertParentJob(db, { ...parent, childKnvbId: 'CHILD02', childRondoId: 14 });
+
+  const jobs = getReadyParentJobs(db);
+  markParentJobSynced(db, jobs[0].id, 1);
+  assert.equal(hasUnresolvedParentJobs(db, parent.parentRondoId), true);
+  markParentJobSynced(db, jobs[1].id, 1);
+  assert.equal(hasUnresolvedParentJobs(db, parent.parentRondoId), false);
   db.close();
 });
 
