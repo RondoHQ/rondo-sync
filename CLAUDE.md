@@ -219,6 +219,8 @@ temp DB across cases.
 
 **Reverse-sync change detection retries transient Rondo Club reads.** `fetchModifiedMembers()` must use `rondoClubRequestWithRetry()`, which retries 5xx responses, socket timeouts, hard request deadlines, DNS lookup failures, and connection resets with bounded 1s/2s/4s backoff. Permanent 4xx errors fail immediately. This keeps a short production API stall from failing the five-minute reverse-sync run without hiding authentication or validation failures.
 
+**Parent-slot matching may complete one compatible partial Sportlink slot.** Match an exact normalized e-mail first. When the e-mail is missing, a partially filled slot is safe only if it is the sole candidate and every existing name, e-mail, and phone value agrees with the desired parent after name and Dutch phone normalization. Conflicting or ambiguous slots stay blocked. Verify the saved values with the same normalization because Sportlink reformats names and phone numbers.
+
 **Relationship type term IDs:** The `relationship_type` taxonomy in WordPress has these term IDs (verified in production):
 - `2` = Parent (the related person is a parent of this person)
 - `3` = Child (the related person is a child of this person)

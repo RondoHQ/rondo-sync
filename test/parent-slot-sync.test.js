@@ -70,6 +70,42 @@ test('slot selection never overwrites a partially occupied slot', () => {
   assert.equal(selectParentSlot(slots, { email: 'nieuw@example.org' }), null);
 });
 
+test('slot selection completes one compatible partially occupied slot', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Dennis Van Maasakker',
+    EmailAddressParent1: 'deli@vmaasakker.nl',
+    TelephoneParent1: '06-41683880',
+    NameParent2: 'Lisan van Maasakker - Nas',
+    EmailAddressParent2: '',
+    TelephoneParent2: '06-43242490'
+  });
+  const desired = {
+    name: 'Lisan van Maasakker- Nas',
+    email: 'lisan@vmaasakker.nl',
+    phone: '+31643242490'
+  };
+
+  assert.deepEqual(selectParentSlot(slots, desired), { slot: 2, existing: true });
+  assert.equal(parentValuesMatch({ ...slots[1], email: desired.email }, desired), true);
+});
+
+test('slot selection rejects a partially occupied slot with conflicting contact data', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Andere ouder',
+    EmailAddressParent1: 'ander@example.org',
+    TelephoneParent1: '0612345678',
+    NameParent2: 'Lisan van Maasakker - Nas',
+    EmailAddressParent2: '',
+    TelephoneParent2: '0699999999'
+  });
+
+  assert.equal(selectParentSlot(slots, {
+    name: 'Lisan van Maasakker- Nas',
+    email: 'lisan@vmaasakker.nl',
+    phone: '+31643242490'
+  }), null);
+});
+
 test('queue upsert is idempotent and reopens a changed desired state', () => {
   const db = new Database(':memory:');
   ensureParentSyncSchema(db);
