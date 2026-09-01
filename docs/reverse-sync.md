@@ -27,16 +27,16 @@ Phase 2: Sync to Sportlink (when unsynced changes exist)
     rondo_club_change_detections → lib/reverse-sync-sportlink.js → Sportlink Browser (Playwright)
 
 Parent-slot track:
-    Modified child/parent relationships → parent_slot_sync_jobs
+    New relationships + audited parent e-mail replacements → parent_slot_sync_jobs
     → MemberParentalInfo editor → verified Sportlink parent slot
     → status callback to Rondo Club
 ```
 
 ## Parent/guardian slots
 
-An added Rondo `parent` relationship is detected independently from ordinary contact-field changes. The desired parent name, e-mail address and optional phone number are stored in `parent_slot_sync_jobs`, so a temporary Sportlink outage cannot lose the request.
+An added Rondo `parent` relationship is detected independently from ordinary contact-field changes. The desired parent name, e-mail address and optional phone number are stored in `parent_slot_sync_jobs`, so a temporary Sportlink outage cannot lose the request. Existing slots are updated only from a pending Rondo profile-change audit entry that contains the exact old and new e-mail address.
 
-The writer always reads `MemberParentalInfo` immediately before changing it. It first matches an existing slot by normalized e-mail address. If no match exists, it uses only a slot where name, e-mail and phone are all empty. It never overwrites a partially or fully occupied slot. After saving, it reads the data back and reports `pending`, `synced` (including slot 1 or 2) or `error` to Rondo Club.
+The writer always reads `MemberParentalInfo` immediately before changing it. A new relationship first matches an existing slot by normalized e-mail address, otherwise it uses a compatible partial slot or a fully empty slot. An audited e-mail replacement must find exactly one slot with the old address and a compatible parent name; it changes only the e-mail input and preserves name and phone. After saving, the writer reads the data back and reports `pending`, `synced` (including slot 1 or 2) or `error` to Rondo Club.
 
 Removing a relationship cancels pending work but does not clear an already written Sportlink field in the first version. This avoids destructive reverse synchronization.
 

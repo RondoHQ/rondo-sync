@@ -6,12 +6,17 @@ const {
   ensureParentSyncSchema,
   buildDesiredParent,
   findTrackedParentSource,
+  extractEmailReplacementCandidates,
+  resolveEmailReplacement,
   upsertParentJob,
   cancelMissingParentJobs,
   reconcileChild,
+  reconcileParentEmailChanges,
   extractParentSlots,
   selectParentSlot,
+  selectEmailReplacementSlot,
   parentValuesMatch,
+  emailReplacementMatches,
   getReadyParentJobs,
   markParentJobSynced,
   hasUnresolvedParentJobs,
@@ -93,7 +98,7 @@ test('slot selection completes one compatible partially occupied slot', () => {
   assert.equal(parentValuesMatch({ ...slots[1], email: desired.email }, desired), true);
 });
 
-test('slot selection follows the tracked source email after a parent email change', () => {
+test('email replacement selects only the exact old address and matching parent name', () => {
   const slots = extractParentSlots({
     NameParent1: 'Joep Jan Thijssen',
     EmailAddressParent1: 'old@example.org',
@@ -103,12 +108,33 @@ test('slot selection follows the tracked source email after a parent email chang
     TelephoneParent2: ''
   });
 
-  assert.deepEqual(selectParentSlot(slots, {
+  assert.deepEqual(selectEmailReplacementSlot(slots, {
     name: 'Joep Jan Thijssen',
     email: 'new@example.org',
-    sourceEmail: 'old@example.org',
-    phone: '0698765432'
-  }), { slot: 1, existing: true });
+    sourceEmail: 'old@example.org'
+  }), { slot: 1, existing: true, alreadyTarget: false });
+  assert.equal(emailReplacementMatches(
+    { ...slots[0], email: 'new@example.org' },
+    slots[0],
+    { email: 'new@example.org' }
+  ), true);
+});
+
+test('email replacement updates the old slot even when the target exists elsewhere', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Joep Jan Thijssen',
+    EmailAddressParent1: 'old@example.org',
+    TelephoneParent1: '0612345678',
+    NameParent2: 'Joep Jan Thijssen',
+    EmailAddressParent2: 'new@example.org',
+    TelephoneParent2: ''
+  });
+
+  assert.deepEqual(selectEmailReplacementSlot(slots, {
+    name: 'Joep Jan Thijssen',
+    email: 'new@example.org',
+    sourceEmail: 'old@example.org'
+  }), { slot: 1, existing: true, alreadyTarget: false });
 });
 
 test('slot selection disambiguates a shared parent email with compatible identity fields', () => {
@@ -128,7 +154,7 @@ test('slot selection disambiguates a shared parent email with compatible identit
   }), { slot: 2, existing: true });
 });
 
-test('tracked parent source authorizes and queues a changed parent email for its child', async () => {
+test('a tracked secondary email alone never queues a parent overwrite', async () => {
   const db = new Database(':memory:');
   ensureParentSyncSchema(db);
   db.exec(`
@@ -162,17 +188,138 @@ test('tracked parent source authorizes and queues a changed parent email for its
         first_name: 'Joep Jan',
         last_name: 'Thijssen',
         email_1: 'new@example.org',
+        email_2: 'old@example.org',
         mobile_1: '0698765432'
       }
     }),
     reportParentStatus: async (job, state) => reported.push({ job, state })
   });
 
-  assert.deepEqual(result, { queued: 1, blocked: 0 });
-  const job = getReadyParentJobs(db)[0];
-  assert.equal(JSON.parse(job.desired_json).sourceEmail, 'old@example.org');
-  assert.equal(reported[0].state, 'pending');
+  assert.deepEqual(result, { queued: 0, blocked: 0 });
+  assert.equal(getReadyParentJobs(db).length, 0);
+  assert.deepEqual(reported, []);
   db.close();
+});
+
+test('a pending primary email audit queues one targeted replacement per linked child', async () => {
+  const db = new Database(':memory:');
+  ensureParentSyncSchema(db);
+  const entry = {
+    id: 501,
+    created_at: '2026-09-01T08:00:00Z',
+    type: 'email_promoted',
+    sync_status: 'pending',
+    changes: [
+      {
+        person_id: 88,
+        field: 'email_1',
+        old: 'old@example.org',
+        new: 'new@example.org',
+        sync: true
+      },
+      {
+        person_id: 88,
+        field: 'email_2',
+        old: 'new@example.org',
+        new: 'old@example.org',
+        sync: true
+      }
+    ]
+  };
+  const parent = {
+    id: 88,
+    fields: {
+      first_name: 'Joep Jan',
+      last_name: 'Thijssen',
+      email_1: 'new@example.org',
+      email_2: 'old@example.org',
+      relationships: [
+        { relationship_slug: 'child', related_person_id: 42 },
+        { relationship_slug: 'child', related_person_id: 43 }
+      ]
+    }
+  };
+  const child = {
+    id: 42,
+    fields: {
+      knvb_id: 'CHILD01',
+      former_member: false,
+      relationships: [{ relationship_slug: 'parent', related_person_id: 88 }]
+    }
+  };
+  const secondChild = {
+    id: 43,
+    fields: {
+      knvb_id: 'CHILD02',
+      former_member: false,
+      relationships: [{ relationship_slug: 'parent', related_person_id: 88 }]
+    }
+  };
+
+  const candidates = extractEmailReplacementCandidates([entry]);
+  assert.equal(candidates.length, 1);
+  assert.deepEqual(resolveEmailReplacement(candidates[0], parent), {
+    ...candidates[0],
+    newEmail: 'new@example.org'
+  });
+
+  const reported = [];
+  const result = await reconcileParentEmailChanges(
+    db,
+    [entry],
+    new Map([[88, parent], [42, child], [43, secondChild]]),
+    { reportParentStatus: async (job, state) => reported.push({ job, state }) }
+  );
+
+  assert.deepEqual(result, { queued: 2, blocked: 0 });
+  const jobs = getReadyParentJobs(db);
+  assert.equal(jobs.length, 2);
+  const desired = JSON.parse(jobs[0].desired_json);
+  assert.deepEqual(desired, {
+    auditId: 501,
+    childKnvbId: 'CHILD01',
+    childRondoId: 42,
+    email: 'new@example.org',
+    mode: 'replace_email',
+    name: 'Joep Jan Thijssen',
+    parentRondoId: 88,
+    sourceEmail: 'old@example.org'
+  });
+  assert.equal(reported[0].state, 'pending');
+  assert.equal(reported[1].job.childKnvbId, 'CHILD02');
+  db.close();
+});
+
+test('stale audit replacements are ignored when the new address is no longer current', () => {
+  const candidate = {
+    auditId: 502,
+    personId: 88,
+    oldEmail: 'old@example.org',
+    newEmail: 'temporary@example.org'
+  };
+  assert.equal(resolveEmailReplacement(candidate, {
+    fields: { email_1: 'final@example.org', email_2: '' }
+  }), null);
+});
+
+test('removing a secondary email falls back to the current primary address', () => {
+  const candidates = extractEmailReplacementCandidates([{
+    id: 503,
+    created_at: '2026-09-01T08:05:00Z',
+    type: 'email_removed',
+    sync_status: 'pending',
+    changes: [{
+      person_id: 88,
+      field: 'email_2',
+      old: 'removed@example.org',
+      new: '',
+      sync: true
+    }]
+  }]);
+
+  assert.equal(resolveEmailReplacement(candidates[0], {
+    fields: { email_1: 'primary@example.org', email_2: '' }
+  }).newEmail, 'primary@example.org');
 });
 
 test('slot selection rejects a partially occupied slot with conflicting contact data', () => {
