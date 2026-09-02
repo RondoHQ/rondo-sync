@@ -1,6 +1,6 @@
 {
   "name": "rondo-sync",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "private": true,
   "description": "Sync data between Sportlink, Rondo Club, Sponsit, and connected services",
   "main": "steps/download-data-from-sportlink.js",
@@ -63,6 +63,7 @@
     "sync-freescout": "node pipelines/sync-freescout.js",
     "sync-freescout-verbose": "node pipelines/sync-freescout.js --verbose",
     "preview-freescout-cleanup": "node tools/preview-freescout-customer-cleanup.js",
+    "cleanup-freescout-profiles": "node tools/cleanup-freescout-customer-profiles.js",
     "sync-individual": "node pipelines/sync-individual.js",
     "sync-individual-verbose": "node pipelines/sync-individual.js --verbose",
     "show-laposta-member": "node tools/show-laposta-member.js",

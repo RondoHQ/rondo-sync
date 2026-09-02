@@ -26,6 +26,18 @@ test('classifies non-minimal customer profile data without exposing values', () 
   );
 });
 
+test('ignores empty customer field definitions', () => {
+  assert.deepEqual(
+    classifyCustomer({
+      customerFields: [
+        { id: 4, name: 'KNVB ID', value: '', text: '' },
+        { id: 7, name: 'Balance', value: null, text: '' }
+      ]
+    }),
+    []
+  );
+});
+
 test('summarizes only tracked customers and returns aggregate counts', () => {
   const preview = buildCleanupPreview(
     [
