@@ -133,6 +133,43 @@ test('only Sponsit-owned missing companies are archived', () => {
   assert.deepEqual(plan.sponsors.archives.map((sponsor) => sponsor.id), [1]);
 });
 
+test('clears legacy sponsor fields when the final active Sponsit relation is archived', () => {
+  const person = {
+    id: 7,
+    fields: { person_type: 'contact', is_sponsor: true, sponsor_pass_variant: 'businessclub' }
+  };
+  const owned = {
+    id: 70,
+    status: 'publish',
+    fields: { sponsit_contact_id: '99', contacts: [{ person_id: 7, sponsit_person_id: 'contact:99' }] }
+  };
+  const plan = planRondoSponsorSync([], [person], [owned]);
+  assert.deepEqual(plan.people.deactivations, [{
+    person,
+    fields: { is_sponsor: false, sponsor_pass_variant: '' },
+    archiveSponsorIds: [70]
+  }]);
+});
+
+test('preserves legacy sponsor fields while another active sponsor relation remains', () => {
+  const person = {
+    id: 7,
+    fields: { person_type: 'contact', is_sponsor: true, sponsor_pass_variant: 'businessclub' }
+  };
+  const removed = {
+    id: 70,
+    status: 'publish',
+    fields: { sponsit_contact_id: '99', contacts: [{ person_id: 7, sponsit_person_id: 'contact:99' }] }
+  };
+  const manual = {
+    id: 71,
+    status: 'publish',
+    fields: { sponsit_contact_id: '', contacts: [{ person_id: 7 }] }
+  };
+  const plan = planRondoSponsorSync([], [person], [removed, manual]);
+  assert.equal(plan.people.deactivations.length, 0);
+});
+
 test('apply creates a sponsor before atomically creating its person relation', async () => {
   const requests = [];
   const plan = planRondoSponsorSync([record()], [], []);
@@ -244,10 +281,44 @@ test('an existing manual logo is not overwritten by Sponsit', () => {
   assert.equal(item.logoNeedsImport, false);
 });
 
-test('archiving a company never clears or deletes its people', async () => {
-  const plan = planRondoSponsorSync([], [], [{ id: 42, status: 'publish', fields: { sponsit_contact_id: '99' } }]);
+test('archiving a company clears its legacy role without deleting the person', async () => {
+  const person = { id: 7, fields: { is_sponsor: '1', sponsor_pass_variant: 'businessclub' } };
+  const sponsor = {
+    id: 42,
+    status: 'publish',
+    fields: { sponsit_contact_id: '99', contacts: [{ person_id: 7, sponsit_person_id: 'contact:99' }] }
+  };
+  const plan = planRondoSponsorSync([], [person], [sponsor]);
   const requests = [];
   const result = await applyPlan(plan, { request: async (...args) => { requests.push(args); return { body: {} }; } });
   assert.equal(result.companiesArchived, 1);
+  assert.equal(result.peopleDeactivated, 1);
   assert.deepEqual(requests[0].slice(0, 3), ['rondo/v1/sponsors/42', 'DELETE', null]);
+  assert.deepEqual(requests[1].slice(0, 3), [
+    'wp/v2/people/7',
+    'PATCH',
+    { fields: { is_sponsor: false, sponsor_pass_variant: '' } }
+  ]);
+  assert.equal(requests.some(([endpoint]) => endpoint === 'wp/v2/people'), false);
+});
+
+test('does not clear a legacy role when its sponsor archive fails', async () => {
+  const person = { id: 7, fields: { is_sponsor: true, sponsor_pass_variant: 'businessclub' } };
+  const sponsor = {
+    id: 42,
+    status: 'publish',
+    fields: { sponsit_contact_id: '99', contacts: [{ person_id: 7, sponsit_person_id: 'contact:99' }] }
+  };
+  const plan = planRondoSponsorSync([], [person], [sponsor]);
+  const requests = [];
+  const result = await applyPlan(plan, {
+    request: async (...args) => {
+      requests.push(args);
+      throw new Error('Archive failed');
+    }
+  });
+  assert.equal(result.companiesArchived, 0);
+  assert.equal(result.peopleDeactivated, 0);
+  assert.equal(result.errors.length, 1);
+  assert.equal(requests.length, 1);
 });

@@ -49,6 +49,7 @@ async function applyPlan(plan, options = {}) {
   const result = {
     peopleCreated: 0,
     peopleUpdated: 0,
+    peopleDeactivated: 0,
     companiesCreated: 0,
     companiesUpdated: 0,
     companiesArchived: 0,
@@ -163,12 +164,24 @@ async function applyPlan(plan, options = {}) {
     }
   }
 
+  const archivedSponsorIds = new Set();
   for (const sponsor of plan.sponsors.archives) {
     try {
       await request(`rondo/v1/sponsors/${sponsor.id}`, 'DELETE', null, options);
       result.companiesArchived += 1;
+      archivedSponsorIds.add(Number(sponsor.id));
     } catch (error) {
       result.errors.push(buildApplyError(error, { rondoId: sponsor.id, action: 'archive_company' }));
+    }
+  }
+
+  for (const item of plan.people.deactivations || []) {
+    if (!item.archiveSponsorIds.every((id) => archivedSponsorIds.has(Number(id)))) continue;
+    try {
+      await request(`wp/v2/people/${item.person.id}`, 'PATCH', { fields: item.fields }, options);
+      result.peopleDeactivated += 1;
+    } catch (error) {
+      result.errors.push(buildApplyError(error, { rondoId: item.person.id, action: 'clear_legacy_sponsor_role' }));
     }
   }
   return result;
@@ -235,6 +248,7 @@ function summarizePlan(plan, existingPeople, existingSponsors) {
     existingCompanies: existingSponsors.length,
     peopleCreate: plan.people.creates.length,
     peopleUpdate: plan.people.updates.length,
+    peopleDeactivate: plan.people.deactivations.length,
     peopleUnchanged: plan.people.unchanged.length,
     companiesCreate: plan.sponsors.creates.length,
     companiesUpdate: plan.sponsors.updates.length,
