@@ -3,6 +3,12 @@ require('dotenv/config');
 const { freescoutRequestWithRetry, checkCredentials } = require('../lib/freescout-client');
 const { openDb, getAllTrackedCustomers } = require('../lib/freescout-db');
 
+function getCustomerFields(customer) {
+  if (Array.isArray(customer.customerFields)) return customer.customerFields;
+  if (Array.isArray(customer.customer_fields)) return customer.customer_fields;
+  return [];
+}
+
 const PROFILE_CATEGORIES = {
   phone: customer => [customer.phone, customer.phones, customer._embedded?.phones],
   photo: customer => [customer.photoUrl, customer.photo_url],
@@ -23,7 +29,7 @@ const PROFILE_CATEGORIES = {
     customer._embedded?.social_profiles
   ],
   websites: customer => [customer.websites, customer._embedded?.websites],
-  customFields: customer => [customer.customerFields, customer.customer_fields],
+  customFields: customer => getCustomerFields(customer).flatMap(field => [field.value, field.text]),
   properties: customer => [customer.properties]
 };
 
@@ -117,7 +123,14 @@ function printPreview(preview) {
   console.log('No data was changed. No names, email addresses, customer IDs or field values were printed.');
 }
 
-module.exports = { hasValue, classifyCustomer, buildCleanupPreview, fetchAllCustomers, runPreview };
+module.exports = {
+  getCustomerFields,
+  hasValue,
+  classifyCustomer,
+  buildCleanupPreview,
+  fetchAllCustomers,
+  runPreview
+};
 
 if (require.main === module) {
   runPreview()
