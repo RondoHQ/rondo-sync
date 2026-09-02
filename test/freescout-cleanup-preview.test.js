@@ -14,19 +14,29 @@ test('classifies non-minimal customer profile data without exposing values', () 
       firstName: 'Maaike',
       lastName: 'Netten',
       emails: [{ value: 'member@example.test' }],
-      phones: [{ value: '+31612345678' }],
-      address: { city: 'Wijchen' },
-      websites: [{ value: 'https://example.test' }],
+      _embedded: {
+        phones: [{ value: '+31612345678' }],
+        address: { city: 'Wijchen' },
+        websites: [{ value: 'https://example.test' }]
+      },
+      customerFields: [{ id: 4, value: 'KNVB123' }],
       notes: ''
     }),
-    ['phone', 'address', 'websites']
+    ['phone', 'address', 'websites', 'customFields']
   );
 });
 
 test('summarizes only tracked customers and returns aggregate counts', () => {
   const preview = buildCleanupPreview(
     [
-      { id: 10, phones: [{ value: '+31612345678' }], address: { city: 'Wijchen' } },
+      {
+        id: 10,
+        _embedded: {
+          phones: [{ value: '+31612345678' }],
+          address: { city: 'Wijchen' }
+        },
+        customerFields: [{ id: 4, value: 'KNVB123' }]
+      },
       { id: 11, photoUrl: 'https://example.test/photo.jpg' },
       { id: 99, notes: 'Untracked customer' }
     ],
@@ -40,8 +50,8 @@ test('summarizes only tracked customers and returns aggregate counts', () => {
   assert.equal(preview.categoryCounts.phone, 1);
   assert.equal(preview.categoryCounts.address, 1);
   assert.equal(preview.categoryCounts.photo, 1);
+  assert.equal(preview.categoryCounts.customFields, 1);
   assert.equal(preview.categoryCounts.notes, 0);
-  assert.equal(preview.legacyCustomFieldsTargeted, 2);
   assert.equal(JSON.stringify(preview).includes('Wijchen'), false);
   assert.equal(JSON.stringify(preview).includes('+31612345678'), false);
 });

@@ -1,6 +1,6 @@
 {
   "name": "rondo-sync",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "Sync data between Sportlink, Rondo Club, Sponsit, and connected services",
   "main": "steps/download-data-from-sportlink.js",
