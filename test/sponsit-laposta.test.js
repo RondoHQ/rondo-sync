@@ -84,6 +84,51 @@ test('deduplicates one person registered under multiple sponsors', () => {
   assert.equal(plan.quarantined.length, 0);
 });
 
+test('includes a manually managed Rondo Businessclub member', () => {
+  const rondoMember = { id: 7, fields: { person_type: 'member', first_name: 'Tiny', last_name: 'Janssen', email_1: 'tiny@example.test' } };
+  const manualBusinessclub = {
+    id: 71,
+    title: 'Leden van verdienste',
+    status: 'publish',
+    fields: {
+      sponsor_role: 'businessclub',
+      sponsit_contact_id: '',
+      contacts: [{ person_id: 7, receives_pass: true, is_primary_pass: true }]
+    }
+  };
+
+  const plan = buildSponsitLapostaPlan([], [rondoMember], [manualBusinessclub]);
+  assert.equal(plan.members.length, 1);
+  assert.equal(plan.members[0].custom_fields.businessclub, 'Ja');
+  assert.equal(plan.members[0].custom_fields.sponsorvariant, 'Businessclub AWC');
+  assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Leden van verdienste');
+  assert.equal(plan.members[0].custom_fields.islid, 'Ja');
+  assert.equal(plan.members[0].custom_fields.sponsitcontactid, '');
+});
+
+test('manual Businessclub membership overrides a Sponsit sponsor without losing source IDs', () => {
+  const sponsitRecord = record();
+  sponsitRecord.contact.tags = [];
+  const rondoMember = { id: 7, fields: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'jan@example.test' } };
+  const manualBusinessclub = {
+    id: 71,
+    title: 'Leden van verdienste',
+    status: 'publish',
+    fields: {
+      sponsor_role: 'businessclub',
+      sponsit_contact_id: '',
+      contacts: [{ person_id: 7, receives_pass: true, is_primary_pass: true }]
+    }
+  };
+
+  const plan = buildSponsitLapostaPlan([sponsitRecord], [rondoMember], [manualBusinessclub]);
+  assert.equal(plan.members.length, 1);
+  assert.equal(plan.members[0].custom_fields.businessclub, 'Ja');
+  assert.equal(plan.members[0].custom_fields.bedrijfsnaam, 'Leden van verdienste');
+  assert.equal(plan.members[0].custom_fields.sponsitcontactid, '10');
+  assert.equal(plan.members[0].custom_fields.sponsitpersoonid, '20');
+});
+
 test('requires the complete dedicated Laposta schema', () => {
   const fields = SPONSIT_LAPOSTA_FIELDS.slice(0, -1).map((custom_name) => ({ custom_name }));
   assert.deepEqual(validateLapostaFields(fields), ['islid']);

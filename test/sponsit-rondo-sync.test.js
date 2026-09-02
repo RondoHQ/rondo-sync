@@ -79,6 +79,23 @@ test('same person identity across sponsors resolves to one person', () => {
   assert.equal(relations.filter((relation) => relation.is_primary_pass).length, 1);
 });
 
+test('manual primary pass remains primary over a Sponsit relationship', () => {
+  const member = { id: 7, fields: { person_type: 'member', first_name: 'Jan', last_name: 'Jansen', email_1: 'jan@example.test' } };
+  const manualBusinessclub = {
+    id: 71,
+    title: 'Leden van verdienste',
+    status: 'publish',
+    fields: {
+      sponsor_role: 'businessclub',
+      sponsit_contact_id: '',
+      contacts: [{ person_id: 7, receives_pass: true, is_primary_pass: true }]
+    }
+  };
+
+  const plan = planRondoSponsorSync([record()], [member], [manualBusinessclub]);
+  assert.equal(plan.sponsors.creates[0].desired.fields.contacts[0].is_primary_pass, false);
+});
+
 test('WordPress title entity encoding does not trigger a sponsor update', () => {
   const source = record({
     contact: { id: 10, type: 'company', name: "Example & Partner's", status: { code: 'sponsor' } }
