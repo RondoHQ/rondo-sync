@@ -20,7 +20,7 @@ graph LR
     SYNC -->|Members, custom fields| LP
     SYNC -->|Members, parents, teams,<br>commissies, work history,<br>photos| ST
     SYNC -->|Customers| FS
-    ST -->|Field changes + contributions| SYNC
+    ST -->|Field changes| SYNC
     SYNC -->|Reverse sync| SL
 ```
 
@@ -41,7 +41,7 @@ graph LR
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |
 | Functions | 4x daily + weekly full | Commissies, free fields, work history → Rondo Club |
-| FreeScout | Daily | Members and current Rondo contribution status → FreeScout helpdesk customers |
+| FreeScout | Daily | Customer names and email addresses → FreeScout helpdesk |
 | Teams | Weekly | Team rosters + work history with Sportlink relation dates → Rondo Club |
 | Discipline | Weekly | Discipline cases → Rondo Club |
 
@@ -101,7 +101,7 @@ See the [Installation Guide](docs/installation.md) for full setup instructions i
 | [People Pipeline](docs/pipeline-people.md) | 7-step flow, Laposta + Rondo Club field mappings |
 | [Teams Pipeline](docs/pipeline-teams.md) | Team download + work history |
 | [Functions Pipeline](docs/pipeline-functions.md) | Commissies, free fields, daily vs full mode |
-| [FreeScout Pipeline](docs/pipeline-freescout.md) | Customer sync with custom fields |
+| [FreeScout Pipeline](docs/pipeline-freescout.md) | Minimal customer identity sync |
 | [Discipline Pipeline](docs/pipeline-discipline.md) | Discipline cases + season taxonomy |
 | [Reverse Sync](docs/reverse-sync.md) | Rondo Club → Sportlink browser automation with parent e-mail propagation |
 | [Database Schema](docs/database-schema.md) | All 4 databases, 21 tables |
