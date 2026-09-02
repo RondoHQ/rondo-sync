@@ -172,6 +172,7 @@ cd "$PROJECT_DIR"
 
 # Source .env file
 if [ -f "$PROJECT_DIR/.env" ]; then
+    chmod 600 "$PROJECT_DIR/.env"
     set -a
     source "$PROJECT_DIR/.env"
     set +a

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+umask 077
 
 # Resolve project directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -48,7 +49,8 @@ if [ "$NEED_LETTERMINT" = true ]; then
     echo "Lettermint configuration (for email delivery):"
     echo "  Get your API token from: Lettermint Dashboard -> API Tokens"
     echo ""
-    read -p "Enter Lettermint API Token: " LETTERMINT_API_TOKEN
+    read -s -p "Enter Lettermint API Token: " LETTERMINT_API_TOKEN
+    echo ""
 
     if [ -z "$LETTERMINT_API_TOKEN" ]; then
         echo "Error: Lettermint API Token cannot be empty" >&2
@@ -68,6 +70,7 @@ if [ "$NEED_LETTERMINT" = true ]; then
 
     # Create .env if it doesn't exist
     touch "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
 
     # Ensure .env ends with a newline before appending
     if [ -s "$ENV_FILE" ] && [ -n "$(tail -c 1 "$ENV_FILE")" ]; then
@@ -99,6 +102,7 @@ if [ "$NEED_LETTERMINT" = true ]; then
     echo "Lettermint configuration saved to .env"
 else
     echo "Using existing Lettermint configuration from .env"
+    chmod 600 "$ENV_FILE"
     OPERATOR_EMAIL=$(grep "^OPERATOR_EMAIL=" "$ENV_FILE" | cut -d= -f2)
 fi
 
