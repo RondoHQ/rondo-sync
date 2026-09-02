@@ -4,14 +4,26 @@ const { freescoutRequestWithRetry, checkCredentials } = require('../lib/freescou
 const { openDb, getAllTrackedCustomers } = require('../lib/freescout-db');
 
 const PROFILE_CATEGORIES = {
-  phone: customer => [customer.phone, customer.phones],
+  phone: customer => [customer.phone, customer.phones, customer._embedded?.phones],
   photo: customer => [customer.photoUrl, customer.photo_url],
-  address: customer => [customer.address, customer.city, customer.state, customer.zip, customer.country],
+  address: customer => [
+    customer.address,
+    customer.city,
+    customer.state,
+    customer.zip,
+    customer.country,
+    customer._embedded?.address
+  ],
   company: customer => [customer.company],
   jobTitle: customer => [customer.jobTitle, customer.job_title],
   notes: customer => [customer.notes],
-  socialProfiles: customer => [customer.socialProfiles, customer.social_profiles],
-  websites: customer => [customer.websites],
+  socialProfiles: customer => [
+    customer.socialProfiles,
+    customer.social_profiles,
+    customer._embedded?.social_profiles
+  ],
+  websites: customer => [customer.websites, customer._embedded?.websites],
+  customFields: customer => [customer.customerFields, customer.customer_fields],
   properties: customer => [customer.properties]
 };
 
@@ -49,8 +61,7 @@ function buildCleanupPreview(customers, trackedIds) {
     matchedTrackedCustomers,
     missingTrackedCustomers: trackedIds.size - matchedTrackedCustomers,
     customersWithExtraProfileData,
-    categoryCounts,
-    legacyCustomFieldsTargeted: matchedTrackedCustomers
+    categoryCounts
   };
 }
 
@@ -103,7 +114,6 @@ function printPreview(preview) {
   for (const [category, count] of Object.entries(preview.categoryCounts)) {
     console.log(`  ${category}: ${count}`);
   }
-  console.log(`Legacy custom-field sets targeted by a later cleanup: ${preview.legacyCustomFieldsTargeted}`);
   console.log('No data was changed. No names, email addresses, customer IDs or field values were printed.');
 }
 
