@@ -16,9 +16,9 @@
           <th>Started</th>
           <th>Duration</th>
           <th>Outcome</th>
-          <th>Created</th>
-          <th>Updated</th>
-          <th>Skipped</th>
+          <th><%= pipelineName === 'people' ? 'People created' : 'Created' %></th>
+          <th><%= pipelineName === 'people' ? 'People updated' : 'Updated' %></th>
+          <th><%= pipelineName === 'people' ? 'People unchanged' : 'Skipped' %></th>
           <th>Failed</th>
         </tr>
       </thead>
@@ -42,9 +42,9 @@
                 <%= run.outcome %>
               </span>
             </td>
-            <td><%= run.total_created %></td>
-            <td><%= run.total_updated %></td>
-            <td><%= run.total_skipped %></td>
+            <td><%= run.display_created %></td>
+            <td><%= run.display_updated %></td>
+            <td><%= run.display_skipped %></td>
             <td>
               <% if (run.total_failed > 0) { %>
                 <span class="outcome-failure"><%= run.total_failed %></span>

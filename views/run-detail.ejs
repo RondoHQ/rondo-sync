@@ -40,16 +40,16 @@
 
   <div class="counts">
     <div class="count-item">
-      <div class="count-number"><%= run.total_created %></div>
-      <div class="count-label">Created</div>
+      <div class="count-number"><%= run.display_created %></div>
+      <div class="count-label"><%= run.display_metric_label ? `${run.display_metric_label} created` : 'Created' %></div>
     </div>
     <div class="count-item">
-      <div class="count-number"><%= run.total_updated %></div>
-      <div class="count-label">Updated</div>
+      <div class="count-number"><%= run.display_updated %></div>
+      <div class="count-label"><%= run.display_metric_label ? `${run.display_metric_label} updated` : 'Updated' %></div>
     </div>
     <div class="count-item">
-      <div class="count-number"><%= run.total_skipped %></div>
-      <div class="count-label">Skipped</div>
+      <div class="count-number"><%= run.display_skipped %></div>
+      <div class="count-label"><%= run.display_metric_label ? `${run.display_metric_label} unchanged` : 'Skipped' %></div>
     </div>
     <div class="count-item">
       <div class="count-number <%= run.total_failed > 0 ? 'count-failed' : '' %>"><%= run.total_failed %></div>
@@ -68,6 +68,8 @@
 
 <h3>Steps</h3>
 
+<% const showProcessed = steps.some(step => step.processed_count > 0); %>
+
 <% if (steps.length === 0) { %>
   <p style="color: #666; padding: 2rem; text-align: center;">No step data recorded</p>
 <% } else { %>
@@ -78,6 +80,7 @@
           <th>Step Name</th>
           <th>Duration</th>
           <th>Outcome</th>
+          <% if (showProcessed) { %><th>Processed</th><% } %>
           <th>Created</th>
           <th>Updated</th>
           <th>Skipped</th>
@@ -106,6 +109,7 @@
                 </span>
               <% } %>
             </td>
+            <% if (showProcessed) { %><td><%= step.processed_count %></td><% } %>
             <td><%= step.created_count %></td>
             <td><%= step.updated_count %></td>
             <td><%= step.skipped_count %></td>

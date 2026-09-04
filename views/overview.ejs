@@ -39,11 +39,11 @@
         </div>
 
         <div class="counts">
-          <% if (pipeline.lastRun.total_created > 0) { %>
-            <span>Created: <%= pipeline.lastRun.total_created %></span>
+          <% if (pipeline.lastRun.display_metric_label || pipeline.lastRun.display_created > 0) { %>
+            <span><%= pipeline.lastRun.display_metric_label ? `${pipeline.lastRun.display_metric_label} created` : 'Created' %>: <%= pipeline.lastRun.display_created %></span>
           <% } %>
-          <% if (pipeline.lastRun.total_updated > 0) { %>
-            <span>Updated: <%= pipeline.lastRun.total_updated %></span>
+          <% if (pipeline.lastRun.display_updated > 0) { %>
+            <span><%= pipeline.lastRun.display_metric_label ? `${pipeline.lastRun.display_metric_label} updated` : 'Updated' %>: <%= pipeline.lastRun.display_updated %></span>
           <% } %>
           <% if (pipeline.lastRun.total_failed > 0) { %>
             <span class="count-failed">Failed: <%= pipeline.lastRun.total_failed %></span>
