@@ -5,6 +5,7 @@ const { openDb, getAllTrackedMembers, getAllTeams, computeMemberTeamSignature, u
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
+const { normalizeTeamMembershipSeasons } = require('../lib/team-membership-periods');
 
 function formatDateForFields(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -171,7 +172,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   const sourceEntries = [];
   const sourceSignatures = new Set();
 
-  for (const row of teamRows) {
+  for (const row of normalizeTeamMembershipSeasons(teamRows, options.now)) {
     const teamRondoClubId = resolveTeamRondoClubId(row, teamBySportlinkId, teamByName);
 
     const entry = {

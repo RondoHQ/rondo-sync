@@ -316,6 +316,8 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 **Run player-history immediately after team work-history.** Sportlink's fast team-roster response contains the member, team, and role but not `RelationStart` or `RelationEnd`. The member-details memberships response contains those dates. Both the `teams` and `all` pipelines must therefore run `submit-rondo-club-player-history.js` directly after the quick work-history step. Signature skipping keeps this detail pass limited to changed team memberships; the monthly standalone run remains a safety net.
 
+**An empty Sportlink `RelationEnd` does not imply a current role.** Normalize team memberships with `lib/team-membership-periods.js` before mapping work history. For a recognized, closed `SeasonDescription`, use June 30 of the ending year as the fallback (Europe/Amsterdam). Preserve explicit end dates, unknown or contradictory periods, and current-season copies of the same team/role/start date. Multiple historical copies use the most recent season. Keep this inference separate from actual source dates.
+
 ## Documentation Maintenance
 
 After functional changes, update:

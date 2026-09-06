@@ -53,6 +53,10 @@ snapshot; an omitted field is never treated as an explicitly empty value.
 After a successful individual sync, its locally computed source hash is recorded
 as synchronized so the next People run does not process the same payload again.
 
+Team history uses the Sportlink season when a historical relation has no end date:
+a closed season ends on June 30. Explicit end dates and continuing current-season
+relations take precedence, so importing old history cannot reactivate an old role.
+
 ### Daily Timeline
 
 All times in Europe/Amsterdam timezone.
