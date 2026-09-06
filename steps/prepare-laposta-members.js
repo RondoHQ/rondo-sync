@@ -326,7 +326,13 @@ function buildMemberEntry(params) {
     const parentEmail2 = normalizeEmail(member.EmailAddressParent2);
     const usesParentEmail = normalized && (normalized === parentEmail1 || normalized === parentEmail2);
 
-    if (!usesParentEmail) {
+    if (usesParentEmail) {
+      const parentNumber = normalized === parentEmail1 ? '1' : '2';
+      const parentName = memberNameMap.get(normalized)
+        || buildParentNameParts(member, `NameParent${parentNumber}`);
+      Object.assign(customFields, parentName);
+      mergeOuderVan(customFields, parentNamesMap.get(normalized));
+    } else {
       mergeOuderVan(customFields, parentNamesMap.get(normalized));
       mergeCommaField(customFields, 'team', parentTeamsMap.get(normalized));
       mergeCommaField(customFields, 'leeftijdscategorie', parentAgeClassMap.get(normalized));
@@ -354,14 +360,44 @@ function buildAggregationMaps(members, mapping) {
   const parentTeamsMap = new Map();
   const parentAgeClassMap = new Map();
 
-  // Build member name map from primary emails
-  members.forEach(member => {
-    if (!isValidEmail(member.Email)) return;
-    const normalized = normalizeEmail(member.Email);
-    if (!memberNameMap.has(normalized)) {
-      memberNameMap.set(normalized, buildMemberNameParts(member));
+  // A child's primary address often belongs to their parent. Exclude every
+  // known child before resolving an email to a member's personal name.
+  const parentRecipients = new Map();
+  for (const member of members) {
+    for (const number of [1, 2]) {
+      const email = normalizeEmail(member[`EmailAddressParent${number}`]);
+      if (!isValidEmail(email)) continue;
+      if (!parentRecipients.has(email)) {
+        parentRecipients.set(email, { children: new Set(), names: new Map() });
+      }
+      const recipient = parentRecipients.get(email);
+      recipient.children.add(member);
+      const name = member[`NameParent${number}`];
+      if (hasValue(name)) {
+        recipient.names.set(String(name).trim().toLowerCase(), buildParentNameParts(member, `NameParent${number}`));
+      }
     }
-  });
+  }
+
+  for (const [email, recipient] of parentRecipients) {
+    const memberNames = new Map();
+    for (const member of members) {
+      if (recipient.children.has(member)) continue;
+      if (normalizeEmail(member.Email) !== email) continue;
+      const name = buildMemberNameParts(member);
+      if (!name.voornaam && !name.achternaam) continue;
+      memberNames.set(JSON.stringify(name).toLowerCase(), name);
+    }
+    if (memberNames.size === 1) {
+      memberNameMap.set(email, memberNames.values().next().value);
+    } else if (recipient.names.size === 1) {
+      memberNameMap.set(email, recipient.names.values().next().value);
+    } else if (recipient.names.size > 1 || memberNames.size > 1) {
+      // Shared mailboxes with conflicting identities must not pick a person
+      // based on Sportlink row order.
+      memberNameMap.set(email, { voornaam: 'Ouder/verzorger', tussenvoegsel: '', achternaam: '' });
+    }
+  }
 
   // Build parent aggregation maps
   members.forEach(member => {
@@ -648,7 +684,7 @@ async function runPrepare(options = {}) {
   }
 }
 
-module.exports = { runPrepare };
+module.exports = { runPrepare, buildAggregationMaps, processMembers };
 
 // CLI entry point
 if (require.main === module) {
