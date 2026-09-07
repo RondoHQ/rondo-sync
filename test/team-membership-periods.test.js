@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeTeamMembershipSeasons: normalize } = require('../lib/team-membership-periods');
+const { normalizeTeamMembershipSeasons: normalize, isTeamMembershipCurrent } = require('../lib/team-membership-periods');
 const { reconcilePlayerHistory } = require('../steps/submit-rondo-club-player-history');
 
 const now = new Date('2026-09-06T12:00:00Z');
@@ -71,4 +71,32 @@ test('reimport closes the stale role once and preserves unrelated and ended hist
   assert.deepEqual(result.workHistory[2], unrelated);
   const repeated = reconcilePlayerHistory(result.workHistory, source);
   assert.equal(repeated.created + repeated.reconciled, 0);
+});
+
+
+test('an inactive club-team membership stays historical without inventing an end date', () => {
+  const source = { PublicTeamId: 'club-team', Status: 'INACTIVE', RelationStart: '2019-11-05', RelationEnd: null, SeasonDescription: null };
+  const [row] = normalize([source], now);
+  assert.equal(isTeamMembershipCurrent(row), false);
+  assert.equal(row.RelationEnd, null);
+  assert.equal(isTeamMembershipCurrent({ ...row, Status: ' inactive ' }), false);
+  assert.equal(isTeamMembershipCurrent({ ...row, Status: 'ACTIVE' }), true);
+  assert.equal(isTeamMembershipCurrent({ ...row, Status: undefined }), true);
+  assert.equal(isTeamMembershipCurrent({ ...row, Status: 'ACTIVE', RelationEnd: '2024-12-14' }), false);
+});
+
+test('a status-only correction updates the exact stint once and preserves other history', () => {
+  const historical = { team_id: 42, job_title: 'Teamspeler', start_date: '2024-09-08', end_date: '2024-12-14', is_current: false };
+  const incorrect = { team_id: 42, job_title: 'Teamspeler', start_date: '2019-11-05', end_date: null, is_current: true };
+  const unrelated = { team_id: 99, job_title: 'Trainer', is_current: true };
+  const source = [historical, { ...incorrect, is_current: false }];
+  for (const entries of [source, [...source].reverse()]) {
+    const result = reconcilePlayerHistory([historical, incorrect, unrelated], entries);
+    assert.equal(result.created, 0);
+    assert.equal(result.reconciled, 1);
+    assert.deepEqual(result.workHistory, [historical, source[1], unrelated]);
+    const repeated = reconcilePlayerHistory(result.workHistory, entries);
+    assert.equal(repeated.created + repeated.reconciled, 0);
+    assert.deepEqual(repeated.workHistory, result.workHistory);
+  }
 });

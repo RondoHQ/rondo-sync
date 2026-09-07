@@ -5,7 +5,7 @@ const { openDb, getAllTrackedMembers, getAllTeams, computeMemberTeamSignature, u
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
-const { normalizeTeamMembershipSeasons } = require('../lib/team-membership-periods');
+const { normalizeTeamMembershipSeasons, isTeamMembershipCurrent } = require('../lib/team-membership-periods');
 
 function formatDateForFields(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -43,7 +43,7 @@ function buildSignature(entry) {
   const start = String(entry.start_date || '');
   const end = String(entry.end_date || '');
   const title = String(entry.job_title || '').trim().toLowerCase();
-  return `${teamKey}|${start}|${end}|${title}`;
+  return `${teamKey}|${start}|${end}|${title}|${entry.is_current === false ? 0 : 1}`;
 }
 
 function buildAssignmentKey(entry) {
@@ -177,7 +177,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
 
     const entry = {
       job_title: buildJobTitle(row),
-      is_current: !row.RelationEnd,
+      is_current: isTeamMembershipCurrent(row),
       start_date: formatDateForFields(row.RelationStart),
       end_date: formatDateForFields(row.RelationEnd)
     };
