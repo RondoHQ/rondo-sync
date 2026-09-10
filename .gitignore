@@ -20,6 +20,9 @@ debug/
 .sync-*.lock
 .cron.lock
 
+# Browser runtime profile
+.pki/
+
 # Databases
 *.sqlite
 
