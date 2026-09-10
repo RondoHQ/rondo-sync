@@ -3,6 +3,7 @@
 
 # NPM
 .npm-cache/
+.npm/
 node_modules
 
 # Data
@@ -12,7 +13,12 @@ downloads/
 
 # Logs
 logs/
+debug/
 .playwright-cli/
+
+# Runtime locks
+.sync-*.lock
+.cron.lock
 
 # Databases
 *.sqlite
@@ -22,6 +28,7 @@ config/users.json
 
 # OS
 .DS_Store
+._*
 
 # ── GSD baseline (auto-generated) ──
 .gsd/activity/
