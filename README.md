@@ -48,6 +48,12 @@ After a person merge, sponsor aliases with different emails share one primary
 pass. Sync preserves an existing eligible primary relation, including a manually
 managed Businessclub pass.
 
+Member sync checks the surviving person's KNVB ID before following a merge.
+When a merged source has a different KNVB ID, its original tracking row is
+retained with `retired_into_knvb_id`. Reimports cannot reactivate that source,
+even after the old WordPress post is permanently removed. Former-member cleanup
+also leaves the surviving membership intact.
+
 | Pipeline | Schedule | What it syncs |
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |

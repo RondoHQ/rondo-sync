@@ -10,6 +10,7 @@ const {
   getMembersNeedingSync,
   updateSyncState,
   deleteMember,
+  retireMemberIdentity,
   getMembersNotInList,
   getAllTrackedMembers,
   getMemberOwnedPersonIds,
@@ -27,6 +28,7 @@ const { applyCanonicalResolution, sanitizeRelationship, toBooleanFlag } = requir
 const { extractFieldValue } = require('../lib/detect-rondo-club-changes');
 const {
   fetchPersonFollowingMerge,
+  hasConflictingKnvbId,
   hasHttpStatus,
   resolveMergedPersonId
 } = require('../lib/rondo-person-merge');
@@ -145,7 +147,12 @@ async function logFinancialBlockActivity(rondoClubId, isBlocked, options) {
  * @returns {Promise<{action: string, id: number}>}
  */
 async function syncPerson(member, db, options) {
+  const request = options.request || rondoClubRequest;
   const { knvb_id, data, source_hash } = member;
+  const retired = db.prepare('SELECT retired_into_knvb_id FROM rondo_club_members WHERE knvb_id = ?').get(knvb_id);
+  if (retired?.retired_into_knvb_id) {
+    return { action: 'skipped', id: member.rondo_club_id, conflicts: [], reason: 'retired_knvb_id', sourceKnvbId: knvb_id, targetKnvbId: retired.retired_into_knvb_id };
+  }
   let { rondo_club_id } = member; // Use let so we can clear it on 404
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
 
@@ -161,12 +168,18 @@ async function syncPerson(member, db, options) {
     let conflicts = [];
 
     try {
-      const tracked = await fetchPersonFollowingMerge(rondo_club_id, options);
+      const tracked = await fetchPersonFollowingMerge(rondo_club_id, options, request);
       if (!tracked) {
         logVerbose(`Person ${rondo_club_id} no longer exists and was not merged - will create fresh`);
         updateSyncState(db, knvb_id, null, null);
         rondo_club_id = null;
       } else {
+        if (hasConflictingKnvbId(knvb_id, tracked.response.body)) {
+          const targetKnvbId = tracked.response.body.fields.knvb_id;
+          if (tracked.remapped) retireMemberIdentity(db, knvb_id, targetKnvbId);
+          logVerbose(`Skipping source ${knvb_id}: person ${tracked.personId} belongs to ${targetKnvbId}; preserving original mapping`);
+          return { action: 'skipped', id: tracked.personId, conflicts: [], reason: 'knvb_id_mismatch', sourceKnvbId: knvb_id, targetKnvbId };
+        }
         if (tracked.remapped) {
           logVerbose(`Person ${rondo_club_id} was merged into ${tracked.personId}; repairing local mapping`);
           rondo_club_id = tracked.personId;
@@ -206,7 +219,7 @@ async function syncPerson(member, db, options) {
       }
 
       try {
-        const response = await rondoClubRequest(endpoint, 'PUT', updateData, options);
+        const response = await request(endpoint, 'PUT', updateData, options);
         updateSyncState(db, knvb_id, source_hash, rondo_club_id);
 
         // Capture volunteer status from Rondo Club
@@ -224,11 +237,10 @@ async function syncPerson(member, db, options) {
         // A concurrent merge can happen between the GET and PUT. Repair the
         // mapping and retry against the survivor instead of creating anew.
         if (hasHttpStatus(error, 404)) {
-          const mergedId = await resolveMergedPersonId(rondo_club_id, options);
+          const mergedId = await resolveMergedPersonId(rondo_club_id, options, request);
           if (mergedId) {
             logVerbose(`Person ${rondo_club_id} was concurrently merged into ${mergedId}; retrying survivor`);
-            updateSyncState(db, knvb_id, null, mergedId);
-            return syncPerson({ ...member, rondo_club_id: mergedId }, db, options);
+            return syncPerson({ ...member, rondo_club_id }, db, options);
           }
           logVerbose(`Person ${rondo_club_id} no longer exists and was not merged - will create fresh`);
           updateSyncState(db, knvb_id, null, null);
@@ -255,7 +267,7 @@ async function syncPerson(member, db, options) {
   logVerbose(`Creating new person for KNVB ID: ${knvb_id}`);
   logVerbose(`  POST ${endpoint}`);
   try {
-    const response = await rondoClubRequest(endpoint, 'POST', data, options);
+    const response = await request(endpoint, 'POST', data, options);
     const newId = response.body.id;
     updateSyncState(db, knvb_id, source_hash, newId);
 
@@ -955,6 +967,7 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
  * @returns {Promise<{marked: Array, errors: Array}>}
  */
 async function markFormerMembers(db, currentKnvbIds, options) {
+  const request = options.request || rondoClubRequest;
   const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
   const marked = [];
   const errors = [];
@@ -981,8 +994,21 @@ async function markFormerMembers(db, currentKnvbIds, options) {
 
     logVerbose(`Marking as former member: ${member.knvb_id} (${firstName} ${lastName}, Rondo Club ID: ${member.rondo_club_id})`);
     try {
-      await rondoClubRequest(
-        `wp/v2/people/${member.rondo_club_id}`,
+      const tracked = await fetchPersonFollowingMerge(member.rondo_club_id, options, request);
+      if (!tracked) {
+        deleteMember(db, member.knvb_id);
+        marked.push({ knvb_id: member.knvb_id, rondo_club_id: member.rondo_club_id });
+        continue;
+      }
+      if (hasConflictingKnvbId(member.knvb_id, tracked.response.body)) {
+        // Keep the old post mapping as a tombstone, including when this source
+        // reappears later. Do not mark its active survivor as a former member.
+        if (tracked.remapped) retireMemberIdentity(db, member.knvb_id, tracked.response.body.fields.knvb_id);
+        logVerbose(`Preserving retired source ${member.knvb_id}; survivor ${tracked.personId} has another KNVB ID`);
+        continue;
+      }
+      await request(
+        `wp/v2/people/${tracked.personId}`,
         'PUT',
         { fields: { first_name: firstName, last_name: lastName, former_member: true } },
         options
@@ -993,7 +1019,12 @@ async function markFormerMembers(db, currentKnvbIds, options) {
       marked.push({ knvb_id: member.knvb_id, rondo_club_id: member.rondo_club_id });
     } catch (error) {
       // Handle 404 - person was deleted from WordPress, remove from tracking
-      if (error.details?.data?.status === 404) {
+      if (hasHttpStatus(error, 404)) {
+        const mergedId = await resolveMergedPersonId(member.rondo_club_id, options, request);
+        if (mergedId) {
+          // Recheck identity on the next run after a concurrent merge.
+          continue;
+        }
         logVerbose(`  Person no longer exists in WordPress (404) - removing from tracking`);
         deleteMember(db, member.knvb_id);
         marked.push({ knvb_id: member.knvb_id, rondo_club_id: member.rondo_club_id });
@@ -1170,6 +1201,8 @@ async function runSync(options = {}) {
 
 module.exports = {
   runSync,
+  syncPerson,
+  markFormerMembers,
   syncParent,
   logFinancialBlockActivity,
   isTrackedParentKnownChild,

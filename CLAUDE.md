@@ -25,6 +25,15 @@ Run the dev server: `cd ~/Code/rondo/developer && npm run dev` → http://localh
 
 ## CRITICAL: Never Run Sync Locally
 
+**Retired KNVB identities must retain their tracking tombstone.** A merged
+person with a different surviving KNVB ID must never receive the old source's
+fields or former-member status. `retireMemberIdentity()` records
+`retired_into_knvb_id` and clears its active payload; `upsertMembers()` and
+`deleteMember()` preserve that retirement through reimports and WordPress trash
+cleanup. Do not delete or redirect the retired mapping to the active person.
+When repairing a confirmed duplicate with two KNVB IDs, preserve the old ID and
+membership history in Rondo and retire the source before lifting the merge guard.
+
 **Sync scripts must only run on the production server.** Running locally causes duplicate entries because each machine has its own SQLite database with different `rondo_club_id` mappings.
 
 ```bash
