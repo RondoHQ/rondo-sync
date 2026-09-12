@@ -37,6 +37,13 @@ graph LR
 
 ## Sync Pipelines
 
+Dutch name prefixes stay in Rondo's separate `infix` field for Sportlink members.
+Sponsit may include them in the surname instead. Matching compares the complete
+surname plus first name and email, retains stable source-ID precedence, and
+quarantines ambiguous matches. Equivalent names keep their existing Rondo field
+layout. FreeScout and the sponsor Laposta list receive the complete surname;
+the regular member Laposta lists retain their separate `tussenvoegsel` field.
+
 | Pipeline | Schedule | What it syncs |
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |

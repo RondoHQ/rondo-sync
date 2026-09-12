@@ -278,6 +278,7 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
 
   const fields = {
     first_name: name.first_name,
+    infix: name.infix,
     last_name: name.last_name,
     'knvb_id': sportlinkMember.PublicPersonId,
     addresses: buildAddresses(sportlinkMember)
@@ -298,7 +299,6 @@ function preparePerson(sportlinkMember, freeFields = null, invoiceData = null, f
   };
 
   // Only add optional fields if they have values
-  if (name.infix) fields.infix = name.infix;
   if (gender) fields.gender = gender;
   if (birthdate) fields.birthdate = birthdate;
 
