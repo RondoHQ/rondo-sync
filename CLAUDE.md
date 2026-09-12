@@ -87,6 +87,10 @@ an actual Sponsit name change clears the obsolete infix. FreeScout and sponsor
 Laposta exports include the infix in the surname. Sportlink sends an explicit
 empty `infix` when the source no longer has one.
 
+Primary sponsor passes are assigned per resolved Rondo person, across source
+aliases with different emails. Preserve an existing eligible primary relation;
+a manual primary pass takes precedence over Sponsit relations.
+
 `npm run sync-sponsit` refreshes the local encrypted-transport/0600 SQLite mirror only. Use `npm run preview-sponsit-rondo` and `npm run preview-sponsit-laposta` before their corresponding `sync-*` apply commands.
 
 Sponsit records with `type=company` become organization sponsors; records with `type=person` become personal sponsors linked to one Rondo person. Existing Sportlink people retain their own `person_type`; new external people are created through the sponsor-contact endpoint so a standalone sponsor contact cannot be left behind. Matching prefers stable relation IDs and otherwise uses email plus identity. An uncertain match blocks only that sponsor's relationship write and never removes an existing relation.

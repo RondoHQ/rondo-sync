@@ -44,6 +44,10 @@ quarantines ambiguous matches. Equivalent names keep their existing Rondo field
 layout. FreeScout and the sponsor Laposta list receive the complete surname;
 the regular member Laposta lists retain their separate `tussenvoegsel` field.
 
+After a person merge, sponsor aliases with different emails share one primary
+pass. Sync preserves an existing eligible primary relation, including a manually
+managed Businessclub pass.
+
 | Pipeline | Schedule | What it syncs |
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |

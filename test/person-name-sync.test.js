@@ -80,3 +80,23 @@ test('Sportlink explicitly sends an empty infix to clear an old value', () => {
     assert.equal(person.data.fields.infix, infix);
   }
 });
+
+test('merged sponsor contacts with different emails retain one existing primary pass', () => {
+  const other = { ...source, contact: { ...source.contact, id: 11 }, people: [{ ...source.people[0], id: 21, email1: 'work@example.test' }] };
+  const sponsors = [source, other].map((record, index) => ({
+    id: 70 + index, status: 'publish', fields: {
+      sponsit_contact_id: String(record.contact.id),
+      contacts: [{ person_id: 653, sponsit_person_id: String(record.people[0].id), receives_pass: true, is_primary_pass: index === 0 }]
+    }
+  }));
+  for (const records of [[other, source], [source, other]]) {
+    const plan = planRondoSponsorSync(records, [{ id: 653, fields: { ...split, person_type: 'member' } }], sponsors);
+    const contacts = plan.sponsors.updates.flatMap(item => item.desired.fields.contacts);
+    assert.equal(plan.people.creates.length, 0);
+    assert.equal(contacts.filter(contact => contact.is_primary_pass).length, 1);
+    assert.equal(contacts.find(contact => contact.is_primary_pass).sponsit_person_id, '20');
+  }
+  sponsors.push({ id: 99, status: 'publish', fields: { contacts: [{ person_id: 653, receives_pass: true, is_primary_pass: true }] } });
+  const manual = planRondoSponsorSync([other, source], [{ id: 653, fields: split }], sponsors);
+  assert.ok(manual.sponsors.updates.every(item => item.desired.fields.contacts.every(contact => !contact.is_primary_pass)));
+});
