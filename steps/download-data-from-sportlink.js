@@ -181,6 +181,9 @@ async function runDownload(options = {}) {
           }
 
           const jsonData = await response.json();
+          if (!Array.isArray(jsonData.Members) || jsonData.Members.some(member => !member?.PublicPersonId)) {
+            throw new Error('SearchMembers returned an incomplete member list');
+          }
           for (const member of (jsonData.Members || [])) {
             const key = member.PublicPersonId;
             if (key && !allMembersMap.has(key)) allMembersMap.set(key, member);
@@ -207,15 +210,17 @@ async function runDownload(options = {}) {
 
       const mergedMembers = Array.from(allMembersMap.values());
       const memberCount = mergedMembers.length;
+      const sourceComplete = errorCount === 0 && successCount === 26;
+      const observedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
       const db = openDb();
       try {
-        insertSportlinkRun(db, JSON.stringify({ Members: mergedMembers }));
+        insertSportlinkRun(db, JSON.stringify({ Members: mergedMembers, SourceComplete: sourceComplete, ObservedAt: observedAt }));
       } finally {
         db.close();
       }
 
       log(`Downloaded ${memberCount} members from Sportlink (${successCount} searches OK, ${errorCount} failed/expanded)`);
-      return { success: true, memberCount };
+      return { success: true, memberCount, sourceComplete, members: mergedMembers, observedAt };
     } finally {
       if (ownsSession && session) {
         await session.close();

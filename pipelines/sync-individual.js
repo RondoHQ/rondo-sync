@@ -263,7 +263,7 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
 
   if (commissies.length === 0) {
     log('No commissies found in database. Run functions sync first.');
-    return { synced: false, added: 0, ended: 0 };
+    if (memberFunctions.length || memberCommittees.length) return { synced: false, added: 0, ended: 0, error: 'Missing commissie mappings' };
   }
 
   // Build current commissies list from functions and committees
@@ -295,6 +295,10 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
     log('No current functions or committees found; syncing to end previously tracked memberships if needed');
   }
 
+  if (currentCommissies.some(item => !commissieMap.get(item.commissie_name) || !item.role_name)) {
+    return { synced: false, added: 0, ended: 0, error: 'Incomplete function/commissie mapping' };
+  }
+
   log(`Syncing ${currentCommissies.length} function(s)/committee(s) for ${knvbId}`);
 
   try {
@@ -308,6 +312,7 @@ async function syncFunctionsForMember(knvbId, rondoClubId, db, memberFunctions, 
     );
 
     return {
+      success: ['updated', 'unchanged'].includes(result.action),
       synced: result.action === 'updated',
       added: result.added || 0,
       ended: result.ended || 0
@@ -349,7 +354,7 @@ async function syncParentsForMember(knvbId, db, options = {}) {
 
   for (const parent of memberParents) {
     try {
-      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, { verbose });
+      const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, { verbose, strictParentLinks: options.strictParentLinks });
       result.synced++;
       if (syncResult.action === 'created') result.created++;
       if (syncResult.action === 'updated') result.updated++;
@@ -750,7 +755,7 @@ function findMemberByName(searchTerm) {
   }
 }
 
-module.exports = { syncIndividual, findMemberByName, mergeFreshMemberData };
+module.exports = { syncIndividual, findMemberByName, mergeFreshMemberData, syncFunctionsForMember, syncParentsForMember };
 
 // CLI
 if (require.main === module) {

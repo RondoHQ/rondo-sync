@@ -423,6 +423,7 @@ async function updateChildrenParentLinks(parentId, childRondoClubIds, options) {
       }
     } catch (error) {
       logVerbose(`Failed to link parent to child ${childId}: ${error.message}`);
+      if (options.strictParentLinks) throw error;
       // Continue with other children
     }
   }
@@ -1202,6 +1203,8 @@ async function runSync(options = {}) {
 }
 
 module.exports = {
+  RELATIONSHIP_TYPE,
+  hasRelationshipType,
   runSync,
   syncPerson,
   markFormerMembers,

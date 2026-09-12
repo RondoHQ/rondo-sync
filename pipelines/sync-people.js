@@ -13,6 +13,7 @@ const { runDownloadInactive } = require('../steps/download-inactive-members');
 const { runPrepare } = require('../steps/prepare-laposta-members');
 const { runSubmit } = require('../steps/submit-laposta-list');
 const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync');
+const { runSourceChecks } = require('../steps/sync-onboarding-sources');
 const { syncDeceasedToRondoClub, syncDeceasedToLaposta } = require('../steps/sync-deceased-members');
 const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
@@ -434,6 +435,20 @@ async function runPeopleSync(options = {}) {
         errorMessage: err.message,
         errorStack: err.stack
       });
+    }
+
+    const onboardingStep = tracker.startStep('onboarding-source-checks');
+    try {
+      const checked = await runSourceChecks({ ...downloadResult, page: await sportlinkSession.getPage(), logger });
+      stats.onboarding = checked;
+      stats.errors.push(...checked.errors.map(error => ({ ...error, system: 'onboarding' })));
+      tracker.endStep(onboardingStep, { outcome: checked.errors.length ? 'partial' : 'success', updated: checked.complete, failed: checked.errors.length });
+      tracker.recordErrors('onboarding-source-checks', onboardingStep, checked.errors);
+    } catch (error) {
+      const failure = { message: error.message, system: 'onboarding' };
+      stats.errors.push(failure);
+      tracker.endStep(onboardingStep, { outcome: 'failure' });
+      tracker.recordErrors('onboarding-source-checks', onboardingStep, [failure]);
     }
 
     if (inactiveMembers.length > 0) {

@@ -56,7 +56,7 @@ function buildWorkHistoryEntry(commissieRondoClubId, jobTitle, isActive, startDa
     job_title: jobTitle,
     is_current: isActive,
     start_date: convertDateForFields(startDate),
-    end_date: isActive ? null : convertDateForFields(endDate),
+    end_date: convertDateForFields(endDate),
     team_id: commissieRondoClubId  // Note: This will work once Rondo Club's work_history.team field accepts commissie post type
   };
 }

@@ -199,7 +199,7 @@ function parseFreeFieldsResponse(data, knvbId) {
  * @param {Object} logger - Logger instance
  * @returns {Promise<{knvb_id: string, freescout_id: number|null, vog_datum: string|null, has_financial_block: number, photo_url: string|null, photo_date: string|null}|null>}
  */
-async function fetchMemberDataFromOtherPage(page, knvbId, logger) {
+async function fetchMemberDataFromOtherPage(page, knvbId, logger, { strict = false } = {}) {
   const otherUrl = `https://club.sportlink.com/member/member-details/${knvbId}/other`;
 
   // Set up promises BEFORE navigation (existing pattern)
@@ -241,6 +241,10 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger) {
     } catch (err) {
       logger.verbose(`  Error parsing MemberHeader: ${err.message}`);
     }
+  }
+
+  if (strict && (!freeFieldsData?.FreeFields || !Object.hasOwn(freeFieldsData.FreeFields.Remarks8 || {}, 'Value') || !memberHeaderData)) {
+    throw new Error('Incomplete MemberFreeFields/MemberHeader response; VOG coverage not confirmed');
   }
 
   // Merge both data sources
@@ -404,7 +408,7 @@ async function fetchMemberFinancialData(page, knvbId, logger) {
  * @param {Object} logger - Logger instance
  * @returns {Promise<Object|null>} - Flat member object in SearchMembers-style format, or null
  */
-async function fetchMemberGeneralData(page, knvbId, logger) {
+async function fetchMemberGeneralData(page, knvbId, logger, { strict = false } = {}) {
   const generalUrl = `https://club.sportlink.com/member/member-details/${knvbId}/general`;
 
   // Set up promises BEFORE navigation to capture API responses
@@ -472,6 +476,14 @@ async function fetchMemberGeneralData(page, knvbId, logger) {
     return null;
   }
 
+  if (strict && (personData?.Person?.PublicPersonId !== knvbId
+    || !['FirstName', 'LastName', 'DateOfBirth'].every(key => Object.hasOwn(personData.Person, key))
+    || !['Email1', 'Email2'].every(key => Object.hasOwn(communicationData?.Communication || {}, key))
+    || !Object.hasOwn(addressesData || {}, 'Address')
+    || !['EmailAddressParent1', 'EmailAddressParent2'].every(key => Object.hasOwn(parentalInfoData || {}, key)))) {
+    throw new Error('Incomplete general/parent response; person and parent coverage not confirmed');
+  }
+
   // Map to flat SearchMembers-style object
   const person = personData?.Person || {};
   const comm = communicationData?.Communication || {};
@@ -514,7 +526,7 @@ async function fetchMemberGeneralData(page, knvbId, logger) {
  * Fetch functions for a single member
  * Captures both MemberFunctions and MemberCommittees API responses
  */
-async function fetchMemberFunctions(page, knvbId, logger) {
+async function fetchMemberFunctions(page, knvbId, logger, { strict = false } = {}) {
   const functionsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/functions`;
 
   // Set up promises to wait for both responses
@@ -558,6 +570,12 @@ async function fetchMemberFunctions(page, knvbId, logger) {
     }
   }
 
+  if (strict && (!Array.isArray(functionsData?.Function) || !Array.isArray(committeesData?.Committee)
+    || functionsData.Function.some(row => !row?.FunctionDescription)
+    || committeesData.Committee.some(row => !row?.CommitteeName || !row?.CommitteeFunctionName))) {
+    throw new Error('Incomplete functions/committees response; empty results must be explicit arrays');
+  }
+
   // Combine the responses
   if (functionsData || committeesData) {
     return {
@@ -583,7 +601,7 @@ async function fetchMemberFunctions(page, knvbId, logger) {
  * @param {Object} logger - Logger instance
  * @returns {Promise<Array>} Array of Team entries
  */
-async function fetchMemberTeamMemberships(page, knvbId, logger) {
+async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false } = {}) {
   const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
 
   logger.verbose(`  Navigating to ${membershipsUrl}...`);
@@ -597,6 +615,7 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
   try {
     await page.waitForSelector('input[name="showInactive"]', { timeout: 10000 });
   } catch {
+    if (strict) throw new Error('MemberTeams panel not loaded; absence does not prove an empty membership list');
     logger.verbose(`  No showInactive toggle present — treating as no memberships`);
     return [];
   }
@@ -647,6 +666,7 @@ async function fetchMemberTeamMemberships(page, knvbId, logger) {
     throw new Error(`MemberTeams JSON parse error: ${err.message}`);
   }
 
+  if (strict && !Array.isArray(parsed?.Team)) throw new Error('MemberTeams response has no explicit Team array');
   const teams = Array.isArray(parsed?.Team) ? parsed.Team : [];
   logger.verbose(`  Found ${teams.length} team membership row(s)`);
   return teams;
