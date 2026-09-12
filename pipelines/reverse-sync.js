@@ -6,6 +6,7 @@ const { RunTracker } = require('../lib/run-tracker');
 const { runReverseSyncMultiPage } = require('../lib/reverse-sync-sportlink');
 const { detectChanges } = require('../lib/detect-rondo-club-changes');
 const { detectParentChanges, runParentSlotSync } = require('../lib/parent-slot-sync');
+const { runPhotoSync } = require('../lib/photo-sync-queue');
 
 /**
  * Run full reverse sync for all fields (Rondo Club -> Sportlink)
@@ -44,14 +45,16 @@ async function runAllFieldsReverseSync(options = {}) {
     const parentResult = knvbId
       ? { success: true, synced: 0, failed: 0, results: [] }
       : await runParentSlotSync({ verbose, logger });
+    const photoResult = await runPhotoSync({ verbose, logger, knvbId });
     const result = {
-      success: fieldResult.success && parentResult.success,
-      synced: fieldResult.synced + parentResult.synced,
-      failed: fieldResult.failed + parentResult.failed,
+      success: fieldResult.success && parentResult.success && photoResult.success,
+      synced: fieldResult.synced + parentResult.synced + photoResult.synced,
+      failed: fieldResult.failed + parentResult.failed + photoResult.failed,
       actionRequired: fieldResult.actionRequired || 0,
-      results: [...fieldResult.results, ...parentResult.results],
+      results: [...fieldResult.results, ...parentResult.results, ...photoResult.results],
       fields: fieldResult,
-      parents: parentResult
+      parents: parentResult,
+      photos: photoResult
     };
 
     if (result.synced === 0 && result.failed === 0 && result.actionRequired === 0) {
