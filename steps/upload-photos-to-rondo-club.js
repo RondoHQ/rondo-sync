@@ -93,6 +93,7 @@ function uploadPhotoToRondoClub(rondoClubId, photoPath, options = {}) {
     // Create form data with photo file
     const form = new FormData();
     form.append('file', require('fs').createReadStream(photoPath));
+    form.append('source', 'sportlink');
 
     const requestOptions = {
       hostname: parsedUrl.hostname,
