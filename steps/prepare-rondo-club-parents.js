@@ -7,7 +7,7 @@ const { normalizePhone } = require('../lib/phone-normalizer');
 
 /**
  * Build parent name from Sportlink NameParent field
- * Returns null if no name is available (skip this parent)
+ * Use the agreed child-based display name when the parent name is missing.
  * @param {Object} member - Sportlink member record
  * @param {number} parentIndex - 1 or 2
  * @returns {{first_name: string, last_name: string}|null}
@@ -20,8 +20,8 @@ function buildParentName(member, parentIndex) {
     return { first_name: String(parentName).trim(), last_name: '' };
   }
 
-  // No name available - skip this parent (don't create placeholder records)
-  return null;
+  const childFirstName = String(member.FirstName || '').trim();
+  return childFirstName ? { first_name: `Ouder van ${childFirstName}`, last_name: '' } : null;
 }
 
 /**
@@ -132,7 +132,7 @@ function prepareParentsFromMembers(members) {
         // First time seeing this parent - capture name and address
         const name = buildParentName(member, parentIndex);
 
-        // Skip parents without a name in Sportlink
+        // Without either name, do not invent the child's identity.
         if (!name) return;
 
         parentDataMap.set(normalized, {
@@ -144,6 +144,12 @@ function prepareParentsFromMembers(members) {
       }
 
       const parentData = parentDataMap.get(normalized);
+
+      // A named occurrence from a sibling wins over a generated display name.
+      const suppliedName = member[`NameParent${parentIndex}`];
+      if (hasValue(suppliedName) && parentData.name.first_name.startsWith('Ouder van ')) {
+        parentData.name = buildParentName(member, parentIndex);
+      }
 
       // Collect phone numbers (may have multiple from different children)
       if (hasValue(phone)) {

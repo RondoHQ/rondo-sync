@@ -35,7 +35,8 @@ const {
 const {
   normalizePersonEmailMatches,
   selectParentEmailMatch,
-  getParentProfileOwnership
+  getParentProfileOwnership,
+  resolveParentImportName
 } = require('../lib/parent-person-resolution');
 
 /**
@@ -603,8 +604,9 @@ async function syncParent(parent, db, knvbIdToRondoClubId, options, siblingGuard
       // Determine name to use:
       // - Members, contacts, and sponsors keep their existing managed profile.
       // - Standalone parent records are updated from Sportlink.
-      const firstName = profileOwnership.preserveIdentity ? existingFirstName : (data.fields.first_name || existingFirstName);
-      const lastName = profileOwnership.preserveIdentity ? existingLastName : (data.fields.last_name || existingLastName);
+      const parentName = resolveParentImportName(data.fields, { first_name: existingFirstName, last_name: existingLastName }, profileOwnership.preserveIdentity);
+      const firstName = parentName.first_name;
+      const lastName = parentName.last_name;
       const parentManagedFields = {};
 
       // Pure parent records are managed by Sportlink. Keep their fixed native field
