@@ -3,6 +3,7 @@ require('dotenv/config');
 const { openDb: openRondoClubDb, getMemberFreeFieldsByKnvbId } = require('../lib/rondo-club-db');
 const { openDb: openFreescoutDb, getCustomerByKnvbId } = require('../lib/freescout-db');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { familyName } = require('../lib/person-name');
 
 /**
  * Get existing FreeScout ID for a member
@@ -61,7 +62,7 @@ async function prepareCustomer(member, freescoutDb, rondoClubDb) {
   }
 
   let firstName = fields.first_name || '';
-  let lastName = fields.last_name || '';
+  let lastName = familyName(fields);
 
   // Use existing FreeScout sync data only as a fallback for the name.
   if (existingFreescoutData) {

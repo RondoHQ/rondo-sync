@@ -79,6 +79,14 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
 
 ## Sponsit sync
 
+Name handling is shared in `lib/person-name.js`: compare first name plus the
+complete surname (`infix` + `last_name`) without guessing how a joined surname
+should be split. Sponsit matching still requires email for fallback matches and
+blocks ambiguity. Keep equivalent existing name layouts when updating contacts;
+an actual Sponsit name change clears the obsolete infix. FreeScout and sponsor
+Laposta exports include the infix in the surname. Sportlink sends an explicit
+empty `infix` when the source no longer has one.
+
 `npm run sync-sponsit` refreshes the local encrypted-transport/0600 SQLite mirror only. Use `npm run preview-sponsit-rondo` and `npm run preview-sponsit-laposta` before their corresponding `sync-*` apply commands.
 
 Sponsit records with `type=company` become organization sponsors; records with `type=person` become personal sponsors linked to one Rondo person. Existing Sportlink people retain their own `person_type`; new external people are created through the sponsor-contact endpoint so a standalone sponsor contact cannot be left behind. Matching prefers stable relation IDs and otherwise uses email plus identity. An uncertain match blocks only that sponsor's relationship write and never removes an existing relation.
