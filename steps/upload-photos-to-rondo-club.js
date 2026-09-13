@@ -316,7 +316,6 @@ async function runPhotoSync(options = {}) {
         if (!member.rondo_club_id) {
           const errorMsg = 'Member has no rondo_club_id - cannot upload photo';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
-          result.upload.skipped++;
           record(member, 'failed', errorMsg);
           continue;
         }
@@ -326,7 +325,6 @@ async function runPhotoSync(options = {}) {
         if (!photoFile.found) {
           const errorMsg = 'Photo file not found in photos/ directory';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
-          result.upload.skipped++;
           record(member, 'failed', errorMsg);
           continue;
         }

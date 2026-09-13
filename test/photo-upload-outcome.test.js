@@ -75,6 +75,13 @@ test('HTTP 200 protected-photo skips do not count or log as changed; actual save
       assert.equal(state, 'downloaded', 'unconfirmed saves are not marked as processed');
     }
 
+    member.rondo_club_id = null;
+    const unmapped = await runPhotoSync({ logger });
+    assert.equal(unmapped.upload.skipped, 0, 'failed uploads are not also counted as skipped');
+    assert.equal(unmapped.upload.errors.length, 1);
+    assert.equal(unmapped.results[0].status, 'failed');
+    member.rondo_club_id = 123;
+
     state = 'pending_delete';
     statusCode = 500;
     assert.equal((await runPhotoSync({ logger })).delete.deleted, 0);
