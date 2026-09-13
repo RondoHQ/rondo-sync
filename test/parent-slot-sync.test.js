@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 
 const {
+  validateParentContactJob,
   reconcileParentContactChanges,
   planParentContactReplacement,
   ensureParentSyncSchema,
@@ -465,4 +466,26 @@ test('parent audits reject removed relationships and ignore historical local-onl
   assert.equal(reports[0][2], 'action_required');
   assert.equal(getReadyParentJobs(db).length, 0);
   db.close();
+});
+
+
+test('queued parent contact writes recheck current targets and published relationships', async () => {
+  const parent = { id: 88, status: 'publish', fields: { email_1: 'new@example.org', mobile_1: '+31612345678', relationships: [{ relationship_slug: 'child', related_person_id: 42 }] } };
+  const child = { id: 42, status: 'publish', fields: { knvb_id: 'CHILD42', relationships: [{ relationship_slug: 'parent', related_person_id: 88 }] } };
+  const options = { fetchPerson: async id => id === 88 ? parent : child };
+  const job = { parent_rondo_id: 88, child_rondo_id: 42, child_knvb_id: 'CHILD42' };
+  const desired = { changes: [{ kind: 'email', new: 'new@example.org' }, { kind: 'phone', new: '+31612345678' }] };
+  await validateParentContactJob(job, desired, options);
+  parent.fields.mobile_1 = '+31699999999';
+  await assert.rejects(validateParentContactJob(job, desired, options), { code: 'parent_contact_conflict' });
+  parent.fields.mobile_1 = '+31612345678';
+  child.status = 'draft';
+  await assert.rejects(validateParentContactJob(job, desired, options), { code: 'parent_contact_conflict' });
+});
+
+test('editing an unused parent email preserves the deliberate current slot address', () => {
+  const slot = { slot: 1, name: 'Test Ouder', email: 'primary@example.org', phone: '0612345678' };
+  const plan = planParentContactReplacement([slot], { name: 'Test Ouder', identityEmails: ['primary@example.org', 'new-secondary@example.org'], changes: [{ kind: 'email', old: 'old-secondary@example.org', new: 'new-secondary@example.org' }] });
+  assert.equal(plan.alreadySynced, true);
+  assert.deepEqual(plan.target, slot);
 });
