@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 
 const {
+  validateParentContactJob,
+  reconcileParentContactChanges,
+  planParentContactReplacement,
   ensureParentSyncSchema,
   buildDesiredParent,
   findTrackedParentSource,
@@ -420,4 +423,69 @@ test('no-free-slot errors block immediately', () => {
   assert.equal(markParentJobFailed(db, job, error), true);
   assert.equal(db.prepare('SELECT state FROM parent_slot_sync_jobs WHERE id = ?').get(job.id).state, 'blocked');
   db.close();
+});
+
+
+test('audited parent email and phone share a job and preserve unrelated slot data', async () => {
+  const db = new Database(':memory:');
+  ensureParentSyncSchema(db);
+  const parent = { id: 88, fields: { first_name: 'Test', last_name: 'Ouder', email_1: 'new@example.org', mobile_1: '+31612345678', relationships: [{ relationship_slug: 'child', related_person_id: 42 }, { relationship_slug: 'child', related_person_id: 43 }] } };
+  const people = new Map([[88, parent], ...[42, 43].map(id => [id, { id, fields: { knvb_id: `CHILD${id}`, relationships: [{ relationship_slug: 'parent', related_person_id: 88 }] } }])]);
+  const entry = (id, field, kind, old, value) => ({ id, sync_status: 'pending', changes: [{ person_id: 88, field, old, new: value, sync: true, parent_sync: { child_ids: [42, 43], kind, old, new: value } }] });
+  const email = entry(601, 'email_1', 'email', 'old@example.org', 'new@example.org');
+  const phone = entry(602, 'mobile_1', 'phone', '', '+31612345678');
+  const options = { reportParentStatus: async () => {} };
+  assert.deepEqual(await reconcileParentContactChanges(db, [email], people, options), { queued: 2, blocked: 0 });
+  assert.deepEqual(await reconcileParentContactChanges(db, [phone], people, options), { queued: 2, blocked: 0 });
+  const jobs = getReadyParentJobs(db);
+  assert.equal(jobs.length, 2);
+  const desired = JSON.parse(jobs[0].desired_json);
+  assert.deepEqual(desired.changes.map(c => c.syncField), ['parent_42_email_1', 'parent_42_mobile_1']);
+  assert.equal(extractEmailReplacementCandidates([email]).length, 0);
+  const slots = [{ slot: 1, name: 'Andere ouder', email: 'old@example.org', phone: '0611111111' }, { slot: 2, name: 'Test Ouder', email: 'old@example.org', phone: '' }];
+  const plan = planParentContactReplacement(slots, desired);
+  assert.equal(plan.slot, 2);
+  assert.deepEqual(plan.target, { slot: 2, name: 'Test Ouder', email: 'new@example.org', phone: '+31612345678' });
+  assert.equal(slots[0].email, 'old@example.org');
+  assert.equal(planParentContactReplacement([slots[0], plan.target], desired).alreadySynced, true);
+  assert.throws(() => planParentContactReplacement([{ ...slots[1], phone: '0699999999' }], desired), { code: 'parent_contact_conflict' });
+  assert.throws(() => planParentContactReplacement([slots[1], { ...slots[1], slot: 1 }], desired), { code: 'parent_contact_conflict' });
+  db.close();
+});
+
+test('parent audits reject removed relationships and ignore historical local-only entries', async () => {
+  const db = new Database(':memory:');
+  ensureParentSyncSchema(db);
+  const people = new Map([[88, { id: 88, fields: { relationships: [] } }], [42, { id: 42, fields: { knvb_id: 'CHILD42', relationships: [] } }]]);
+  const entry = { id: 701, sync_status: 'pending', changes: [{ person_id: 88, field: 'mobile_1', parent_sync: { child_ids: [42], kind: 'phone', old: '', new: '+31612345678' } }] };
+  const reports = [];
+  const options = { notifyProfileChangeStatus: async (...args) => reports.push(args) };
+  await reconcileParentContactChanges(db, [{ ...entry, sync_status: 'local_only' }], people, options);
+  assert.equal(reports.length, 0);
+  await reconcileParentContactChanges(db, [entry], people, options);
+  assert.equal(reports[0][2], 'action_required');
+  assert.equal(getReadyParentJobs(db).length, 0);
+  db.close();
+});
+
+
+test('queued parent contact writes recheck current targets and published relationships', async () => {
+  const parent = { id: 88, status: 'publish', fields: { email_1: 'new@example.org', mobile_1: '+31612345678', relationships: [{ relationship_slug: 'child', related_person_id: 42 }] } };
+  const child = { id: 42, status: 'publish', fields: { knvb_id: 'CHILD42', relationships: [{ relationship_slug: 'parent', related_person_id: 88 }] } };
+  const options = { fetchPerson: async id => id === 88 ? parent : child };
+  const job = { parent_rondo_id: 88, child_rondo_id: 42, child_knvb_id: 'CHILD42' };
+  const desired = { changes: [{ kind: 'email', new: 'new@example.org' }, { kind: 'phone', new: '+31612345678' }] };
+  await validateParentContactJob(job, desired, options);
+  parent.fields.mobile_1 = '+31699999999';
+  await assert.rejects(validateParentContactJob(job, desired, options), { code: 'parent_contact_conflict' });
+  parent.fields.mobile_1 = '+31612345678';
+  child.status = 'draft';
+  await assert.rejects(validateParentContactJob(job, desired, options), { code: 'parent_contact_conflict' });
+});
+
+test('editing an unused parent email preserves the deliberate current slot address', () => {
+  const slot = { slot: 1, name: 'Test Ouder', email: 'primary@example.org', phone: '0612345678' };
+  const plan = planParentContactReplacement([slot], { name: 'Test Ouder', identityEmails: ['primary@example.org', 'new-secondary@example.org'], changes: [{ kind: 'email', old: 'old-secondary@example.org', new: 'new-secondary@example.org' }] });
+  assert.equal(plan.alreadySynced, true);
+  assert.deepEqual(plan.target, slot);
 });
