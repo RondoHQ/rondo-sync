@@ -559,7 +559,8 @@ async function runPeopleSync(options = {}) {
 
       stats.photos.uploaded = photoSyncResult.upload.synced;
       stats.photos.deleted = photoSyncResult.delete.deleted;
-      stats.photos.skipped = photoSyncResult.upload.skipped;
+      stats.photos.skipped = photoSyncResult.upload.skipped + photoSyncResult.delete.skipped;
+      stats.photos.results = photoSyncResult.results;
 
       if (photoSyncResult.upload.errors?.length > 0) {
         stats.photos.errors.push(...photoSyncResult.upload.errors.map(e => ({
@@ -577,8 +578,8 @@ async function runPeopleSync(options = {}) {
       }
 
       tracker.endStep(photoUploadStepId, {
-        outcome: 'success',
-        created: stats.photos.uploaded,
+        outcome: stats.photos.errors.length ? 'partial' : 'success',
+        updated: stats.photos.uploaded,
         skipped: stats.photos.skipped,
         failed: stats.photos.errors.length
       });

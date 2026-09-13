@@ -35,6 +35,7 @@ test('collects all pages before sending so shrinking queues cannot skip people',
   const { jobs, events, options } = fixture();
   const result = await runPhotoQueue(options);
   assert.equal(result.synced, 3);
+  assert.ok(result.results.every(item => item.source === 'rondo' && item.destination === 'sportlink' && item.status === 'changed'));
   assert.deepEqual(events.slice(0, 3), ['list', 'list', 'list']);
   assert.ok(jobs.every(job => job.state === 'synced'));
   assert.equal((await runPhotoQueue(options)).synced, 0);
@@ -57,6 +58,7 @@ test('uncertain upload remains parked and does not block the next person or retr
   };
   const result = await runPhotoQueue(options);
   assert.equal(result.failed, 1);
+  assert.equal(result.results[0].status, 'failed');
   assert.equal(result.synced, 1);
   assert.equal(jobs[0].state, 'review');
   await runPhotoQueue(options);

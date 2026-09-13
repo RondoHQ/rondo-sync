@@ -9,6 +9,17 @@ const { openDb, getMembersByPhotoState, updatePhotoState, clearPhotoState } = re
 const { createSyncLogger } = require('../lib/logger');
 const { readEnv } = require('../lib/utils');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { logPhotoEvent } = require('../lib/photo-sync-log');
+
+/** HTTP success can also mean a protected manual photo was deliberately skipped. */
+function parsePhotoUploadResponse(data) {
+  let body;
+  try { body = JSON.parse(data); } catch { throw new Error('Invalid photo upload response'); }
+  if (body?.success !== true) throw new Error('Photo upload was not confirmed');
+  if (body.skipped === true) return { skipped: true, reason: body.reason || 'unspecified' };
+  if (!Number.isSafeInteger(body.attachment_id) || body.attachment_id <= 0) throw new Error('Photo upload response has no saved attachment');
+  return { skipped: false, attachmentId: body.attachment_id };
+}
 
 /**
  * Validate Rondo Club credentials exist
@@ -62,7 +73,7 @@ async function findPhotoFile(knvbId, photosDir) {
  * @param {number} rondoClubId - WordPress person post ID
  * @param {string} photoPath - Local path to photo file
  * @param {Object} options - Logger and verbose options
- * @returns {Promise<void>}
+ * @returns {Promise<{skipped: boolean, reason?: string, attachmentId?: number}>}
  */
 function uploadPhotoToRondoClub(rondoClubId, photoPath, options = {}) {
   return new Promise(async (resolve, reject) => {
@@ -117,7 +128,7 @@ function uploadPhotoToRondoClub(rondoClubId, photoPath, options = {}) {
         logVerbose(`Response status: ${res.statusCode}`);
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve();
+          try { resolve(parsePhotoUploadResponse(data)); } catch (error) { reject(error); }
         } else {
           const error = new Error(`Rondo Club API error (${res.statusCode})`);
           error.details = data;
@@ -262,6 +273,7 @@ async function runPhotoSync(options = {}) {
 
   const result = {
     success: true,
+    results: [],
     upload: {
       total: 0,
       synced: 0,
@@ -271,11 +283,17 @@ async function runPhotoSync(options = {}) {
     delete: {
       total: 0,
       deleted: 0,
+      skipped: 0,
       errors: []
     }
   };
 
   const db = openDb();
+  const record = (member, status, reason = '') => {
+    const event = { personId: member.rondo_club_id || null, knvbId: member.knvb_id, source: 'sportlink', destination: 'rondo', status, reason };
+    result.results.push(event);
+    logPhotoEvent(logger, event);
+  };
   try {
     const photosDir = path.join(process.cwd(), 'photos');
 
@@ -299,7 +317,7 @@ async function runPhotoSync(options = {}) {
           const errorMsg = 'Member has no rondo_club_id - cannot upload photo';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
           result.upload.skipped++;
-          logger.log(`Photo upload skipped: ${member.knvb_id} - ${errorMsg}`);
+          record(member, 'failed', errorMsg);
           continue;
         }
 
@@ -309,23 +327,28 @@ async function runPhotoSync(options = {}) {
           const errorMsg = 'Photo file not found in photos/ directory';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
           result.upload.skipped++;
-          logger.log(`Photo upload skipped: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${errorMsg}`);
+          record(member, 'failed', errorMsg);
           continue;
         }
 
         // Upload to Rondo Club
         try {
-          await uploadPhotoToRondoClub(member.rondo_club_id, photoFile.path, options);
+          const uploaded = await uploadPhotoToRondoClub(member.rondo_club_id, photoFile.path, options);
           updatePhotoState(db, member.knvb_id, 'synced');
-          result.upload.synced++;
-          logger.log(`Photo uploaded: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - Sportlink to Rondo Club`);
+          if (uploaded.skipped) {
+            result.upload.skipped++;
+            record(member, 'skipped', uploaded.reason === 'manual_photo_protected' ? 'Handmatige Rondo-foto behouden' : uploaded.reason);
+          } else {
+            result.upload.synced++;
+            record(member, 'changed');
+          }
         } catch (error) {
           result.upload.errors.push({
             knvb_id: member.knvb_id,
             rondo_club_id: member.rondo_club_id,
             message: error.message
           });
-          logger.error(`Photo upload failed: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${error.message}`);
+          record(member, 'failed', error.message);
           // Continue to next member
         }
 
@@ -381,25 +404,27 @@ async function runPhotoSync(options = {}) {
           try {
             await deletePhotoFromRondoClub(member.rondo_club_id, options);
             rondoClubDeleted = true;
-            logger.log(`Photo deleted: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - removed from Rondo Club`);
+            result.delete.deleted++;
+            record(member, 'deleted');
           } catch (error) {
             // 404 means no photo exists on Rondo Club - that's the desired state
             if (error.message.includes('404')) {
               rondoClubDeleted = true;
-              logger.log(`Photo already absent: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - no deletion needed`);
+              result.delete.skipped++;
+              record(member, 'skipped', 'Foto al afwezig; geen verwijdering nodig');
             } else {
               deleteError = error.message;
-              logger.error(`Photo deletion failed: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${error.message}`);
+              record(member, 'failed', error.message);
             }
             // Continue - clear state anyway
           }
         } else {
-          logger.log(`Photo deletion skipped: ${member.knvb_id} - no Rondo person mapping`);
+          result.delete.skipped++;
+          record(member, 'skipped', 'Geen Rondo-persoon gekoppeld');
         }
 
         // Clear photo state (marks as no_photo and clears person_image_date)
-        clearPhotoState(db, member.knvb_id);
-        result.delete.deleted++;
+        if (!deleteError) clearPhotoState(db, member.knvb_id);
 
         // Track errors if any occurred
         if (deleteError) {
@@ -431,7 +456,7 @@ async function runPhotoSync(options = {}) {
   }
 }
 
-module.exports = { runPhotoSync, uploadPhotoToRondoClub, findPhotoFile };
+module.exports = { runPhotoSync, uploadPhotoToRondoClub, findPhotoFile, parsePhotoUploadResponse };
 
 // CLI entry point
 if (require.main === module) {

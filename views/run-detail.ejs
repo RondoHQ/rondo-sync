@@ -127,4 +127,22 @@
   </div>
 <% } %>
 
+<% if (photoEvents.length) { %>
+  <h3>Foto’s</h3>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead><tr><th>KNVB-ID</th><th>Rondo-persoon</th><th>Bron</th><th>Naar</th><th>Resultaat</th><th>Toelichting</th></tr></thead>
+      <tbody>
+        <% photoEvents.forEach(event => { %>
+          <tr>
+            <td><%= event.knvbId %></td><td><%= event.personId || 'Onbekend' %></td>
+            <td><%= photoSources[event.source] || 'Onbekend' %></td><td><%= photoSources[event.destination] || 'Onbekend' %></td>
+            <td><%= photoStatuses[event.status] || event.status %></td><td><%= event.reason || '' %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+
 <%- include('partials/foot') %>

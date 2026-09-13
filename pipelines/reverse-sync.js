@@ -74,7 +74,8 @@ async function runAllFieldsReverseSync(options = {}) {
     tracker.endRun(outcome, {
       synced: result.synced,
       failed: result.failed,
-      actionRequired: result.actionRequired
+      actionRequired: result.actionRequired,
+      photos: photoResult
     });
 
     return result;
