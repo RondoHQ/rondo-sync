@@ -299,7 +299,7 @@ async function runPhotoSync(options = {}) {
           const errorMsg = 'Member has no rondo_club_id - cannot upload photo';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
           result.upload.skipped++;
-          logger.verbose(`  Skipped: ${errorMsg}`);
+          logger.log(`Photo upload skipped: ${member.knvb_id} - ${errorMsg}`);
           continue;
         }
 
@@ -309,7 +309,7 @@ async function runPhotoSync(options = {}) {
           const errorMsg = 'Photo file not found in photos/ directory';
           result.upload.errors.push({ knvb_id: member.knvb_id, message: errorMsg });
           result.upload.skipped++;
-          logger.verbose(`  Skipped: ${errorMsg}`);
+          logger.log(`Photo upload skipped: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${errorMsg}`);
           continue;
         }
 
@@ -318,14 +318,14 @@ async function runPhotoSync(options = {}) {
           await uploadPhotoToRondoClub(member.rondo_club_id, photoFile.path, options);
           updatePhotoState(db, member.knvb_id, 'synced');
           result.upload.synced++;
-          logger.verbose(`  Uploaded successfully`);
+          logger.log(`Photo uploaded: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - Sportlink to Rondo Club`);
         } catch (error) {
           result.upload.errors.push({
             knvb_id: member.knvb_id,
             rondo_club_id: member.rondo_club_id,
             message: error.message
           });
-          logger.verbose(`  Upload failed: ${error.message}`);
+          logger.error(`Photo upload failed: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${error.message}`);
           // Continue to next member
         }
 
@@ -381,20 +381,20 @@ async function runPhotoSync(options = {}) {
           try {
             await deletePhotoFromRondoClub(member.rondo_club_id, options);
             rondoClubDeleted = true;
-            logger.verbose(`  Deleted from Rondo Club`);
+            logger.log(`Photo deleted: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - removed from Rondo Club`);
           } catch (error) {
             // 404 means no photo exists on Rondo Club - that's the desired state
             if (error.message.includes('404')) {
               rondoClubDeleted = true;
-              logger.verbose(`  No photo on Rondo Club (404) - already clean`);
+              logger.log(`Photo already absent: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - no deletion needed`);
             } else {
               deleteError = error.message;
-              logger.verbose(`  Rondo Club delete failed: ${error.message}`);
+              logger.error(`Photo deletion failed: ${member.knvb_id} (Rondo person ${member.rondo_club_id}) - ${error.message}`);
             }
             // Continue - clear state anyway
           }
         } else {
-          logger.verbose(`  No rondo_club_id - skipping Rondo Club deletion`);
+          logger.log(`Photo deletion skipped: ${member.knvb_id} - no Rondo person mapping`);
         }
 
         // Clear photo state (marks as no_photo and clears person_image_date)

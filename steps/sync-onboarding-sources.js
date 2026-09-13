@@ -1,5 +1,5 @@
 const { rondoClubRequest } = require('../lib/rondo-club-client');
-const { sourceRecord, checkSource } = require('../lib/onboarding-source');
+const { sourceRecord, checkSource, assertTeamHistoryComplete } = require('../lib/onboarding-source');
 const { openDb, upsertMembers, getMemberInvoiceDataByKnvbId, getFreeFieldMappings, upsertMemberFreeFields } = require('../lib/rondo-club-db');
 const { preparePerson } = require('./prepare-rondo-club-members');
 const { syncPerson, RELATIONSHIP_TYPE, hasRelationshipType } = require('./submit-rondo-club-sync');
@@ -80,7 +80,7 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
           },
           teams: async (personId, rows) => {
             const saved = await syncSingleMember({ db, knvbId: id, rondoClubId: personId, teamRows: rows, logger });
-            if (saved.errors.length || saved.textFallback) throw new Error('Team assignments or mappings are not fully confirmed');
+            assertTeamHistoryComplete(saved);
             if (!rows.length) {
               const person = (await request(`wp/v2/people/${personId}`)).body;
               const teams = new Set(require('../lib/rondo-club-db').getAllTeams(db).map(team => Number(team.rondo_club_id)));

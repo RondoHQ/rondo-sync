@@ -158,6 +158,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
     created: 0,
     reconciled: 0,
     textFallback: 0,
+    currentTextFallback: 0,
     skippedDuplicate: 0
   };
 
@@ -188,6 +189,7 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
       entry.team_name_text = buildHistoricalTeamName(row);
       entry.entity_type = 'external_team';
       result.textFallback++;
+      if (entry.is_current) result.currentTextFallback++;
     }
 
     const signature = buildSignature(entry);
@@ -267,6 +269,7 @@ async function syncSingleMember(options = {}) {
       created: res.created || 0,
       reconciled: res.reconciled || 0,
       textFallback: res.textFallback || 0,
+      currentTextFallback: res.currentTextFallback || 0,
       skippedDuplicate: res.skippedDuplicate || 0,
       errors: []
     };
@@ -277,6 +280,7 @@ async function syncSingleMember(options = {}) {
       created: 0,
       reconciled: 0,
       textFallback: 0,
+      currentTextFallback: 0,
       skippedDuplicate: 0,
       errors: [{ knvb_id: knvbId, message: error.message }]
     };
