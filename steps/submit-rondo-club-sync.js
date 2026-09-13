@@ -1,5 +1,6 @@
 require('dotenv/config');
 
+const { submitParentSlotObservations } = require('../lib/parent-slot-observations');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { runPrepare } = require('./prepare-rondo-club-members');
 const { runPrepare: runPrepareParents } = require('./prepare-rondo-club-parents');
@@ -875,7 +876,7 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
 
   // Prepare parents from Sportlink
   const prepared = Array.isArray(preparedParents)
-    ? { success: true, parents: preparedParents }
+    ? { success: true, parents: preparedParents, parentSlotObservations: options.parentSlotObservations }
     : await runPrepareParents({ logger, verbose });
   if (!prepared.success) {
     result.errors.push({ message: prepared.error });
@@ -951,6 +952,11 @@ async function syncParents(db, knvbIdToRondoClubId, options = {}) {
       result.errors.push({ email: parent.email, message: formatSyncError(error), details: error.details });
     }
   }
+
+  // Refresh slot labels even when parent contact hashes did not change.
+  const observations = await submitParentSlotObservations(prepared.parentSlotObservations || [], knvbIdToRondoClubId, options);
+  result.slotObservations = observations;
+  result.errors.push(...observations.errors);
 
   // Delete orphan parents
   const currentEmails = parents.map(p => p.email);
@@ -1071,6 +1077,7 @@ async function runSync(options = {}) {
     const db = openDb();
     try {
       let preparedParentsForRun = null;
+      let preparedParentSlotsForRun = null;
 
       // Members sync
       if (includeMembers) {
@@ -1098,6 +1105,7 @@ async function runSync(options = {}) {
           return result;
         }
         preparedParentsForRun = parentPreparation.parents;
+        preparedParentSlotsForRun = parentPreparation.parentSlotObservations;
         upsertParents(db, preparedParentsForRun);
 
         // A standalone parent can later receive their own Sportlink membership.
@@ -1182,7 +1190,8 @@ async function runSync(options = {}) {
         logVerbose('Starting parent sync...');
         const parentResult = await syncParents(db, knvbIdToRondoClubId, {
           ...options,
-          preparedParents: preparedParentsForRun
+          preparedParents: preparedParentsForRun,
+          parentSlotObservations: preparedParentSlotsForRun
         });
         result.parents = parentResult;
       }

@@ -1,8 +1,9 @@
 require('dotenv/config');
 
-const { openDb, getLatestSportlinkResults } = require('../lib/laposta-db');
+const { openDb, getLatestSportlinkSnapshot } = require('../lib/laposta-db');
 const { normalizeEmail, isValidEmail, buildChildFullName, hasValue } = require('../lib/parent-dedupe');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { prepareParentSlotObservations } = require('../lib/parent-slot-observations');
 const { normalizePhone } = require('../lib/phone-normalizer');
 
 /**
@@ -182,8 +183,11 @@ async function runPrepare(options = {}) {
     // Load Sportlink data from SQLite
     const db = openDb();
     let sportlinkData;
+    let observedAt;
     try {
-      const resultsJson = getLatestSportlinkResults(db);
+      const snapshot = getLatestSportlinkSnapshot(db);
+      const resultsJson = snapshot?.results_json;
+      observedAt = snapshot?.created_at;
       if (!resultsJson) {
         const errorMsg = 'No Sportlink results found in SQLite. Run the download first.';
         logError(errorMsg);
@@ -210,6 +214,7 @@ async function runPrepare(options = {}) {
     return {
       success: true,
       parents: parents,
+      parentSlotObservations: prepareParentSlotObservations(snapshotMembers, observedAt),
       skipped: 0
     };
   } catch (err) {

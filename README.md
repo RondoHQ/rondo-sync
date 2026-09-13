@@ -6,6 +6,8 @@
 
 **Automated member data synchronization for Dutch sports clubs.** Extracts data from Sportlink Club (KNVB's member administration — no API) via headless browser automation and syncs it to Laposta, Rondo Club (WordPress), and FreeScout. Club volunteers never enter the same data twice.
 
+The people import also refreshes Sportlink parent field labels for existing relationships. To backfill labels without changing contact data, run `node tools/sync-parent-slot-labels.js --apply` on the sync server; omit `--apply` to preview source coverage.
+
 ## System Architecture
 
 ```mermaid
