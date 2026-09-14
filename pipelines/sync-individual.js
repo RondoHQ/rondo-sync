@@ -350,11 +350,12 @@ async function syncParentsForMember(knvbId, db, options = {}) {
   const rows = db.prepare('SELECT knvb_id, rondo_club_id FROM rondo_club_members WHERE rondo_club_id IS NOT NULL').all();
   const knvbIdToRondoClubId = new Map(rows.map(row => [row.knvb_id, row.rondo_club_id]));
 
-  const result = { synced: 0, created: 0, updated: 0, total: memberParents.length, errors: [] };
+  const result = { synced: 0, created: 0, updated: 0, total: memberParents.length, errors: [], results: [] };
 
   for (const parent of memberParents) {
     try {
       const syncResult = await syncParent(parent, db, knvbIdToRondoClubId, { verbose, strictParentLinks: options.strictParentLinks });
+      result.results.push({ email: parent.email, ...syncResult });
       result.synced++;
       if (syncResult.action === 'created') result.created++;
       if (syncResult.action === 'updated') result.updated++;

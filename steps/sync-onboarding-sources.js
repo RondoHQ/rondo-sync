@@ -3,11 +3,45 @@ const { sourceRecord, checkSource, assertTeamHistoryComplete } = require('../lib
 const { openDb, upsertMembers, getMemberInvoiceDataByKnvbId, getFreeFieldMappings, upsertMemberFreeFields } = require('../lib/rondo-club-db');
 const { preparePerson } = require('./prepare-rondo-club-members');
 const { syncPerson, RELATIONSHIP_TYPE, hasRelationshipType } = require('./submit-rondo-club-sync');
+const { getParentProfileOwnership } = require('../lib/parent-person-resolution');
 const { syncFunctionsForMember, syncParentsForMember } = require('../pipelines/sync-individual');
 const { syncSingleMember } = require('./submit-rondo-club-player-history');
 const { fetchMemberGeneralData, fetchMemberFunctions, fetchMemberDataFromOtherPage, fetchMemberTeamMemberships, parseFunctionsResponse } = require('./download-functions-from-sportlink');
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
+
+/** Verify the saved source identities and links using the same contact ownership as the writer. */
+async function verifyParentSources({ personId, general, saved, request }) {
+  if (saved.errors.length) throw new Error('Parent records or relationships could not be saved');
+  const expected = new Set([general.EmailAddressParent1, general.EmailAddressParent2].map(normalizeEmail).filter(Boolean));
+  const person = (await request(`wp/v2/people/${personId}`)).body;
+  const parents = new Map();
+  for (const relation of person.fields.relationships || []) {
+    if (!hasRelationshipType(relation, RELATIONSHIP_TYPE.PARENT)) continue;
+    const parent = (await request(`wp/v2/people/${relation.related_person_id}`)).body;
+    parents.set(Number(parent.id), parent.fields);
+  }
+  for (const email of expected) {
+    const result = (saved.results || []).find(row => normalizeEmail(row.email) === email);
+    const parentId = Number(result?.id);
+    const fields = parents.get(parentId);
+    if (!['created', 'updated'].includes(result?.action) || !fields || parentId === Number(personId)
+      || !(fields.relationships || []).some(relation => Number(relation.related_person_id) === Number(personId)
+        && hasRelationshipType(relation, RELATIONSHIP_TYPE.CHILD))) {
+      throw new Error('Stored parent relationships do not confirm the complete source');
+    }
+    // Active members, contacts and sponsors keep their own managed contact details,
+    // even when a confirmed source parent alias uses a different email address.
+    if (!getParentProfileOwnership(fields).preserveContact
+      && ![fields.email_1, fields.email_2].map(normalizeEmail).includes(email)) {
+      throw new Error('Stored parent addresses do not confirm the complete source');
+    }
+  }
+  if (!expected.size && [...parents.values()].some(fields => [fields.email_1, fields.email_2].some(normalizeEmail))) {
+    throw new Error('Stored parent addresses do not confirm the complete source');
+  }
+  return { success: true };
+}
 
 /** The existing people pipeline owns the browser and serializes these targeted reads. */
 async function runSourceChecks({ members, observedAt, sourceComplete, page, logger, inventoryOnly = false, checkIds = [] }) {
@@ -59,18 +93,7 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
           },
           parents: async (personId, general) => {
             const saved = await syncParentsForMember(id, db, { freshMemberData: { ...member, ...general }, strictParentLinks: true });
-            if (saved.errors.length) throw new Error('Parent records or relationships could not be saved');
-            const expected = new Set([general.EmailAddressParent1, general.EmailAddressParent2].map(normalizeEmail).filter(Boolean));
-            const person = (await request(`wp/v2/people/${personId}`)).body;
-            const actual = new Set();
-            // Verify actual reciprocal links, including for adults whose parent mails are excluded.
-            for (const relation of person.fields.relationships || []) {
-              if (!hasRelationshipType(relation, RELATIONSHIP_TYPE.PARENT)) continue;
-              const parent = (await request(`wp/v2/people/${relation.related_person_id}`)).body;
-              for (const email of [parent.fields.email_1, parent.fields.email_2].map(normalizeEmail).filter(Boolean)) actual.add(email);
-            }
-            if ([...expected].some(email => !actual.has(email)) || (!expected.size && actual.size)) throw new Error('Stored parent addresses do not confirm the complete source');
-            return { success: true };
+            return verifyParentSources({ personId, general, saved, request });
           },
           functions: async (personId, data) => {
             const parsed = parseFunctionsResponse(data, id);
@@ -110,4 +133,4 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
   return result;
 }
 
-module.exports = { runSourceChecks };
+module.exports = { runSourceChecks, verifyParentSources };
