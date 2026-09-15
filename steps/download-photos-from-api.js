@@ -128,7 +128,10 @@ async function runPhotoDownload(options = {}) {
             logger.verbose(`    Saved ${path.basename(photoResult.path)} (${photoResult.bytes} bytes)`);
           } else {
             result.failed++;
-            result.errors.push({ knvb_id: member.knvb_id, message: 'Photo download failed' });
+            result.errors.push({
+              knvb_id: member.knvb_id,
+              message: photoResult.error ? `Photo download failed: ${photoResult.error}` : 'Photo download failed'
+            });
           }
         } catch (error) {
           result.failed++;
