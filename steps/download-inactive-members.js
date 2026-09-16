@@ -3,6 +3,55 @@ require('dotenv/config');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
+const LEGACY_ACTIVE_STATUS_SELECTOR = '#chipStatusACTIVE';
+const MEMBER_STATUS_DROPDOWN_SELECTOR = '#dropdownMultiMemberStatus_styled';
+const MEMBER_STATUS_OPTION_PREFIX = 'DROPDOWN_MULTISELECT_OPTION_';
+const MEMBER_STATUS_OPTIONS = [
+  'ACTIVE',
+  'INACTIVE',
+  'PROCESSING',
+  'ELIGABLE_FOR_REMOVE',
+  'REJECTED',
+  'ASPIRANT'
+];
+
+function memberStatusOptionSelector(status) {
+  return `input[name="${MEMBER_STATUS_OPTION_PREFIX}${status}"]`;
+}
+
+/** Select only inactive members across the legacy chip and current dropdown UIs. */
+async function selectInactiveMemberStatus(page) {
+  await page.waitForSelector('#btnShowMore:not([disabled])', { timeout: 20000 });
+  await page.click('#btnShowMore');
+  await page.waitForSelector(
+    `${MEMBER_STATUS_DROPDOWN_SELECTOR}, ${LEGACY_ACTIVE_STATUS_SELECTOR}`,
+    { timeout: 20000 }
+  );
+
+  if (await page.$(MEMBER_STATUS_DROPDOWN_SELECTOR)) {
+    await page.click(MEMBER_STATUS_DROPDOWN_SELECTOR);
+    await page.waitForSelector(memberStatusOptionSelector('INACTIVE'), { timeout: 20000 });
+
+    for (const status of MEMBER_STATUS_OPTIONS) {
+      const selector = memberStatusOptionSelector(status);
+      const checked = await page.isChecked(selector);
+      if (status === 'INACTIVE' && !checked) {
+        await page.check(selector, { force: true });
+      } else if (status !== 'INACTIVE' && checked) {
+        await page.uncheck(selector, { force: true });
+      }
+    }
+
+    await page.click('#btnApplydropdownMultiMemberStatus');
+    return 'dropdown';
+  }
+
+  await page.click(LEGACY_ACTIVE_STATUS_SELECTOR);
+  await page.click('#chipStatusELIGABLE_FOR_REMOVE');
+  await page.click('#chipStatusINACTIVE');
+  return 'chips';
+}
+
 /**
  * Download inactive member data from Sportlink
  * @param {Object} options
@@ -46,14 +95,9 @@ async function runDownloadInactive(options = {}) {
 
       logVerbose('Toggling status filter to INACTIVE members...');
 
-      await page.waitForSelector('#btnShowMore:not([disabled])', { timeout: 20000 });
-      await page.click('#btnShowMore');
-      await page.waitForSelector('#chipStatusACTIVE', { timeout: 20000 });
-      await page.click('#chipStatusACTIVE');
-      await page.click('#chipStatusELIGABLE_FOR_REMOVE');
-      await page.click('#chipStatusINACTIVE');
+      const statusFilterUi = await selectInactiveMemberStatus(page);
 
-      logVerbose('Status filter toggled successfully to INACTIVE');
+      logVerbose(`Status filter toggled successfully to INACTIVE via ${statusFilterUi} UI`);
 
       // Set up listener for the SearchMembers POST response before clicking
       logDebug('Setting up response listener for SearchMembers POST request...');
@@ -103,7 +147,7 @@ async function runDownloadInactive(options = {}) {
   }
 }
 
-module.exports = { runDownloadInactive };
+module.exports = { runDownloadInactive, selectInactiveMemberStatus };
 
 // CLI entry point
 if (require.main === module) {
