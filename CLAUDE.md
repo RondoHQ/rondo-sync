@@ -158,6 +158,11 @@ logger.error('Error messages');
   pipeline, mirror the `process.exitCode = result.error ? 1 : 2` pattern or it will
   false-alarm Healthchecks on every partial.
 
+Onboarding source checks defer parked, rejected, aspirant, transfer, and otherwise
+non-definitive Sportlink registrations. They stay incomplete and automatic onboarding remains
+blocked, but they count as skipped rather than failed because waiting is the expected outcome.
+Actual source fetch, validation, or write failures still make the People run partial.
+
 ## Run Tracking + Self-Heal Watchdog
 
 ### Adding a pipeline means touching three places, not one

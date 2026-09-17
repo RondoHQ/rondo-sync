@@ -604,17 +604,25 @@ async function fetchMemberFunctions(page, knvbId, logger, { strict = false } = {
 async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false } = {}) {
   const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
 
-  logger.verbose(`  Navigating to ${membershipsUrl}...`);
-  await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  // Sportlink pages often keep background requests open; avoid strict networkidle waits.
-  await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
-
   // The showInactive toggle is rendered asynchronously by the SPA after the
-  // load event fires, so wait for it before querying. If it never appears,
-  // the membership panel didn't render and there's nothing to fetch.
-  try {
-    await page.waitForSelector('input[name="showInactive"]', { timeout: 10000 });
-  } catch {
+  // load event fires. The panel occasionally misses its first render after a
+  // sequence of member-detail navigations, so reload it once before failing.
+  let panelLoaded = false;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    logger.verbose(`  Navigating to ${membershipsUrl}...`);
+    await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    // Sportlink pages often keep background requests open; avoid strict networkidle waits.
+    await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+    try {
+      await page.waitForSelector('input[name="showInactive"]', { timeout: 10000 });
+      panelLoaded = true;
+      break;
+    } catch {
+      if (attempt === 1) logger.verbose('  MemberTeams panel did not render; retrying once...');
+    }
+  }
+
+  if (!panelLoaded) {
     if (strict) throw new Error('MemberTeams panel not loaded; absence does not prove an empty membership list');
     logger.verbose(`  No showInactive toggle present — treating as no memberships`);
     return [];

@@ -45,12 +45,17 @@ async function verifyParentSources({ personId, general, saved, request }) {
 
 /** The existing people pipeline owns the browser and serializes these targeted reads. */
 async function runSourceChecks({ members, observedAt, sourceComplete, page, logger, inventoryOnly = false, checkIds = [] }) {
-  if (!sourceComplete) return { checked: 0, complete: 0, errors: [{ message: 'Onboarding source inventory skipped: incomplete Sportlink search' }] };
+  if (!sourceComplete) return {
+    checked: 0,
+    complete: 0,
+    errors: [{ message: 'Onboarding source inventory skipped: incomplete Sportlink search' }],
+    deferred: []
+  };
   const request = (route, method = 'GET', data = null) => rondoClubRequest(route, method, data, { logger });
   const inventory = (await request('rondo/v1/onboarding/sources', 'POST', {
     observed_at: observedAt, sources: members.map(sourceRecord), check_ids: checkIds
   })).body;
-  const result = { checked: 0, complete: 0, pending: inventory.pending_count, errors: [] };
+  const result = { checked: 0, complete: 0, pending: inventory.pending_count, errors: [], deferred: [] };
   if (inventoryOnly) return result;
   const byId = new Map(members.map(member => [member.PublicPersonId, member]));
   const db = openDb();
@@ -117,6 +122,7 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
         result.checked++;
         if (outcome.complete) result.complete++;
         result.errors.push(...outcome.errors.map(error => ({ knvb_id: id, message: `${error.part}: ${error.message}` })));
+        result.deferred.push(...outcome.deferred.map(reason => ({ knvb_id: id, message: `${reason.part}: ${reason.message}` })));
       } catch (error) {
         result.errors.push({ knvb_id: id, message: error.message });
         try {
@@ -129,7 +135,7 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
   } finally {
     db.close();
   }
-  logger.log(`Onboarding source checks: ${result.complete}/${result.checked} complete; automatic sending remains disabled`);
+  logger.log(`Onboarding source checks: ${result.complete}/${result.checked} complete, ${result.deferred.length} deferred, ${result.errors.length} failed; automatic sending remains disabled`);
   return result;
 }
 

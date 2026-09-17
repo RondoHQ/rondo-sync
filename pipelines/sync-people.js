@@ -442,7 +442,12 @@ async function runPeopleSync(options = {}) {
       const checked = await runSourceChecks({ ...downloadResult, page: await sportlinkSession.getPage(), logger });
       stats.onboarding = checked;
       stats.errors.push(...checked.errors.map(error => ({ ...error, system: 'onboarding' })));
-      tracker.endStep(onboardingStep, { outcome: checked.errors.length ? 'partial' : 'success', updated: checked.complete, failed: checked.errors.length });
+      tracker.endStep(onboardingStep, {
+        outcome: checked.errors.length ? 'partial' : 'success',
+        updated: checked.complete,
+        skipped: checked.deferred.length,
+        failed: checked.errors.length
+      });
       tracker.recordErrors('onboarding-source-checks', onboardingStep, checked.errors);
     } catch (error) {
       const failure = { message: error.message, system: 'onboarding' };

@@ -90,9 +90,15 @@ test('swallowed or skipped saves are not accepted; retry is a new actual source 
 
 test('unknown registration state is sent as incomplete, never silently definitive', async () => {
   const { args, calls } = fixture();
+  let fetches = 0;
   args.member = { ...member, Status: 'transferrequest' };
+  args.steps.fetch = async () => { fetches++; return {}; };
   const result = await checkSource(args);
   assert.equal(result.complete, false);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.deferred.length, 1);
+  assert.match(result.deferred[0].message, /registration status not confirmed/);
+  assert.equal(fetches, 0);
   assert.equal(calls[1].body.membership_state, 'unknown');
 });
 
