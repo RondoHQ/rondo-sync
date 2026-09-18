@@ -6,7 +6,7 @@ const Database = require('better-sqlite3');
 const { initDb, upsertTeamsWithMetadata, updateTeamSyncState, getAllTeamsForSync } = require('../lib/rondo-club-db');
 const { runTeamDownload } = require('../steps/download-teams-from-sportlink');
 const { runSync } = require('../steps/submit-rondo-club-teams');
-const { retireMissingTeams } = require('../lib/retire-missing-teams');
+const { retireMissingTeams, expectedSavedHistory } = require('../lib/retire-missing-teams');
 
 const quiet = { log() {}, verbose() {}, error() {} };
 const orphan = { team_name: 'Old team', sportlink_id: 'OLD', rondo_club_id: 22 };
@@ -177,4 +177,19 @@ test('cleanup reads the source team list without fetching rosters or changing th
   assert.equal(result.success, true);
   assert.deepEqual(result.currentSportlinkIds, ['CURRENT']);
   assert.equal(requests, 2);
+});
+
+
+test('verification honours the existing former-member lifecycle without changing ended history', () => {
+  const current = { ...ended, team_id: 33, start_date: '2025-09-19', end_date: null };
+  const future = { ...current, start_date: '2027-07-01' };
+  const history = [ended, current, future];
+  const former = { fields: { former_member: true, lid_tot: '2025-10-01' } };
+  assert.deepEqual(expectedSavedHistory(former, history, '2026-09-18'), [
+    ended, { ...current, end_date: '2025-10-01', is_current: false }, future
+  ]);
+  assert.deepEqual(expectedSavedHistory({ fields: { former_member: false } }, history, '2026-09-18'), history);
+  assert.deepEqual(expectedSavedHistory({ fields: { former_member: true, lid_tot: null } }, [current], '2026-09-18'), [
+    { ...current, end_date: '2026-09-18', is_current: false }
+  ]);
 });
