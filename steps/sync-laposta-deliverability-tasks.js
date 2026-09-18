@@ -7,7 +7,8 @@ const {
   markMemberDeliverabilityEventTaskCreated,
   markMemberDeliverabilityEventIgnored,
   getBounceDeliverabilityEventsWithTodos,
-  markMemberDeliverabilityTodoDeleted
+  markMemberDeliverabilityTodoDeleted,
+  buildLapostaEventKey: buildEventKey
 } = require('../lib/laposta-db');
 const { fetchMembers, getListConfig } = require('../lib/laposta-client');
 const { openDb: openRondoDb } = require('../lib/rondo-club-db');
@@ -31,12 +32,6 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function buildEventKey({ listId, email, memberId, state }) {
-  const stableEmail = normalizeEmail(email);
-  const identity = memberId || stableEmail;
-  return `${listId}:${identity}:${state}`;
 }
 
 function parseLapostaDate(value) {

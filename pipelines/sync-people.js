@@ -15,6 +15,7 @@ const { runSubmit } = require('../steps/submit-laposta-list');
 const { runSync: runRondoClubSync } = require('../steps/submit-rondo-club-sync');
 const { runSourceChecks } = require('../steps/sync-onboarding-sources');
 const { syncDeceasedToRondoClub, syncDeceasedToLaposta } = require('../steps/sync-deceased-members');
+const { syncFormerMembersToLaposta } = require('../steps/sync-former-members-to-laposta');
 const { runSyncLapostaDeliverabilityTasks } = require('../steps/sync-laposta-deliverability-tasks');
 const { runPhotoDownload } = require('../steps/download-photos-from-api');
 const { runPhotoSync } = require('../steps/upload-photos-to-rondo-club');
@@ -90,6 +91,8 @@ function printSummary(logger, stats) {
   logger.log(minorDivider);
   logger.log(`Members prepared: ${stats.prepared} (${stats.excluded} excluded as duplicates)`);
   logger.log(`Members synced: ${stats.synced} (${stats.added} added, ${stats.updated} updated)`);
+  logger.log(`Former-member subscriptions removed: ${stats.formerMembers.unsubscribed}`);
+  logger.log(`Former-member shared subscriptions kept: ${stats.formerMembers.keptShared}`);
   logger.log('');
 
   logger.log('LAPOSTA DELIVERABILITY');
@@ -131,6 +134,7 @@ function printSummary(logger, stats) {
   const allErrors = [
     ...stats.errors,
     ...stats.deceased.errors,
+    ...stats.formerMembers.errors,
     ...stats.lapostaDeliverability.errors,
     ...stats.rondoClub.errors,
     ...stats.photos.errors
@@ -176,6 +180,7 @@ async function runPeopleSync(options = {}) {
     updated: 0,
     errors: [],
     lists: [],
+    formerMembers: { candidates: 0, uniqueEmails: 0, unsubscribed: 0, keptShared: 0, results: [], errors: [] },
     deceased: {
       inactiveDownloaded: 0,
       rondoUpdated: 0,
@@ -358,6 +363,25 @@ async function runPeopleSync(options = {}) {
       failed: stats.errors.length
     });
     tracker.recordErrors('laposta-submit', submitStepId, stats.errors);
+
+    const formerStepId = tracker.startStep('former-members-laposta');
+    if (submitResult.success) {
+      stats.formerMembers = await syncFormerMembersToLaposta(downloadResult, inactiveResult, {
+        apply: true, logger
+      });
+    } else {
+      stats.formerMembers.errors.push({
+        message: 'Laposta submission failed; former-member cleanup skipped',
+        system: 'former-members-laposta'
+      });
+    }
+    tracker.endStep(formerStepId, {
+      outcome: stats.formerMembers.errors.length ? 'partial' : 'success',
+      updated: stats.formerMembers.unsubscribed,
+      skipped: stats.formerMembers.keptShared,
+      failed: stats.formerMembers.errors.length
+    });
+    tracker.recordErrors('former-members-laposta', formerStepId, stats.formerMembers.errors);
 
     // Removing a stale row from the local desired-state DB does not change the
     // remote Laposta subscription. Explicitly unsubscribe deceased addresses,
@@ -620,6 +644,7 @@ async function runPeopleSync(options = {}) {
     const totalErrors =
       stats.errors.length +
       stats.deceased.errors.length +
+      stats.formerMembers.errors.length +
       stats.lapostaDeliverability.errors.length +
       stats.rondoClub.errors.length +
       stats.photos.errors.length;
