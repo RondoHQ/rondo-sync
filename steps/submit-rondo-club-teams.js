@@ -6,39 +6,11 @@ const {
   getTeamsNeedingSync,
   updateTeamSyncState,
   getOrphanTeamsBySportlinkId,
-  deleteTeam,
+  deleteTeamBySportlinkId,
   getAllTeamsForSync
 } = require('../lib/rondo-club-db');
 
-/**
- * Fetch all teams from WordPress API (paginated)
- * @param {Object} options - Logger options
- * @returns {Promise<Array<{id: number, title: string}>>}
- */
-async function fetchAllWordPressTeams(options) {
-  const logVerbose = options.logger?.verbose.bind(options.logger) || (options.verbose ? console.log : () => {});
-  const teams = [];
-  let page = 1;
-
-  while (true) {
-    try {
-      const response = await rondoClubRequest(`wp/v2/teams?per_page=100&page=${page}`, 'GET', null, options);
-      const pageTeams = response.body;
-      if (pageTeams.length === 0) break;
-      teams.push(...pageTeams.map(t => ({ id: t.id, title: t.title?.rendered || t.title })));
-      logVerbose(`  Fetched page ${page}: ${pageTeams.length} teams`);
-      page++;
-    } catch (error) {
-      // End of pages (400 error) or other error
-      if (error.details?.code === 'rest_post_invalid_page_number') {
-        break;
-      }
-      throw error;
-    }
-  }
-
-  return teams;
-}
+const { retireMissingTeams } = require('../lib/retire-missing-teams');
 
 /**
  * Sync a single team to Rondo Club (create or update)
@@ -164,12 +136,12 @@ async function runSync(options = {}) {
     created: 0,
     updated: 0,
     skipped: 0,
-    deleted: 0,
+    archived: 0,
     errors: []
   };
 
   try {
-    const db = openDb();
+    const db = options.db || openDb();
     try {
       // Get all teams from database (populated by download-teams-from-sportlink.js)
       const allTeams = getAllTeamsForSync(db);
@@ -183,7 +155,11 @@ async function runSync(options = {}) {
       logVerbose(`Found ${allTeams.length} teams in database`);
 
       // Get teams needing sync (hash changed or force)
-      const needsSync = getTeamsNeedingSync(db, force);
+      // Cached rows are not evidence that a team still exists in Sportlink.
+      const currentIds = Array.isArray(currentSportlinkIds) && currentSportlinkIds.length > 0
+        ? new Set(currentSportlinkIds.map(String)) : null;
+      const needsSync = getTeamsNeedingSync(db, force)
+        .filter(team => !currentIds || currentIds.has(String(team.sportlink_id)));
 
       logVerbose(`${needsSync.length} teams need sync`);
 
@@ -209,77 +185,23 @@ async function runSync(options = {}) {
         }
       }
 
-      // Delete orphan teams (in database but not in current Sportlink data)
-      // Use sportlink_id for comparison to handle renames correctly
-      const sportlinkIds = currentSportlinkIds || allTeams.filter(t => t.sportlink_id).map(t => t.sportlink_id);
-      const orphanTeams = getOrphanTeamsBySportlinkId(db, sportlinkIds);
-      if (orphanTeams.length > 0) {
-        logVerbose(`Found ${orphanTeams.length} orphan teams to delete`);
-
-        for (const orphan of orphanTeams) {
-          logVerbose(`Deleting orphan team: ${orphan.team_name} (ID: ${orphan.rondo_club_id})`);
-
-          // Delete from WordPress if it has a rondo_club_id
-          if (orphan.rondo_club_id) {
-            try {
-              await rondoClubRequest(`wp/v2/teams/${orphan.rondo_club_id}`, 'DELETE', { force: true }, options);
-              logVerbose(`  Deleted from WordPress: ${orphan.rondo_club_id}`);
-            } catch (error) {
-              // Ignore 404 errors (already deleted)
-              if (error.details?.data?.status !== 404) {
-                logError(`  Error deleting from WordPress: ${error.message}`);
-                result.errors.push({
-                  team_name: orphan.team_name,
-                  message: `Delete failed: ${error.message}`
-                });
-                continue;
-              }
-              logVerbose(`  Already deleted from WordPress (404)`);
-            }
-          }
-
-          // Delete from tracking database
-          deleteTeam(db, orphan.team_name);
-          result.deleted++;
+      // Cleanup requires a fresh, complete, non-empty source snapshot. Never infer
+      // it from the tracking database or delete teams merely because untracked.
+      if (currentIds) {
+        const orphans = getOrphanTeamsBySportlinkId(db, [...currentIds])
+          .filter(team => team.sportlink_id);
+        const cleanup = await retireMissingTeams(orphans, options);
+        for (const team of cleanup.retired) {
+          deleteTeamBySportlinkId(db, team.sportlink_id);
+          result.archived++;
         }
-      }
-
-      // Delete untracked WordPress teams (teams in WordPress but never tracked locally)
-      // This catches teams created before tracking was implemented
-      logVerbose('Checking for untracked teams in WordPress...');
-      const wordPressTeams = await fetchAllWordPressTeams(options);
-      // Re-fetch teams to get updated rondo_club_ids from newly created teams
-      const updatedTeams = getAllTeamsForSync(db);
-      const trackedRondoClubIds = new Set(updatedTeams.filter(t => t.rondo_club_id).map(t => t.rondo_club_id));
-
-      const untrackedTeams = wordPressTeams.filter(t => !trackedRondoClubIds.has(t.id));
-      if (untrackedTeams.length > 0) {
-        logVerbose(`Found ${untrackedTeams.length} untracked teams in WordPress to delete`);
-
-        for (const team of untrackedTeams) {
-          logVerbose(`Deleting untracked team: ${team.title} (ID: ${team.id})`);
-          try {
-            await rondoClubRequest(`wp/v2/teams/${team.id}`, 'DELETE', { force: true }, options);
-            logVerbose(`  Deleted from WordPress: ${team.id}`);
-            result.deleted++;
-          } catch (error) {
-            if (error.details?.data?.status !== 404) {
-              logError(`  Error deleting untracked team: ${error.message}`);
-              result.errors.push({
-                team_name: team.title,
-                message: `Delete untracked failed: ${error.message}`
-              });
-            } else {
-              logVerbose(`  Already deleted from WordPress (404)`);
-            }
-          }
-        }
+        result.errors.push(...cleanup.errors);
       } else {
-        logVerbose('No untracked teams found in WordPress');
+        logVerbose('Team cleanup skipped: no complete non-empty Sportlink snapshot');
       }
 
     } finally {
-      db.close();
+      if (!options.db) db.close();
     }
 
     result.success = result.errors.length === 0;
@@ -288,6 +210,7 @@ async function runSync(options = {}) {
   } catch (error) {
     result.success = false;
     result.error = error.message;
+    result.errors.push({ message: error.message });
     logError(`Sync error: ${error.message}`);
     return result;
   }
@@ -311,8 +234,8 @@ if (require.main === module) {
       console.log(`  Created: ${result.created}`);
       console.log(`  Updated: ${result.updated}`);
       console.log(`  Skipped: ${result.skipped}`);
-      if (result.deleted > 0) {
-        console.log(`  Deleted: ${result.deleted} (orphan teams)`);
+      if (result.archived > 0) {
+        console.log(`  Archived: ${result.archived} (missing Sportlink teams)`);
       }
       if (result.errors.length > 0) {
         console.error(`  Errors: ${result.errors.length}`);

@@ -62,7 +62,8 @@ async function runTeamDownload(options = {}) {
       }
 
       const teamsData = await teamsResponse.json();
-      const teams = Array.isArray(teamsData.Team) ? teamsData.Team : [];
+      if (!Array.isArray(teamsData.Team)) throw new Error('Incomplete UnionTeams response');
+      const teams = teamsData.Team;
       logVerbose(`Found ${teams.length} union teams`);
 
       // Prepare team records with metadata for union teams
@@ -98,7 +99,8 @@ async function runTeamDownload(options = {}) {
       }
 
       const clubTeamsData = await clubTeamsResponse.json();
-      const clubTeams = Array.isArray(clubTeamsData.Team) ? clubTeamsData.Team : [];
+      if (!Array.isArray(clubTeamsData.Team)) throw new Error('Incomplete ClubTeams response');
+      const clubTeams = clubTeamsData.Team;
 
       // Filter out club teams that already exist as union teams
       const filteredClubTeams = clubTeams.filter(team => !team.HasUnionTeamConnection);
@@ -120,9 +122,14 @@ async function runTeamDownload(options = {}) {
       // Combine union and club teams
       teamRecords.push(...clubTeamRecords);
 
+      if (teamRecords.length !== teams.length + filteredClubTeams.length) {
+        throw new Error('Team snapshot contains missing names or Sportlink IDs');
+      }
+      const currentSportlinkIds = teamRecords.map(team => team.sportlink_id);
+
       if (teamRecords.length === 0) {
         log('No teams found');
-        return { success: true, teamCount: 0, memberCount: 0 };
+        return { success: true, teamCount: 0, memberCount: 0, currentSportlinkIds };
       }
 
       logVerbose(`Total teams to process: ${teamRecords.length} (${teams.length} union + ${filteredClubTeams.length} club)`);
@@ -222,7 +229,7 @@ async function runTeamDownload(options = {}) {
       }
 
       // Step 3: Store to database
-      const db = openDb();
+      const db = options.db || openDb();
       try {
         // Clear existing team members and insert fresh data
         clearTeamMembers(db);
@@ -240,11 +247,11 @@ async function runTeamDownload(options = {}) {
           upsertTeamMembers(db, allMembers);
         }
       } finally {
-        db.close();
+        if (!options.db) db.close();
       }
 
       log(`Downloaded ${teamRecords.length} teams with ${totalMemberCount} team members from Sportlink`);
-      return { success: true, teamCount: teamRecords.length, memberCount: totalMemberCount };
+      return { success: true, teamCount: teamRecords.length, memberCount: totalMemberCount, currentSportlinkIds };
     } finally {
       if (session) {
         await session.close();

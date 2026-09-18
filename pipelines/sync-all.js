@@ -622,18 +622,13 @@ async function runSyncAll(options = {}) {
 
     // Step 4b: Team Download + Sync (NON-CRITICAL, uses shared session)
     logger.verbose('Downloading teams from Sportlink...');
-    let teamDownloadSportlinkIds = [];
+    let teamDownloadSportlinkIds = null;
     try {
       const teamPage = sportlinkSession.isActive ? await sportlinkSession.getPage() : undefined;
       const teamDownloadResult = await runTeamDownload({ logger, verbose, page: teamPage });
       if (teamDownloadResult.success) {
         logger.verbose(`Downloaded ${teamDownloadResult.teamCount} teams with ${teamDownloadResult.memberCount} members`);
-        // Store the sportlink IDs for orphan detection
-        const { getAllTeamsForSync } = require('../lib/rondo-club-db');
-        const db = openDb();
-        const allTeams = getAllTeamsForSync(db);
-        teamDownloadSportlinkIds = allTeams.filter(t => t.sportlink_id).map(t => t.sportlink_id);
-        db.close();
+        teamDownloadSportlinkIds = teamDownloadResult.currentSportlinkIds;
       } else {
         logger.error(`Team download failed: ${teamDownloadResult.error}`);
         stats.teams.errors.push({
@@ -657,6 +652,7 @@ async function runSyncAll(options = {}) {
       stats.teams.created = teamResult.created;
       stats.teams.updated = teamResult.updated;
       stats.teams.skipped = teamResult.skipped;
+      stats.teams.archived = teamResult.archived || 0;
       if (teamResult.errors?.length > 0) {
         stats.teams.errors = teamResult.errors.map(e => ({
           team_name: e.team_name,

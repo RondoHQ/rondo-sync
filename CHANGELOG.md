@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1] - 2026-09-18
+
+### Fixed
+
+- Detect disappeared teams using the fresh Sportlink team snapshot, excluding stale cached rows.
+- Preserve historical team names, roles and dates before moving missing teams to draft; verify both changes before removing their sync mapping.
+- Keep untracked teams and teams with unended roles untouched, and skip cleanup after failed, malformed or empty downloads.
+
 ## [0.11.0] - 2026-09-18
 
 ### Added

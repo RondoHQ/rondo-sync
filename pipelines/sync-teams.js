@@ -41,6 +41,7 @@ function printSummary(logger, stats) {
     if (stats.teams.updated > 0) {
       logger.log(`  Updated: ${stats.teams.updated}`);
     }
+    if (stats.teams.archived > 0) logger.log(`  Archived: ${stats.teams.archived}`);
     if (stats.teams.skipped > 0) {
       logger.log(`  Skipped: ${stats.teams.skipped} (unchanged)`);
     }
@@ -161,11 +162,13 @@ async function runTeamsSync(options = {}) {
   };
 
   try {
+    let currentSportlinkIds = null;
     // Step 1: Download teams from Sportlink
     logger.verbose('Downloading teams from Sportlink...');
     const downloadStepId = tracker.startStep('team-download');
     try {
       const teamDownloadResult = await runTeamDownload({ logger, verbose });
+      if (teamDownloadResult.success) currentSportlinkIds = teamDownloadResult.currentSportlinkIds;
       stats.download.teamCount = teamDownloadResult.teamCount || 0;
       stats.download.memberCount = teamDownloadResult.memberCount || 0;
       if (!teamDownloadResult.success) {
@@ -199,20 +202,13 @@ async function runTeamsSync(options = {}) {
     logger.verbose('Syncing teams to Rondo Club...');
     const teamSyncStepId = tracker.startStep('team-sync');
     try {
-      // Get sportlink IDs for orphan detection (teams we just downloaded)
-      const { openDb, getAllTeamsForSync } = require('../lib/rondo-club-db');
-      const db = openDb();
-      const allTeams = getAllTeamsForSync(db);
-      const currentSportlinkIds = allTeams.filter(t => t.sportlink_id).map(t => t.sportlink_id);
-      db.close();
-
       const teamResult = await runTeamSync({ logger, verbose, force, currentSportlinkIds });
       stats.teams.total = teamResult.total;
       stats.teams.synced = teamResult.synced;
       stats.teams.created = teamResult.created;
       stats.teams.updated = teamResult.updated;
       stats.teams.skipped = teamResult.skipped;
-      stats.teams.deleted = teamResult.deleted || 0;
+      stats.teams.archived = teamResult.archived || 0;
       if (teamResult.errors?.length > 0) {
         stats.teams.errors = teamResult.errors.map(e => ({
           team_name: e.team_name,
