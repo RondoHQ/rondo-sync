@@ -20,6 +20,7 @@ function api({ history = [ended], mismatched = false, failSave = false, failVeri
   const request = async (url, method, body) => {
     calls.push({ url, method, body });
     if (url.startsWith('wp/v2/people?')) {
+      assert.equal(url.includes('trash'), false, 'deleted persons remain outside REST access');
       scans++;
       if (newReference && scans > 1) people.push({ id: 101, fields: { work_history: [ended] } });
       return { body: structuredClone(people), headers: { 'x-wp-totalpages': '1' } };
