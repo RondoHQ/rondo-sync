@@ -67,8 +67,12 @@ also leaves the surviving membership intact.
 Sportlink-owned member fields are synchronized as desired state: when a complete
 Sportlink response explicitly contains an empty game activity, the sync sends
 `spelactiviteit: null` so Rondo Club clears the previous value. The individual
-sync overlays its partial `/general` response on the latest complete member
-snapshot; an omitted field is never treated as an explicitly empty value.
+sync with `--fetch` (also used by Rondo Club) searches Sportlink by the exact KNVB
+ID before overlaying its partial `/general` response, so game activity and age
+class are refreshed immediately. Former members are searched with the inactive
+status filter if needed. Missing, ambiguous, or incomplete search results stop
+the sync before person updates; an explicitly empty activity still clears the
+old value. Runs without `--fetch` continue to use the stored full member snapshot.
 After a successful individual sync, its locally computed source hash is recorded
 as synchronized so the next People run does not process the same payload again.
 

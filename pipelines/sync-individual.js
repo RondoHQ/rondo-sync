@@ -2,6 +2,7 @@
 require('dotenv/config');
 
 const { SportlinkSession } = require('../lib/sportlink-session');
+const { fetchMemberSearchData } = require('../steps/download-member-search');
 const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/laposta-db');
 const {
   openDb: openRondoClubDb,
@@ -83,9 +84,9 @@ function isRetryableMembershipFetchError(error) {
 }
 
 /**
- * Overlay fresh /general values on the latest complete SearchMembers record.
- * The /general response omits bulk-only fields such as KernelGameActivities
- * and AgeClassDescription; keeping the snapshot values prevents an individual
+ * Overlay fresh /general values on a complete SearchMembers record.
+ * The /general response omits fields such as KernelGameActivities
+ * and AgeClassDescription; keeping the search values prevents an individual
  * refresh from turning an incomplete response into destructive empty values.
  */
 function mergeFreshMemberData(snapshotMember, freshMemberData) {
@@ -117,9 +118,17 @@ async function fetchFreshDataFromSportlink(knvbId, db, options = {}) {
   try {
     log('Sportlink session ready');
 
+    // /general omits game activity and age class. Refresh the exact member's
+    // complete search record before any writes instead of reusing the bulk snapshot.
+    const searchMember = await fetchMemberSearchData(page, knvbId, logger, { session });
+
     // Fetch general member data (person, communication, address, parental info)
     log(`Fetching general data for ${knvbId}...`);
-    const memberData = await fetchMemberGeneralData(page, knvbId, logger);
+    const generalData = await fetchMemberGeneralData(page, knvbId, logger);
+    if (generalData && generalData.PublicPersonId !== knvbId) {
+      throw new Error(`General data identity does not match ${knvbId}`);
+    }
+    const memberData = mergeFreshMemberData(searchMember, generalData);
 
     if (memberData) {
       log(`  Name: ${memberData.FirstName} ${memberData.Infix || ''} ${memberData.LastName}`);
@@ -399,8 +408,8 @@ async function syncIndividual(knvbId, options = {}) {
       console.log('Fresh data fetched successfully');
     }
 
-    // /general is intentionally partial. Overlay it on the latest complete
-    // SearchMembers snapshot so bulk-only fields remain available.
+    // Fresh fetches include a targeted SearchMembers result. The stored full
+    // snapshot remains the source for runs without --fetch.
     const resultsJson = getLatestSportlinkResults(lapostaDb);
     let snapshotMember = null;
     if (resultsJson) {
