@@ -7,7 +7,7 @@ const { retireMissingTeams } = require('../lib/retire-missing-teams');
 
 async function run({ apply = false } = {}) {
   const logger = { log: console.log, verbose() {}, error: console.error };
-  const snapshot = await runTeamDownload({ logger });
+  const snapshot = await runTeamDownload({ logger, rosters: false });
   if (!snapshot.success || !snapshot.currentSportlinkIds?.length) {
     throw new Error(snapshot.error || 'No complete non-empty team snapshot; no cleanup performed');
   }

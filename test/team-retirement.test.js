@@ -159,3 +159,21 @@ test('preview reports historical references without writing', async () => {
   assert.deepEqual(result.planned, [{ ...orphan, history_rows: 1 }]);
   assert.equal(mock.calls.every(call => call.method === 'GET'), true);
 });
+
+
+test('cleanup reads the source team list without fetching rosters or changing the database', async () => {
+  const page = pageFor(
+    { Team: [{ TeamName: 'Current team', PublicTeamId: 'CURRENT' }] },
+    { Team: [] }
+  );
+  let requests = 0;
+  const wait = page.waitForResponse;
+  page.waitForResponse = async () => {
+    if (++requests > 2) throw new Error('Unexpected roster request');
+    return wait();
+  };
+  const result = await runTeamDownload({ page, rosters: false, logger: quiet });
+  assert.equal(result.success, true);
+  assert.deepEqual(result.currentSportlinkIds, ['CURRENT']);
+  assert.equal(requests, 2);
+});

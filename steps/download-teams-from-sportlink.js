@@ -14,6 +14,7 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {Object} options
  * @param {Object} [options.logger] - Logger instance with log(), verbose(), error() methods
  * @param {boolean} [options.verbose=false] - Verbose mode
+ * @param {boolean} [options.rosters=true] - Set false for a read-only team-list snapshot without roster downloads or database writes.
  * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
  * @returns {Promise<{success: boolean, teamCount: number, memberCount: number, error?: string}>}
  */
@@ -130,6 +131,10 @@ async function runTeamDownload(options = {}) {
       if (teamRecords.length === 0) {
         log('No teams found');
         return { success: true, teamCount: 0, memberCount: 0, currentSportlinkIds };
+      }
+
+      if (options.rosters === false) {
+        return { success: true, teamCount: teamRecords.length, memberCount: 0, currentSportlinkIds };
       }
 
       logVerbose(`Total teams to process: ${teamRecords.length} (${teams.length} union + ${filteredClubTeams.length} club)`);
