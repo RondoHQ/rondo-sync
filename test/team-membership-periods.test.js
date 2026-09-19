@@ -7,6 +7,28 @@ const { reconcilePlayerHistory } = require('../steps/submit-rondo-club-player-hi
 const now = new Date('2026-09-06T12:00:00Z');
 const old = { PublicTeamId: 'old-team', TeamName: 'AWC O15-4JM', FunctionDescription: 'Teammanager', RelationStart: '2025-08-27', RelationEnd: '', SeasonDescription: "seizoen 2025/'26" };
 
+test('an explicitly active open role survives its original season and repairs an inferred end once', () => {
+  const role = { ...old, RelationStart: '2024-12-15', RelationEnd: null, SeasonDescription: "seizoen 2024/'25", Status: 'ACTIVE' };
+  for (const status of ['ACTIVE', ' active ']) {
+    const input = { ...role, Status: status };
+    assert.deepEqual(normalize([input], now), [input]);
+  }
+  const [row] = normalize([role], now);
+  const source = { team_id: 2602, job_title: 'Teammanager', start_date: row.RelationStart, end_date: row.RelationEnd, is_current: isTeamMembershipCurrent(row) };
+  const unrelated = { team_id: 42, job_title: 'Trainer', is_current: true };
+  const historical = { ...source, start_date: '2018-06-19', end_date: '2020-09-28', is_current: false };
+  const result = reconcilePlayerHistory([historical, { ...source, end_date: '2025-06-30', is_current: false }, unrelated], [source]);
+  assert.equal(result.created, 0);
+  assert.equal(result.reconciled, 1);
+  assert.deepEqual(result.workHistory, [historical, source, unrelated]);
+  const replay = reconcilePlayerHistory(result.workHistory, [source]);
+  assert.equal(replay.created + replay.reconciled, 0);
+  assert.deepEqual(replay.workHistory, result.workHistory);
+  const ended = { ...role, RelationEnd: '2025-06-30' };
+  assert.deepEqual(normalize([ended], now), [ended]);
+  assert.equal(isTeamMembershipCurrent(normalize([ended], now)[0]), false);
+});
+
 test('an undated old-season role closes at season end and preserves the input', () => {
   const [row] = normalize([old], now);
   assert.equal(row.RelationEnd, '2026-06-30');

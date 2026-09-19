@@ -34,7 +34,7 @@ test('onboarding accepts saved historical teams, but blocks current fallbacks an
       { PublicTeamId: 'current', TeamName: 'Current team', Status: 'ACTIVE' },
       { TeamName: 'Old team', RelationStart: '2013-01-16', RelationEnd: '2014-06-17', Status: 'ACTIVE' },
       { TeamName: 'Inactive team', Status: 'INACTIVE' },
-      { TeamName: 'Closed season', SeasonDescription: "seizoen 2019/'20", Status: 'ACTIVE' }
+      { TeamName: 'Closed season', SeasonDescription: "seizoen 2019/'20" }
     ];
     const sync = teamRows => syncSingleMember({ db: {}, knvbId: 'TEST001', rondoClubId: 123, teamRows });
     const saved = await sync(rows);

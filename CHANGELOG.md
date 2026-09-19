@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.2] - 2026-09-19
+
+### Fixed
+
+- Preserve explicitly active Sportlink team roles without an end date when their season label refers to an earlier season, preventing current staff roles and guest-pass eligibility from disappearing.
+
 ## [0.11.1] - 2026-09-18
 
 ### Fixed
