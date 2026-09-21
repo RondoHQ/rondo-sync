@@ -8,6 +8,8 @@
 
 The people import also refreshes Sportlink parent field labels for existing relationships. To backfill labels without changing contact data, run `node tools/sync-parent-slot-labels.js --apply` on the sync server; omit `--apply` to preview source coverage.
 
+Laposta receives three current-season volunteer counters from Rondo: `vrijwilligersplicht` (total required duties, `-1` for exempt/not applicable), `vrijwilligersingepland` (planned), and `vrijwilligersafgerond` (completed/credited). Progress follows Rondo's shared-family attribution. Planning or completing a shift never lowers the total requirement.
+
 ## System Architecture
 
 ```mermaid

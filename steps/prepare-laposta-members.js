@@ -532,7 +532,7 @@ function processMembers(members, mapping, aggregationMaps, volunteerStatusMap, v
         emailType: type
       });
       if (obligationValue !== undefined) {
-        newEntry.custom_fields.vrijwilligersplicht = obligationValue;
+        Object.assign(newEntry.custom_fields, obligationValue);
       }
 
       const usedCount = emailAssignmentCount.get(normalized) || 0;
@@ -602,8 +602,8 @@ async function runPrepare(options = {}) {
     }
 
     // Load the current-season, derived volunteer obligation from Rondo Club.
-    // If this read fails, omit the field entirely so Laposta keeps its last known
-    // value instead of replacing it with an incorrect blank/default.
+    // If this read fails, omit all three fields entirely so Laposta keeps its last known
+    // values instead of replacing them with incorrect defaults.
     let volunteerObligationMaps = null;
     try {
       volunteerObligationMaps = await fetchVolunteerObligationMaps({ logger, verbose });
