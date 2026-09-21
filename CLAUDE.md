@@ -360,3 +360,18 @@ After functional changes, update:
 ## Tech Stack
 
 Node.js 18+, Playwright (Chromium), better-sqlite3, otplib (TOTP), lettermint, dotenv (env loading).
+
+
+## Laposta volunteer counters
+
+`lib/volunteer-obligation-sync.js` maps current-season Rondo obligation units to
+three numeric fields: `vrijwilligersplicht` is the sum of active `required_count`
+values (never `remaining`), `vrijwilligersingepland` sums `pending_count`, and
+`vrijwilligersafgerond` sums `completed_count`. The latter includes Rondo's
+cancellation credits. Family counts are shared and personal plus family units are
+combined using the existing Rondo attribution. All-exempt/non-applicable people
+retain requirement `-1`; units still retain any progress. People outside all units
+get zero progress. Missing or invalid source counts omit all three fields from
+Laposta updates, preserving the last known values. All four configured lists must
+have these numeric fields; keep them off public subscription forms. Preserve
+subscription state and notification suppression during updates.

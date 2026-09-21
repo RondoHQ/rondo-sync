@@ -88,3 +88,22 @@ test('unrelated members sharing an address retain their own names and list assig
   assert.equal(lists[0][0].custom_fields.voornaam, 'Sanne');
   assert.equal(lists[1][0].custom_fields.voornaam, 'Tim');
 });
+
+test('publishes all three numeric volunteer fields with distinct member and parent progress', () => {
+  const memberCounts = { vrijwilligersplicht: 3, vrijwilligersingepland: 1, vrijwilligersafgerond: 2 };
+  const parentCounts = { vrijwilligersplicht: 5, vrijwilligersingepland: 2, vrijwilligersafgerond: 2 };
+  const members = [child({ Email: 'kind@example.nl' })];
+  const maps = { byKnvbId: new Map([['CHILD1', memberCounts]]), byParentEmail: new Map([['ouder@example.nl', parentCounts]]) };
+  const entries = processMembers(members, mapping, buildAggregationMaps(members, mapping), new Map(), maps).listMembers.flat();
+  for (const [email, expected] of [['kind@example.nl', memberCounts], ['ouder@example.nl', parentCounts]]) {
+    const actual = entries.find(entry => entry.email === email).custom_fields;
+    for (const [field, value] of Object.entries(expected)) assert.equal(actual[field], value);
+  }
+});
+
+test('unavailable volunteer source omits every counter so Laposta retains last known data', () => {
+  const fields = prepare([child()]).flat()[0].custom_fields;
+  for (const field of ['vrijwilligersplicht', 'vrijwilligersingepland', 'vrijwilligersafgerond']) {
+    assert.equal(Object.hasOwn(fields, field), false);
+  }
+});
