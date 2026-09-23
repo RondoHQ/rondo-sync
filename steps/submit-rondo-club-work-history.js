@@ -1,6 +1,7 @@
 require('dotenv/config');
 
 const { rondoClubRequest } = require('../lib/rondo-club-client');
+const { buildUniqueTeamMap, normalizeTeamName } = require('../lib/team-lookup');
 const { openDb: openLapostaDb, getLatestSportlinkResults } = require('../lib/laposta-db');
 const {
   openDb,
@@ -52,7 +53,7 @@ function extractMemberTeams(sportlinkMember) {
  * @returns {number|undefined} - Rondo Club ID or undefined if not found
  */
 function lookupTeamRondoClubId(teamCode, teamMap, db, knvbId) {
-  const result = teamMap.get(teamCode);
+  const result = teamMap.get(normalizeTeamName(teamCode));
   if (result) return result;
   // Fallback: use sportlink_team_members to resolve ambiguous codes
   if (db && knvbId) {
@@ -428,19 +429,7 @@ async function runSync(options = {}) {
       // Load team mapping: team_code/team_name -> rondo_club_id
       // SearchMembers returns a mix of team codes (e.g. "JO17-1") and full team names (e.g. "AWC")
       const teams = getAllTeams(rondoClubDb);
-      const teamMap = new Map();
-      // Track team_codes that appear more than once (ambiguous - don't use for lookup)
-      const codeCount = new Map();
-      for (const t of teams) {
-        if (t.team_code) codeCount.set(t.team_code, (codeCount.get(t.team_code) || 0) + 1);
-      }
-      for (const t of teams) {
-        // Only use team_code for lookup if it's unambiguous (one team per code)
-        if (t.team_code && codeCount.get(t.team_code) === 1) {
-          teamMap.set(t.team_code, t.rondo_club_id);
-        }
-        if (t.team_name) teamMap.set(t.team_name, t.rondo_club_id);
-      }
+      const teamMap = buildUniqueTeamMap(teams);
       logVerbose(`Loaded ${teams.length} teams from Rondo Club (${teamMap.size} lookup entries)`);
 
       // Build current presence from both the member-search export and the team
@@ -579,6 +568,7 @@ async function runSync(options = {}) {
 module.exports = {
   runSync,
   detectTeamChanges,
+  lookupTeamRondoClubId,
   findTeamWorkHistoryIndex
 };
 

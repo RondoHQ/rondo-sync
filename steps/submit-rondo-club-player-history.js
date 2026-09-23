@@ -6,6 +6,7 @@ const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
 const { normalizeTeamMembershipSeasons, isTeamMembershipCurrent } = require('../lib/team-membership-periods');
+const { buildUniqueTeamMap } = require('../lib/team-lookup');
 
 function formatDateForFields(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -132,8 +133,9 @@ function buildHistoricalTeamName(teamRow) {
 }
 
 function resolveTeamRondoClubId(teamRow, teamBySportlinkId, teamByName) {
-  const byId = teamRow.PublicTeamId ? teamBySportlinkId.get(String(teamRow.PublicTeamId)) : null;
-  if (byId) return byId;
+  if (teamRow.PublicTeamId) {
+    return teamBySportlinkId.get(String(teamRow.PublicTeamId)) || null;
+  }
 
   const fallbackName = buildFallbackTeamName(teamRow);
   if (fallbackName) {
@@ -231,14 +233,11 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
 function buildTeamLookupMaps(db) {
   const teams = getAllTeams(db);
   const teamBySportlinkId = new Map();
-  const teamByName = new Map();
+  const teamByName = buildUniqueTeamMap(teams, ['team_name']);
   for (const team of teams) {
     if (!team.rondo_club_id) continue;
     if (team.sportlink_id) {
       teamBySportlinkId.set(String(team.sportlink_id), team.rondo_club_id);
-    }
-    if (team.team_name) {
-      teamByName.set(String(team.team_name).toLowerCase(), team.rondo_club_id);
     }
   }
   return { teamBySportlinkId, teamByName };
@@ -494,6 +493,7 @@ module.exports = {
   syncMemberPlayerHistory,
   formatDateForFields,
   buildFallbackTeamName,
+  resolveTeamRondoClubId,
   reconcilePlayerHistory
 };
 

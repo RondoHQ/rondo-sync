@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3] - 2026-09-23
+
+### Fixed
+
+- Keep same-named teams separate: use unique team IDs and member roster evidence instead of overwriting shared team names or codes.
+- Preserve unmatched historical team IDs as external history instead of assigning them to a current namesake.
+
 ## [0.11.2] - 2026-09-19
 
 ### Fixed
