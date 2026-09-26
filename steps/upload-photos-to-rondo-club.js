@@ -47,24 +47,29 @@ function sleep(ms) {
 }
 
 /**
- * Find photo file for member by checking supported extensions
+ * Find the most recently downloaded photo, regardless of its file format.
+ * Sportlink can change formats while older cached files remain on disk.
  * @param {string} knvbId - Member KNVB ID
  * @param {string} photosDir - Photos directory path
  * @returns {Promise<{found: boolean, path: string|null, ext: string|null}>}
  */
 async function findPhotoFile(knvbId, photosDir) {
   const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  let newest = null;
 
   for (const ext of extensions) {
     const filepath = path.join(photosDir, `${knvbId}.${ext}`);
     try {
-      await fs.access(filepath);
-      return { found: true, path: filepath, ext };
-    } catch {
-      // File doesn't exist with this extension, continue
+      const stat = await fs.stat(filepath);
+      if (stat.isFile() && (!newest || stat.mtimeMs > newest.mtimeMs)) {
+        newest = { path: filepath, ext, mtimeMs: stat.mtimeMs };
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
     }
   }
 
+  if (newest) return { found: true, path: newest.path, ext: newest.ext };
   return { found: false, path: null, ext: null };
 }
 

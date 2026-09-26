@@ -22,7 +22,7 @@ test('HTTP 200 protected-photo skips do not count or log as changed; actual save
         clearPhotoState: () => { state = 'no_photo'; }
       };
       if (request === '../lib/utils') return { readEnv: key => key === 'RONDO_URL' ? 'https://example.test' : 'test' };
-      if (request === 'fs/promises') return { access: async () => {}, unlink: async () => {} };
+      if (request === 'fs/promises') return { stat: async () => ({ isFile: () => true, mtimeMs: 1 }), unlink: async () => {} };
       if (request === 'fs') return { createReadStream: () => ({}) };
       if (request === 'form-data') return class { append() {} getHeaders() { return {}; } pipe(req) { req.end(); } };
       if (request === 'https') return {

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.5] - 2026-09-26
+
+### Fixed
+
+- Import the newest downloaded Sportlink photo when an older cached photo uses a different file format, for both scheduled and individual syncs.
+
 ## [0.11.4] - 2026-09-26
 
 ### Fixed
