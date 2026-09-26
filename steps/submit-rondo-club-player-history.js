@@ -7,6 +7,7 @@ const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
 const { normalizeTeamMembershipSeasons, isTeamMembershipCurrent } = require('../lib/team-membership-periods');
 const { buildUniqueTeamMap } = require('../lib/team-lookup');
+const { findMembersNeedingRoleAudit, hasUnmatchedCurrentRole, roleKey } = require('../lib/team-role-audit');
 
 function formatDateForFields(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -205,6 +206,14 @@ async function syncMemberPlayerHistory(member, teamRows, teamBySportlinkId, team
   }
 
   const reconciliation = reconcilePlayerHistory(existingWorkHistory, sourceEntries);
+  if (options.auditCurrentRoles) {
+    const teamIds = new Set([...teamBySportlinkId.values()].map(Number));
+    const sourceKeys = new Set(sourceEntries.map(entry => roleKey(entry.team_id, entry.job_title)));
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(new Date());
+    if (hasUnmatchedCurrentRole(reconciliation.workHistory, teamIds, sourceKeys, today)) {
+      throw new Error('Current Rondo team role is absent from Sportlink history; preserved for review');
+    }
+  }
   result.created = reconciliation.created;
   result.reconciled = reconciliation.reconciled;
 
@@ -323,6 +332,8 @@ async function runSync(options = {}) {
     }
 
     const { teamBySportlinkId, teamByName } = buildTeamLookupMaps(db);
+    const roleAuditMembers = await findMembersNeedingRoleAudit(db, members, { logger });
+    logger.log(`Current Rondo team roles requiring source verification: ${roleAuditMembers.size}`);
 
     let page;
     if (sharedPage) {
@@ -364,15 +375,14 @@ async function runSync(options = {}) {
       }
 
       // Skip members whose current team-membership signature matches the
-      // one stored at their last successful run. Sportlink historical data
-      // is immutable, so if current team-relations haven't changed since
-      // last time, the Sportlink fetch + GET/PUT round-trip cycle would
-      // be pure no-op work. Skip the Sportlink fetch entirely.
+      // one stored at their last successful run, unless the Rondo role audit
+      // found a current role missing from the roster. An empty cached roster
+      // does not prove that Rondo received the source's termination dates.
       // --force / force=true bypasses this for one-off backfills or to
       // recover from a suspected Sportlink historical correction.
       const currentSignature = computeMemberTeamSignature(db, member.knvb_id);
       if (
-        !force &&
+        !force && !roleAuditMembers.has(member.knvb_id) &&
         member.last_player_history_team_signature !== null &&
         member.last_player_history_team_signature !== undefined &&
         member.last_player_history_team_signature === currentSignature
@@ -393,7 +403,7 @@ async function runSync(options = {}) {
       try {
         let teamRows;
         try {
-          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
+          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger, { strict: true });
         } catch (error) {
           if (!shouldRetryAfterRelogin(error)) {
             throw error;
@@ -402,11 +412,14 @@ async function runSync(options = {}) {
           if (session) {
             await session.relogin();
           }
-          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger);
+          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger, { strict: true });
         }
         result.downloaded++;
 
         if (!teamRows || teamRows.length === 0) {
+          if (roleAuditMembers.has(member.knvb_id)) {
+            throw new Error('Current Rondo team role has no Sportlink history; preserved for review');
+          }
           // Member has no Sportlink team data — record that we checked so
           // future runs with the same (empty) signature skip them.
           memberSucceeded = true;
@@ -418,7 +431,7 @@ async function runSync(options = {}) {
           teamRows,
           teamBySportlinkId,
           teamByName,
-          { verbose, logger }
+          { verbose, logger, auditCurrentRoles: roleAuditMembers.has(member.knvb_id) }
         );
 
         if (syncResult.synced) result.synced++;

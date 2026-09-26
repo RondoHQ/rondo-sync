@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4] - 2026-09-26
+
+### Fixed
+
+- Audit current Rondo team roles against Sportlink rosters during history sync, including members with an unchanged empty team signature or missing work-history tracking. Fetch authoritative history before correcting ended roles.
+- Require verified Sportlink membership responses and report unmatched roles for review without inventing end dates or treating a failed page load as an empty history.
+
 ## [0.11.3] - 2026-09-23
 
 ### Fixed

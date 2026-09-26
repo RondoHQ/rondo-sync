@@ -33,3 +33,15 @@ test('retries once when the Sportlink memberships panel misses its first render'
   assert.deepEqual(rows, [{ TeamName: 'Rondo 1' }]);
   assert.ok(messages.some(message => message.includes('retrying once')));
 });
+
+test('strict history fetch never interprets a missing panel as empty membership history', async () => {
+  const page = {
+    goto: async () => {},
+    waitForLoadState: async () => {},
+    waitForSelector: async () => { throw new Error('panel timeout'); }
+  };
+  await assert.rejects(
+    fetchMemberTeamMemberships(page, 'TEST001', { verbose() {} }, { strict: true }),
+    /absence does not prove an empty membership list/
+  );
+});
