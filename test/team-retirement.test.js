@@ -223,11 +223,14 @@ test('missing post preserves history before removing its obsolete tracking row',
   db.close();
 });
 
-test('missing post with an unended role retains its mapping for review', async () => {
-  const { request } = missingTeamApi({ history: [{ ...ended, end_date: null }] });
+test('already deleted post preserves unended role dates and status as named history', async () => {
+  const current = { ...ended, end_date: null };
+  const { mock, request } = missingTeamApi({ history: [current] });
   const result = await retireMissingTeams([orphan], { request });
-  assert.equal(result.retired.length, 0);
-  assert.match(result.errors[0].message, /unended role/);
+  assert.deepEqual(result, { retired: [orphan], errors: [] });
+  assert.deepEqual(mock.people[0].fields.work_history, [
+    { ...current, team_id: null, team_name_text: 'Old team', entity_type: 'external_team' }
+  ]);
 });
 
 test('missing post preview preserves tracking and makes no writes', async () => {
