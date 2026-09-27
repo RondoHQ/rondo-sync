@@ -193,3 +193,58 @@ test('verification honours the existing former-member lifecycle without changing
     { ...current, end_date: '2026-09-18', is_current: false }
   ]);
 });
+
+
+function missingTeamApi(options = {}) {
+  const mock = api(options);
+  const missing = Object.assign(new Error('Rondo Club API error (404)'), {
+    details: { code: 'rest_post_invalid_id', data: { status: 404 } }
+  });
+  const request = async (url, method, body) => {
+    if (url.startsWith('wp/v2/teams/22')) {
+      assert.equal(method, 'GET', 'missing teams must never be recreated or modified');
+      throw missing;
+    }
+    return mock.request(url, method, body);
+  };
+  return { mock, request };
+}
+
+test('missing post preserves history before removing its obsolete tracking row', async () => {
+  const db = makeDb();
+  const { mock, request } = missingTeamApi();
+  const result = await runSync({ db, currentSportlinkIds: ['CURRENT'], logger: quiet, request });
+  assert.equal(result.success, true);
+  assert.equal(result.archived, 1);
+  assert.deepEqual(getAllTeamsForSync(db).map(t => t.sportlink_id), ['CURRENT']);
+  assert.deepEqual(mock.people[0].fields.work_history, [
+    { ...ended, team_id: null, team_name_text: 'Old team', entity_type: 'external_team' }
+  ]);
+  db.close();
+});
+
+test('missing post with an unended role retains its mapping for review', async () => {
+  const { request } = missingTeamApi({ history: [{ ...ended, end_date: null }] });
+  const result = await retireMissingTeams([orphan], { request });
+  assert.equal(result.retired.length, 0);
+  assert.match(result.errors[0].message, /unended role/);
+});
+
+test('missing post preview preserves tracking and makes no writes', async () => {
+  const { mock, request } = missingTeamApi();
+  const result = await retireMissingTeams([orphan], { request, dryRun: true });
+  assert.deepEqual(result.retired, []);
+  assert.deepEqual(result.planned, [{ ...orphan, history_rows: 1 }]);
+  assert.equal(mock.calls.every(call => call.method === 'GET'), true);
+});
+
+for (const details of [undefined, { code: 'rest_no_route', data: { status: 404 } },
+  { code: 'rest_forbidden', data: { status: 403 } }]) {
+  test(`unconfirmed missing post retains tracking: ${JSON.stringify(details)}`, async () => {
+    const result = await retireMissingTeams([orphan], { request: async () => {
+      throw Object.assign(new Error('request failed'), { details });
+    } });
+    assert.equal(result.retired.length, 0);
+    assert.equal(result.errors.length, 1);
+  });
+}
