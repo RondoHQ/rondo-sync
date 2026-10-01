@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.6] - 2026-10-01
+
+### Fixed
+
+- Retry a temporarily missing player-history panel once after refreshing the Sportlink session, including the shared session in the full pipeline.
+- Report Sportlink's explicit missing-person response without retrying authentication or treating it as an empty history.
+
 ## [0.11.5] - 2026-09-26
 
 ### Fixed

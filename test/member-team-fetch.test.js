@@ -8,6 +8,7 @@ test('retries once when the Sportlink memberships panel misses its first render'
   let toggleClicks = 0;
   const messages = [];
   const page = {
+    getByText: () => ({ isVisible: async () => false }),
     goto: async () => { navigations++; },
     waitForLoadState: async () => {},
     waitForSelector: async () => {
@@ -36,6 +37,7 @@ test('retries once when the Sportlink memberships panel misses its first render'
 
 test('strict history fetch never interprets a missing panel as empty membership history', async () => {
   const page = {
+    getByText: () => ({ isVisible: async () => false }),
     goto: async () => {},
     waitForLoadState: async () => {},
     waitForSelector: async () => { throw new Error('panel timeout'); }

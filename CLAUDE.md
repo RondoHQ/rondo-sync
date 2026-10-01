@@ -292,6 +292,16 @@ The working pattern (used by every Sportlink fetch in the repo): trigger the SPA
 
 ### Player-history quarantine — manual skip list for Sportlink-broken members
 
+`fetchPlayerHistoryWithRetry()` retries a missing membership panel once after
+`SportlinkSession.relogin()`, keeping strict source validation on both attempts.
+Pass the shared `session` alongside `page` from `sync-all` so recovery works there
+too; the caller still owns that shared session. Sportlink's visible “Er is geen
+persoon gevonden met deze relatiecode” message raises
+`ERR_SPORTLINK_MEMBER_NOT_FOUND` immediately, including in non-strict reads.
+It must not trigger reauthentication, become an empty history, or automatically
+quarantine the person. Verify their current source identity before deciding how
+to repair the tracking record.
+
 Sportlink's `/member/member-details/{knvb_id}/memberships` SPA hangs forever for some members' data (verified against the Sportlink UI, not our code). Without intervention every player-history run wastes a 45s navigation timeout + a chained 45s relogin timeout on the affected member, every run, forever.
 
 Currently quarantined on prod:

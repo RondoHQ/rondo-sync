@@ -618,12 +618,21 @@ async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false
       panelLoaded = true;
       break;
     } catch {
+      if (await page.getByText('Er is geen persoon gevonden met deze relatiecode', { exact: true }).isVisible()) {
+        const error = new Error(`Sportlink has no person for relation code ${knvbId}; membership history was not read`);
+        error.code = 'ERR_SPORTLINK_MEMBER_NOT_FOUND';
+        throw error;
+      }
       if (attempt === 1) logger.verbose('  MemberTeams panel did not render; retrying once...');
     }
   }
 
   if (!panelLoaded) {
-    if (strict) throw new Error('MemberTeams panel not loaded; absence does not prove an empty membership list');
+    if (strict) {
+      const error = new Error('MemberTeams panel not loaded; absence does not prove an empty membership list');
+      error.code = 'ERR_MEMBER_TEAMS_PANEL_NOT_LOADED';
+      throw error;
+    }
     logger.verbose(`  No showInactive toggle present — treating as no memberships`);
     return [];
   }

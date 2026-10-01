@@ -41,6 +41,11 @@ graph LR
 
 ## Sync Pipelines
 
+Player-history reads retry a temporarily missing membership panel once after
+refreshing the Sportlink session. An explicit “no person for this relation code”
+response stops immediately and is reported separately; it never clears history.
+Conflicting team roles remain unchanged until their source evidence is reviewed.
+
 Dutch name prefixes stay in Rondo's separate `infix` field for Sportlink members.
 Sponsit may include them in the surname instead. Matching compares the complete
 surname plus first name and email, retains stable source-ID precedence, and

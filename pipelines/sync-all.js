@@ -701,7 +701,8 @@ async function runSyncAll(options = {}) {
         logger,
         verbose,
         force,
-        page: playerHistoryPage
+        page: playerHistoryPage,
+        session: playerHistoryPage ? sportlinkSession : undefined
       });
       stats.playerHistory = {
         total: playerHistoryResult.total,

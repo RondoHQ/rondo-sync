@@ -295,8 +295,29 @@ async function syncSingleMember(options = {}) {
   }
 }
 
+async function fetchPlayerHistoryWithRetry(page, knvbId, logger, options = {}) {
+  const { session, fetchMemberships = fetchMemberTeamMemberships } = options;
+  try {
+    return await fetchMemberships(page, knvbId, logger, { strict: true });
+  } catch (error) {
+    if (error.code === 'ERR_SPORTLINK_MEMBER_NOT_FOUND') throw error;
+    const message = String(error?.message || '').toLowerCase();
+    const retryable = error.code === 'ERR_MEMBER_TEAMS_PANEL_NOT_LOADED' || [
+      'non-json', 'json parse', 'failed to fetch', 'timeout', 'memberteams request failed'
+    ].some(fragment => message.includes(fragment));
+    if (!retryable) throw error;
+
+    logger.verbose(`  Membership fetch failed for ${knvbId}; retrying once${session ? ' after re-authentication' : ''}...`);
+    if (session) {
+      await session.relogin();
+      page = await session.getPage();
+    }
+    return fetchMemberships(page, knvbId, logger, { strict: true });
+  }
+}
+
 async function runSync(options = {}) {
-  const { verbose = false, knvbIds = null, page: sharedPage, onProgress = null, force = false } = options;
+  const { verbose = false, knvbIds = null, page: sharedPage, session: sharedSession, onProgress = null, force = false } = options;
   const createdLogger = !options.logger;
   const logger = options.logger || createSyncLogger({ verbose, prefix: 'player-history' });
 
@@ -342,17 +363,6 @@ async function runSync(options = {}) {
       session = new SportlinkSession({ logger });
       page = await session.getPage();
     }
-
-    const shouldRetryAfterRelogin = (error) => {
-      const message = String(error?.message || '').toLowerCase();
-      return (
-        message.includes('non-json') ||
-        message.includes('json parse') ||
-        message.includes('failed to fetch') ||
-        message.includes('timeout') ||
-        message.includes('memberteams request failed')
-      );
-    };
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
@@ -401,19 +411,9 @@ async function runSync(options = {}) {
 
       let memberSucceeded = false;
       try {
-        let teamRows;
-        try {
-          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger, { strict: true });
-        } catch (error) {
-          if (!shouldRetryAfterRelogin(error)) {
-            throw error;
-          }
-          logger.verbose(`  Membership fetch failed for ${member.knvb_id}, re-authenticating and retrying once...`);
-          if (session) {
-            await session.relogin();
-          }
-          teamRows = await fetchMemberTeamMemberships(page, member.knvb_id, logger, { strict: true });
-        }
+        const teamRows = await fetchPlayerHistoryWithRetry(page, member.knvb_id, logger, {
+          session: session || sharedSession
+        });
         result.downloaded++;
 
         if (!teamRows || teamRows.length === 0) {
@@ -501,6 +501,7 @@ async function runSync(options = {}) {
 }
 
 module.exports = {
+  fetchPlayerHistoryWithRetry,
   runSync,
   syncSingleMember,
   syncMemberPlayerHistory,
