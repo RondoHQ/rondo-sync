@@ -19,7 +19,7 @@ npm run install-cron             # Set up automated sync schedules
 
 ## Documentation
 
-Detailed documentation lives in the **Rondo Developer docs site** (`~/Code/rondo/developer/`), under the `src/content/docs/sync/` section. Update docs there, not in this repo's `docs/` directory.
+Detailed documentation lives in the **Rondo Developer docs site** (`~/Code/rondo/developer/`), under the `src/content/docs/sync/` section. A separate daily automation maintains those docs; see Documentation Maintenance below.
 
 Run the dev server: `cd ~/Code/rondo/developer && npm run dev` → http://localhost:4321/sync/architecture/
 
@@ -365,7 +365,8 @@ The people import publishes complete parent-slot observations from the same date
 After functional changes, update:
 - `README.md` - User-facing docs
 - `CLAUDE.md` - This file (AI assistant context)
-- Relevant docs in `~/Code/rondo/developer/src/content/docs/sync/` (the developer docs site)
+
+The developer docs site is maintained by a separate daily automation in `~/Code/rondo/developer/`, following that repository's `AGENTS.md`. It reviews the previous 24 hours of changes across the Rondo repositories and updates the relevant docs, including newly added systems. Do not update the developer docs site as part of each code change unless the user explicitly asks for it.
 
 ## Tech Stack
 
