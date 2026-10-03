@@ -1,6 +1,7 @@
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { sourceRecord, checkSource, assertTeamHistoryComplete } = require('../lib/onboarding-source');
-const { openDb, upsertMembers, getMemberInvoiceDataByKnvbId, getFreeFieldMappings, upsertMemberFreeFields } = require('../lib/rondo-club-db');
+const { openDb, upsertMembers, getMemberInvoiceDataByKnvbId, getFreeFieldMappings, upsertMemberFreeFields, retireMemberIdentity, updateSyncState } = require('../lib/rondo-club-db');
+const { fetchPersonFollowingMerge, hasConflictingKnvbId } = require('../lib/rondo-person-merge');
 const { preparePerson } = require('./prepare-rondo-club-members');
 const { syncPerson, RELATIONSHIP_TYPE, hasRelationshipType } = require('./submit-rondo-club-sync');
 const { getParentProfileOwnership } = require('../lib/parent-person-resolution');
@@ -9,6 +10,22 @@ const { syncSingleMember } = require('./submit-rondo-club-player-history');
 const { fetchMemberGeneralData, fetchMemberFunctions, fetchMemberDataFromOtherPage, fetchMemberTeamMemberships, parseFunctionsResponse } = require('./download-functions-from-sportlink');
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
+
+/** Resolve even unchanged/deferred sources before observing or writing a person. */
+async function resolveSourceIdentity(db, knvbId, request) {
+  const stored = db.prepare('SELECT rondo_club_id, retired_into_knvb_id FROM rondo_club_members WHERE knvb_id = ?').get(knvbId);
+  if (!stored || stored.retired_into_knvb_id || !stored.rondo_club_id) return stored;
+  const tracked = await fetchPersonFollowingMerge(stored.rondo_club_id, {}, request);
+  if (!tracked) throw new Error('Tracked onboarding person is missing without a confirmed merge');
+  if (hasConflictingKnvbId(knvbId, tracked.response.body)) {
+    if (!tracked.remapped) throw new Error('Tracked onboarding person belongs to another KNVB identity');
+    const targetKnvbId = tracked.response.body.fields.knvb_id;
+    retireMemberIdentity(db, knvbId, targetKnvbId);
+    return { ...stored, retired_into_knvb_id: targetKnvbId };
+  }
+  if (tracked.remapped) updateSyncState(db, knvbId, null, tracked.personId);
+  return { ...stored, rondo_club_id: tracked.personId };
+}
 
 /** Verify the saved source identities and links using the same contact ownership as the writer. */
 async function verifyParentSources({ personId, general, saved, request }) {
@@ -44,21 +61,21 @@ async function verifyParentSources({ personId, general, saved, request }) {
 }
 
 /** The existing people pipeline owns the browser and serializes these targeted reads. */
-async function runSourceChecks({ members, observedAt, sourceComplete, page, logger, inventoryOnly = false, checkIds = [] }) {
+async function runSourceChecks({ members, observedAt, sourceComplete, page, logger, inventoryOnly = false, checkIds = [], request: requestOverride, openDatabase = openDb }) {
   if (!sourceComplete) return {
     checked: 0,
     complete: 0,
     errors: [{ message: 'Onboarding source inventory skipped: incomplete Sportlink search' }],
     deferred: []
   };
-  const request = (route, method = 'GET', data = null) => rondoClubRequest(route, method, data, { logger });
+  const request = requestOverride || ((route, method = 'GET', data = null) => rondoClubRequest(route, method, data, { logger }));
   const inventory = (await request('rondo/v1/onboarding/sources', 'POST', {
     observed_at: observedAt, sources: members.map(sourceRecord), check_ids: checkIds
   })).body;
   const result = { checked: 0, complete: 0, pending: inventory.pending_count, errors: [], deferred: [] };
   if (inventoryOnly) return result;
   const byId = new Map(members.map(member => [member.PublicPersonId, member]));
-  const db = openDb();
+  const db = openDatabase();
   try {
     for (const candidate of inventory.checks) {
       if (checkIds.length && !checkIds.includes(candidate.knvb_id)) continue;
@@ -67,7 +84,16 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
       const id = candidate.knvb_id;
       const lookup = () => db.prepare('SELECT rondo_club_id, retired_into_knvb_id FROM rondo_club_members WHERE knvb_id = ?').get(id);
       try {
-        if (lookup()?.retired_into_knvb_id) throw new Error('Retired source identity requires review');
+        const identity = await resolveSourceIdentity(db, id, request);
+        if (identity?.retired_into_knvb_id) {
+          // Keep the old source incomplete without observing or updating its survivor.
+          await request('rondo/v1/onboarding/sources/finish', 'POST', {
+            knvb_id: id, fingerprint: candidate.fingerprint, person_id: 0, observation_id: ''
+          });
+          result.checked++;
+          result.deferred.push({ knvb_id: id, message: `Source identity retired after merge into ${identity.retired_into_knvb_id}` });
+          continue;
+        }
         const outcome = await checkSource({ candidate, member, request, steps: {
           personId: async () => lookup()?.rondo_club_id || null,
           fetch: key => ({
@@ -139,4 +165,4 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
   return result;
 }
 
-module.exports = { runSourceChecks, verifyParentSources };
+module.exports = { runSourceChecks, verifyParentSources, resolveSourceIdentity };

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.7] - 2026-10-03
+
+### Fixed
+
+- Resolve merged person references before onboarding source checks, including unchanged and deferred Sportlink registrations.
+- Preserve retired KNVB identities without observing or updating a survivor with another KNVB ID; keep these source checks incomplete without failing each People run.
+
 ## [0.11.6] - 2026-10-01
 
 ### Fixed
