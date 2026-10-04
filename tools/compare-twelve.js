@@ -48,7 +48,8 @@ function renderComparison(analysis, comparison) {
     `${analysis.days.filter(d => d.issues.length).length} exportdagen bevatten bronverschillen of nog niet ondersteunde transactiesoorten.`,
     'Dit is geen importbestand. BTW-totalen, kasstroom, rekeningmutaties en facturatie zijn nog niet vergeleken.',
     'Ontbrekende dagen zijn onbekend; er worden geen nulomzetten aangevuld.',
-    'No-sale-details tonen werkelijk verbruik per categorie, transactie en product. Het PDF-restbedrag bevat ook kortingen en muntverschillen.');
+    'Gedeeltelijke no-sales tonen het bedrag en de categorie; de specifieke verbruikte producten zijn onbekend.',
+    'Het PDF-restbedrag bevat ook kortingen en muntverschillen.');
   return lines.join('\n') + '\n';
 }
 

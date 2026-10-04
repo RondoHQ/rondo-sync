@@ -37,7 +37,13 @@ GET, or accepts a saved `{ "reports": [...] }` reference with `--reports file.js
 It produces private JSON analysis, no-sale details by transaction/product/category,
 and a text comparison. It checks product gross, quantity, Businessclub, candidate
 cash revenue, and the other-consumption residual. Coins use tendered value;
-card revenue deducts separate virtual discounts. This is not a full accounting
+other payments allocate the paid share, net of deposit, over product value.
+Exact fractions are rounded after daily summation. Discounts already included in
+payments are not deducted again. Tab settlements do not count as new sales;
+cancellation signs are normalized between exports. Shared payments use their
+children, including partial no-sale amounts. For partial no-sales the basket is
+context only: specific consumed products and quantities remain unknown.
+This is not a full accounting
 import: VAT totals, cashflow, account mutations, and invoice eligibility are not
 reconciled. Unknown transaction types, missing joins and differences between the
 two product exports are retained as issues. Missing PDF days are unverified, never

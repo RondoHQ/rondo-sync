@@ -96,8 +96,12 @@ summaries using GET only. There are no Rondo writes, cron entries, or sync.sh pi
 Do not enable recurring imports or remove PDF ingestion as part of this proof stage.
 Use 06:00 Amsterdam business-day boundaries and an exclusive end date. Keep failed
 snapshots incomplete; never manufacture zero turnover for a missing day. Preserve
-source files and issues: the raw product export can omit rows present in the product
-export, and exceptional tab transactions are not yet mapped. Five-field PDF matching
+source files and issues. Tab settlement products repeat an earlier sale; exclude
+them from turnover while retaining their audit totals. Normalize cancellation
+signs once. Shared payments use paid children; discounts already included in Paid
+must not be subtracted again. Deposit-inclusive terminal amounts require allocation
+over product value; keep rational cents until daily rounding. Partial no-sales
+expose their amount and category, not invented per-product consumption. Five-field PDF matching
 does not prove VAT/cashflow/account mutation parity. Actual exports and login values
 must never become fixtures or enter Git. Offline synthetic tests are in
 `test/twelve-export.test.js`; Python 3's standard ZIP reader avoids unsafe extraction.

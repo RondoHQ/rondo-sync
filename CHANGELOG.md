@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1] - 2026-10-04
+
+### Fixed
+
+- Reconcile Twelve tab settlements, reversed product rows, split payments, deposit-inclusive amounts, and repeated virtual discounts without double-counting revenue; round allocation fractions only after daily summation.
+- Include partial no-sale payments with their category and amount while explicitly leaving their individual consumed products unknown.
+
 ## [0.12.0] - 2026-10-04
 
 ### Added

@@ -10,7 +10,7 @@ const { runDownload } = require('../steps/download-twelve');
 const { loadSnapshot, runComparison } = require('../tools/compare-twelve');
 
 function tx(id, type, amount, overrides = {}) {
-  return { 'Transaction Id': id, 'Main transaction id': '', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Amount: amount, Paid: amount, Discount: '', 'Deposit paid': '', 'Deposit intake': '', 'No sale type': '0', 'Revenue type': '1', 'Summation sign': '1', ...overrides };
+  return { 'Transaction Id': id, 'Main transaction id': '', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Amount: amount, Paid: amount, 'No Sale': '', Discount: '', 'Deposit paid': '', 'Deposit intake': '', 'No sale type': '0', 'Revenue type': '1', 'Summation sign': '1', ...overrides };
 }
 function product(id, type, total, overrides = {}) {
   return { 'Transaction Id': id, 'Product Id': '20', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Product: 'Drink', Count: '1', Total: total, ...overrides };
@@ -106,7 +106,7 @@ test('overlapping snapshots, malformed flags and out-of-range rows fail closed',
 test('missing joins, raw lines and exceptional revenue types prevent a matched result', () => {
   const input = fixture();
   input.raw.pop();
-  input.transactions.push(tx('7', 'Revenue cancelation (removed from tab)', '2.00', { 'Summation sign': '-1' }));
+  input.transactions.push(tx('7', 'Unrecognised revenue action', '2.00'));
   const result = analyse(input);
   assert.ok(result.days[0].issues.some(i => i.includes('absent')));
   assert.ok(result.days[0].issues.some(i => i.includes('reconciliation')));
@@ -169,4 +169,97 @@ test('login failure closes Chromium and does not reveal the password or Playwrig
   const session = new TwelveBrowser({ username: 'test', password: 'private-test-password', clientId: '123', launch: async () => ({ newContext: async () => { throw new Error('private-test-password'); }, close: async () => { closed = true; } }) });
   await assert.rejects(session.open(), e => e.message === 'Twelve browser login failed; no files were accepted');
   assert.equal(closed, true);
+});
+
+function sample(transactions, products, raw = products.map(p => rawProduct(p))) {
+  return { from: '2026-10-01', to: '2026-10-02', transactions, products, raw };
+}
+
+test('tab settlement repeats products without recording a second sale, even on a later day', () => {
+  const sale = product('10', 'Revenue tab', '10.00');
+  const settlement = product('11', 'Tab paid with cash', '10.00', { 'Date created': '02-10-2026 12:00' });
+  const input = sample([
+    tx('10', 'Revenue tab', '10.00'),
+    tx('11', 'Tab paid with cash', '10.00', { 'Date created': '02-10-2026 12:00' })
+  ], [sale, settlement], [rawProduct(sale)]);
+  input.to = '2026-10-03';
+  const result = analyse(input);
+  assert.equal(result.days[0].cashRevenueCandidateCents, 1000);
+  assert.equal(result.days[1].cashRevenueCandidateCents, 0);
+  assert.equal(result.days[1].productGrossCents, 0);
+  assert.equal(result.days[1].productCount, 0);
+  assert.equal(result.days[1].settlementProductCents, 1000);
+  assert.deepEqual(result.days.flatMap(d => d.issues), []);
+  input.products[1].Total = '9.00';
+  assert.ok(analyse(input).days[1].issues.some(i => i.includes('settlement')));
+});
+
+test('normalizes cancellation signs once while keeping ordinary no-sale consumption positive', () => {
+  const type = 'Revenue cancelation (removed from tab)';
+  const cancelled = product('9', type, '-7.00', { Count: '-2' });
+  const raw = rawProduct(product('9', type, '7.00', { Count: '2' }));
+  raw['Summation sign'] = '-1';
+  const input = sample([tx('9', type, '7.00', { Paid: '-7.00', 'Summation sign': '-1' })], [cancelled], [raw]);
+  const day = analyse(input).days[0];
+  assert.equal(day.productGrossCents, -700);
+  assert.equal(day.productCount, -2);
+  assert.equal(day.cashRevenueCandidateCents, -700);
+  assert.deepEqual(day.issues, []);
+  input.raw[0]['Summation sign'] = '1';
+  assert.ok(analyse(input).days[0].issues.length);
+});
+
+function sharedSample(category = 'Bestuur') {
+  const parent = tx('10', 'Virtual mainrecord for shared payment', '10.00', { Paid: '', 'Deposit paid': '0.15' });
+  const card = tx('11', 'Revenue token', '', { 'Main transaction id': '10', Paid: '5.70', 'Deposit paid': '0.10' });
+  const noSale = tx('12', category, '', { 'Main transaction id': '10', Paid: '', 'No Sale': '4.15', 'No sale type': '1', 'Deposit paid': '0.05' });
+  const discount = parentId => tx('', 'Virtual discount', '', { 'Main transaction id': parentId, Paid: '', Discount: '0.30', 'No sale type': '1' });
+  return sample([parent, card, noSale, discount('10'), discount('11')], [product('10', parent['Transaction type'], '10.00')]);
+}
+
+test('shared payments count their paid parts, not the parent or repeated discounts', () => {
+  const input = sharedSample();
+  const result = analyse(input), day = result.days[0];
+  assert.equal(day.cashRevenueCandidateCents, 560);
+  assert.equal(day.productGrossCents, 1000);
+  assert.equal(day.noSale.Bestuur.grossCents, 410);
+  assert.equal(day.noSale.Bestuur.partialProductCountUnknown, true);
+  assert.deepEqual(day.issues, []);
+  const detail = result.noSaleTransactions[0];
+  assert.equal(detail.partial, true);
+  assert.equal(detail.productCount, null);
+  assert.deepEqual(detail.products, []); // Do not claim the whole basket was consumed.
+  assert.equal(detail.sharedProducts.length, 1);
+  assert.equal(detail.parentTransactionId, '10');
+  assert.equal(analyse(sharedSample('Businessclub')).days[0].businessclubCents, 410);
+  assert.equal(analyse({ ...input, transactions: [...input.transactions].reverse() }).days[0].cashRevenueCandidateCents, 560);
+});
+
+test('incomplete shared payments remain issues instead of silently losing the missing amount', () => {
+  const input = sharedSample();
+  input.transactions = input.transactions.filter(t => t['Transaction Id'] !== '12');
+  assert.ok(analyse(input).days[0].issues.some(i => i.includes('does not balance')));
+  const missingProducts = sharedSample(); missingProducts.products = []; missingProducts.raw = [];
+  assert.ok(analyse(missingProducts).days[0].issues.some(i => i.includes('missing products')));
+});
+
+test('deposit-inclusive terminal amounts are allocated over product value before rounding', () => {
+  const input = sample([tx('1', 'Revenue pin', '1.00', { Paid: '1.00', 'Deposit paid': '0.10' })], [product('1', 'Revenue pin', '0.90')]);
+  const day = analyse(input).days[0];
+  assert.equal(day.productGrossCents, 90);
+  assert.equal(day.cashRevenueCandidateCents, 81); // 90 * (100 - 10) / 100
+  assert.deepEqual(day.issues, []);
+});
+
+test('fractional cents are rounded after summation and do not depend on input order', () => {
+  const input = sample(['1', '2', '3'].map(id => tx(id, 'Revenue pin', '0.03', { Paid: '0.02' })), ['1', '2', '3'].map(id => product(id, 'Revenue pin', '0.02')));
+  assert.equal(analyse(input).days[0].cashRevenueCandidateCents, 4); // 3 * 4/3, not 3 * round(4/3)
+  assert.equal(analyse({ ...input, transactions: [...input.transactions].reverse() }).days[0].paymentCents['Omzet pin'], 4);
+});
+
+test('missing product lines and unsupported deposit refunds cannot become clean comparisons', () => {
+  const input = fixture(); input.transactions.push(tx('missing', 'Bestuur', '2.00', { 'No sale type': '1', 'No Sale': '2.00' }));
+  assert.ok(analyse(input).days[0].issues.some(i => i.includes('No-sale transaction has no product')));
+  input.transactions[0]['Deposit intake'] = '0.15';
+  assert.ok(analyse(input).days[0].issues.some(i => i.includes('Deposit intake')));
 });
