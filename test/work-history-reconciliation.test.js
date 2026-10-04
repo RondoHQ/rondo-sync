@@ -9,7 +9,26 @@ const {
   findTeamWorkHistoryIndex
 } = require('../steps/submit-rondo-club-work-history');
 const { computeWorkHistoryHash } = require('../lib/rondo-club-db');
-const { reconcilePlayerHistory } = require('../steps/submit-rondo-club-player-history');
+const { reconcilePlayerHistory, buildFallbackTeamName } = require('../steps/submit-rondo-club-player-history');
+
+test('Sportlink whitespace and WordPress saved team names reconcile without duplicate history', () => {
+  const name = '7x7 vrouwen Veld - Vrijdag Recreanten vrouwen';
+  assert.equal(buildFallbackTeamName({
+    GameTypeDescription: '7x7  vrouwen Veld - Vrijdag', TeamName: 'Recreanten  vrouwen'
+  }), name);
+  const existing = [{ team_name_text: name, entity_type: 'external_team',
+    job_title: 'Teamspeler', start_date: '2020-02-07', end_date: null, is_current: true }];
+  const source = [{ ...existing[0], team_name_text: '7x7  vrouwen Veld - Vrijdag Recreanten  vrouwen' }];
+  const repeated = reconcilePlayerHistory(existing, source);
+  assert.equal(repeated.created, 0);
+  assert.equal(repeated.reconciled, 0);
+  assert.deepEqual(repeated.workHistory, existing);
+
+  const ended = reconcilePlayerHistory(existing, [{ ...source[0], is_current: false, end_date: '2026-10-04' }]);
+  assert.equal(ended.created, 0, 'whitespace also must not prevent an existing role from ending');
+  assert.equal(ended.workHistory.length, 1);
+  assert.equal(ended.workHistory[0].end_date, '2026-10-04');
+});
 
 test('team cleanup ignores a stale index and finds the current row by team ID', () => {
   const rows = [

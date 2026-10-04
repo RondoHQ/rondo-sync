@@ -10,7 +10,7 @@ The people import also refreshes Sportlink parent field labels for existing rela
 
 Laposta receives three current-season volunteer counters from Rondo: `vrijwilligersplicht` (total required duties, `-1` for exempt/not applicable), `vrijwilligersingepland` (planned), and `vrijwilligersafgerond` (completed/credited). Progress follows Rondo's shared-family attribution. Planning or completing a shift never lowers the total requirement.
 
-Player-history checks exclude obsolete and retired Sportlink identities while retaining their recovery mappings. A member who returns in a fresh source import becomes eligible again. Unmatched current team roles still require review; missing source history never clears them automatically.
+Player-history checks exclude obsolete and retired Sportlink identities while retaining their recovery mappings. A member who returns in a fresh source import becomes eligible again. Team-name whitespace is normalized to prevent duplicate history on repeated imports. Unmatched current team roles still require review; missing source history never clears them automatically.
 
 ## System Architecture
 

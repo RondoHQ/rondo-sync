@@ -358,6 +358,8 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 **Player-history eligibility is source-based.** Use `getPlayerHistoryMembers()` rather than the shared all-tracked lookup. Former/obsolete empty-payload markers and retired identities must remain available for mapping recovery, but must never trigger a source history fetch or a role audit against their active survivor. Keep quarantine and signature fields in the eligible query; `--force` only bypasses signatures, not identity eligibility.
 
+**Player-history text must match WordPress storage normalization.** Collapse source team-name whitespace before matching and writing external-team rows. Otherwise a double space in Sportlink becomes a single space on save, and each forced history pass appends the same role again. Preserve exact team IDs, roles and dates.
+
 ## Parent slot labels
 
 The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo`.

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.9] - 2026-10-04
+
+### Fixed
+
+- Normalize Sportlink team-name whitespace when matching and writing player history, preventing repeated imports from adding duplicate external-team rows after WordPress sanitization.
+
 ## [0.11.8] - 2026-10-04
 
 ### Fixed

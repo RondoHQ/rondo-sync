@@ -17,14 +17,20 @@ function formatDateForFields(dateStr) {
   return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
+// WordPress text fields collapse whitespace when saved. Compare and emit the
+// same representation so a Sportlink double space cannot create a row per run.
+function normalizeHistoryText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 function normalizeGameType(gameTypeDescription) {
   if (!gameTypeDescription || typeof gameTypeDescription !== 'string') return '';
-  return gameTypeDescription.replace(/^Veld\s*-\s*/i, '').trim();
+  return normalizeHistoryText(gameTypeDescription.replace(/^Veld\s*-\s*/i, ''));
 }
 
 function buildFallbackTeamName(teamRow) {
   const prefix = normalizeGameType(teamRow.GameTypeDescription);
-  const teamName = String(teamRow.TeamName || '').trim();
+  const teamName = normalizeHistoryText(teamRow.TeamName);
   if (prefix && teamName) return `${prefix} ${teamName}`;
   return teamName || '';
 }
@@ -41,7 +47,7 @@ function buildJobTitle(teamRow) {
 function buildSignature(entry) {
   const teamKey = entry.team_id
     ? `id:${entry.team_id}`
-    : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
+    : `name:${normalizeHistoryText(entry.team_name_text).toLowerCase()}`;
   const start = String(entry.start_date || '');
   const end = String(entry.end_date || '');
   const title = String(entry.job_title || '').trim().toLowerCase();
@@ -51,7 +57,7 @@ function buildSignature(entry) {
 function buildAssignmentKey(entry) {
   const teamKey = entry.team_id
     ? `id:${entry.team_id}`
-    : `name:${String(entry.team_name_text || '').trim().toLowerCase()}`;
+    : `name:${normalizeHistoryText(entry.team_name_text).toLowerCase()}`;
   const title = String(entry.job_title || '').trim().toLowerCase();
   return `${teamKey}|${title}`;
 }
@@ -128,7 +134,7 @@ function reconcilePlayerHistory(existingWorkHistory, sourceEntries) {
 
 function buildHistoricalTeamName(teamRow) {
   const baseName = buildFallbackTeamName(teamRow);
-  const season = String(teamRow.SeasonDescription || '').trim();
+  const season = normalizeHistoryText(teamRow.SeasonDescription);
   if (baseName && season) return `${baseName} (${season})`;
   return baseName || season || 'Onbekend team';
 }
