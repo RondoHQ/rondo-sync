@@ -11,6 +11,7 @@ const { analyse, nextDate } = require('../lib/twelve-export');
 const { reportForDay, currentRange } = require('../lib/twelve-report');
 const { rondoClubRequestWithRetry } = require('../lib/rondo-club-client');
 const { RunTracker } = require('../lib/run-tracker');
+const { orderedReads } = require('../lib/twelve-read-queue');
 const { runPipelineCli } = require('../lib/pipeline-cli');
 
 async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console.log } = {}) {
@@ -36,15 +37,14 @@ async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console
     if (analysis.days.some(d => d.issues.length)) throw new Error('Export reconciliation failed; no reports were imported');
     browser = new TwelveBrowser({ username: process.env.TWELVE_USERNAME, password: process.env.TWELVE_PASSWORD, clientId: process.env.TWELVE_CLIENT_ID });
     await browser.open();
-    const days = new Map(analysis.days.map(d => [d.day, d]));
+    const readers = [browser];
+    // A bounded pool speeds the one-off historical import; Rondo writes remain sequential.
+    for (let i = 1; i < Math.min(4, analysis.days.length); i++) readers.push(await browser.newReader());
     const rawByDay = new Map();
     const { timestamp } = require('../lib/twelve-export');
     for (const row of input.raw) { const day = timestamp(row.Date).day; if (!rawByDay.has(day)) rawByDay.set(day, []); rawByDay.get(day).push(row); }
-    for (let date = input.from; date < input.to; date = nextDate(date)) {
-      if (input.cutoff && `${date} 06:00` >= input.cutoff) continue;
-      const day = days.get(date);
-      // No rows is absence of activity, not an invented financial zero report.
-      if (!day) continue;
+    const prepared = orderedReads(analysis.days, readers, async (day, reader) => {
+      const date = day.day;
       const chunk = manifest.chunks.find(c => c.from <= date && c.to > date);
       const financePath = path.join(directory, `finance-${date}.json`);
       let financial;
@@ -53,7 +53,7 @@ async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console
       if (fs.existsSync(financePath)) financial = JSON.parse(fs.readFileSync(financePath, 'utf8'));
       else {
         const cutoff = input.cutoff && input.cutoff < `${nextDate(date)} 06:00` ? input.cutoff : undefined;
-        financial = await browser.financialReport(date, nextDate(date), cutoff);
+        financial = await reader.financialReport(date, nextDate(date), cutoff);
         fs.writeFileSync(financePath, JSON.stringify(financial), { mode: 0o600, flag: 'wx' });
       }
       const data = reportForDay({ day, raw: rawByDay.get(date) || [], noSaleTransactions: analysis.noSaleTransactions,
@@ -61,12 +61,15 @@ async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console
         audit: Object.fromEntries(Object.entries(chunk.files).map(([kind, file]) => [kind, file.sha256])) });
       const json = JSON.stringify(data);
       fs.writeFileSync(path.join(directory, `report-${date}.json`), json, { mode: 0o600 });
+      return { date, json };
+    });
+    for await (const { date, json } of prepared) {
       if (dryRun) { stats.skipped++; log(`Twelve ${date}: validated (dry run)`); continue; }
       const result = (await rondoClubRequestWithRetry('rondo/v1/twelve/import', 'POST', { report_json: json })).body;
       if (!Number.isInteger(result.id) || result.hash !== crypto.createHash('sha256').update(json).digest('hex') || !['created', 'updated', 'unchanged'].includes(result.status)) throw new Error('Rondo did not confirm the imported report');
       stats[result.status === 'unchanged' ? 'skipped' : result.status]++;
       log(`Twelve ${date}: ${result.status}, report ${result.id}`);
-      tracker.updateStep(step, { current: stats.created + stats.updated + stats.skipped, total: Math.round((new Date(input.to) - new Date(input.from)) / 86400000), label: date });
+      tracker.updateStep(step, { current: stats.created + stats.updated + stats.skipped, total: analysis.days.length, label: date });
     }
     if (!dryRun && !snapshot && !from) {
       fs.writeFileSync(`${checkpoint}.tmp`, JSON.stringify({ from: nextDate(input.to, -2) }), { mode: 0o600 });

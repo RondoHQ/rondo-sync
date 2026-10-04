@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.13.3] - 2026-10-04
+
+### Changed
+
+- Read historical financial tables with at most four independent browser pages while keeping imports ordered and sequential; source failures stop further writes and drain pending reads.
+
 ## [0.13.2] - 2026-10-04
 
 ### Fixed
