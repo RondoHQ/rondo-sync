@@ -6,7 +6,7 @@ const financial = () => ({
   revenue: [[['BTW Type', ...head.slice(1)], ['Laag (Excl. No Sale)', '10.90', '10.00', '0.00', '0.90', '', ''], ['Turnover (excl. no-sale)', '10.90', '10.00', '0.00', '0.90', '2', '']], [[...head], ['Revenue pin', '10.90', '10.00', '0.00', '0.90', '2', ''], ['Subtotal', '10.90', '10.00', '0.00', '0.90', '', '']]],
   nosale: [[[...head], ['Businessclub', '1.09', '1.00', '0.00', '0.09', '1', ''], ['Subtotal', '1.09', '1.00', '0.00', '0.09', '', '']]]
 });
-const input = () => ({ day: { day: '2026-09-29', issues: [], cashRevenueCandidateCents: 1090, productGrossCents: 1199, productCount: 3, noSale: { Businessclub: { grossCents: 109, transactionIds: ['x'] } } },
+const input = () => ({ day: { day: '2026-09-29', issues: [], cashRevenueCandidateCents: 1090, productGrossCents: 1199, productCount: 3, productRevenue: [{product:'Coffee',cashCents:1090,businessclubCents:109}], noSale: { Businessclub: { grossCents: 109, transactionIds: ['x'] } } },
   raw: [{ Date: '29-09-2026 12:00', 'Payment type': 'Revenue pin', 'BTW Value': '9.0000', Product: 'Coffee', Total: '10.90', Count: '2' }, { Date: '29-09-2026 13:00', 'Payment type': 'Businessclub', 'BTW Value': '9.0000', Product: 'Coffee ', Total: '1.09', Count: '1' }], noSaleTransactions: [{ transactionId: 'x', day: '2026-09-29', category: 'Businessclub', grossCents: 109 }], financial: financial(), observedAt: '2026-10-01T07:00:00.000Z', clientId: '123', audit: {} });
 test('preserves source VAT and requires daily revenue and no-sale amounts/counts to reconcile', () => {
   const p = input(), r = reportForDay(p);
@@ -37,4 +37,9 @@ test('rejects missing tables, malformed amounts, unexpected categories and sourc
 test('current day is provisional and Amsterdam cutoff follows DST and 06:00 boundary', () => {
   assert.deepEqual(currentRange(new Date('2026-10-25T04:15:00Z')), { from: '2026-10-17', to: '2026-10-25', cutoff: '2026-10-25 05:15' });
   const p = input(); p.cutoff = '2026-09-29 14:15'; const r = reportForDay(p); assert.equal(r.source.complete, false); assert.equal(r.source.coverage_end, p.cutoff);
+});
+
+test('rejects missing or mismatched product revenue allocations', () => {
+ const p = input(); delete p.day.productRevenue; assert.throws(() => reportForDay(p), /Product revenue/);
+ const q = input(); q.day.productRevenue[0].cashCents++; assert.throws(() => reportForDay(q), /Product revenue/);
 });

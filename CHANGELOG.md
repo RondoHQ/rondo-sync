@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.0] - 2026-10-04
+
+### Added
+- Reconciled per-product cash and businessclub revenue for category exclusions. Mixed payments and discounts are allocated proportionally; deterministic rounding preserves the daily source totals.
+
 ## [0.14.4] - 2026-10-04
 
 ### Fixed

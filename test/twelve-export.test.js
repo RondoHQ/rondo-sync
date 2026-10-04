@@ -322,3 +322,31 @@ test('full no-sale preserves basket prices and separately allocates deposit-incl
   assert.equal(result.noSaleTransactions[0].products[0].grossCents, 90);
   assert.deepEqual(result.days[0].issues, []);
 });
+
+test('product revenue allocates mixed discounted baskets and shared businessclub payments proportionally', () => {
+  const input = sharedSample('Businessclub');
+  const original = input.products[0];
+  input.products = [product(original['Transaction Id'], original['Transaction type'], '6.00', { Product: 'Drink' }), product(original['Transaction Id'], original['Transaction type'], '4.00', { Product: 'Scarf', 'Product Id': '21' })];
+  input.raw = input.products.map(p => rawProduct(p));
+  const day = analyse(input).days[0];
+  assert.deepEqual(day.issues, []);
+  assert.deepEqual(day.productRevenue, [
+    { product: 'Drink', cashCents: 336, businessclubCents: 246 },
+    { product: 'Scarf', cashCents: 224, businessclubCents: 164 }
+  ]);
+  const regular = sample([tx('20', 'Revenue pin', '10.00', { Paid: '8.00' })], input.products.map(p => ({ ...p, 'Transaction Id': '20', 'Transaction type': 'Revenue pin' })));
+  assert.deepEqual(analyse(regular).days[0].productRevenue, [
+    { product: 'Drink', cashCents: 480, businessclubCents: 0 },
+    { product: 'Scarf', cashCents: 320, businessclubCents: 0 }
+  ]);
+});
+
+test('product allocation rounding conserves daily cents and is stable after row reordering', () => {
+  const products = ['C', 'B', 'A'].map((name, i) => product('1', 'Revenue pin', '1.00', { Product: name, 'Product Id': String(i) }));
+  const input = sample([tx('1', 'Revenue pin', '3.00', { Paid: '1.00' })], products);
+  const day = analyse(input).days[0];
+  assert.deepEqual(day.productRevenue.map(p => p.cashCents), [34, 33, 33]);
+  assert.equal(day.productRevenue.reduce((sum, p) => sum + p.cashCents, 0), day.cashRevenueCandidateCents);
+  input.raw.reverse(); input.products.reverse();
+  assert.deepEqual(analyse(input).days[0].productRevenue, day.productRevenue);
+});
