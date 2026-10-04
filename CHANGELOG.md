@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.13.4] - 2026-10-04
+
+### Fixed
+- Recognize Twelve's REPRINT card-terminal breakdown row without treating it as an additional revenue or VAT row.
+
 ## [0.13.3] - 2026-10-04
 
 ### Changed
