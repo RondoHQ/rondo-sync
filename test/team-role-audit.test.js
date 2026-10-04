@@ -83,7 +83,7 @@ test('normal run repairs an orphan despite unchanged empty signature, then repla
       };
       if (name === '../lib/rondo-club-db') return {
         openDb: () => ({ prepare: db.prepare.bind(db), close() {} }),
-        getAllTrackedMembers: () => [member],
+        getPlayerHistoryMembers: () => [member],
         getAllTeams: () => [{ sportlink_id: 'team-source', rondo_club_id: 2647, team_name: 'Test team' }],
         computeMemberTeamSignature: () => 'v2:',
         updateMemberPlayerHistorySignature: () => { signatures++; }

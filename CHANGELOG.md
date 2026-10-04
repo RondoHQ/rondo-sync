@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.8] - 2026-10-04
+
+### Fixed
+
+- Exclude obsolete and retired source identities from player-history checks while preserving their tracking mappings, quarantine settings, and retry signatures.
+
 ## [0.11.7] - 2026-10-03
 
 ### Fixed

@@ -356,6 +356,8 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 **An empty Sportlink `RelationEnd` does not imply a current role.** Normalize team memberships with `lib/team-membership-periods.js` before mapping work history. For a recognized, closed `SeasonDescription`, use June 30 of the ending year as the fallback (Europe/Amsterdam). Preserve explicit end dates, unknown or contradictory periods, and current-season copies of the same team/role/start date. Multiple historical copies use the most recent season. Keep this inference separate from actual source dates.
 
+**Player-history eligibility is source-based.** Use `getPlayerHistoryMembers()` rather than the shared all-tracked lookup. Former/obsolete empty-payload markers and retired identities must remain available for mapping recovery, but must never trigger a source history fetch or a role audit against their active survivor. Keep quarantine and signature fields in the eligible query; `--force` only bypasses signatures, not identity eligibility.
+
 ## Parent slot labels
 
 The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo`.

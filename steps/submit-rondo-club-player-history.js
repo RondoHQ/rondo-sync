@@ -1,7 +1,7 @@
 require('dotenv/config');
 
 const { rondoClubRequest } = require('../lib/rondo-club-client');
-const { openDb, getAllTrackedMembers, getAllTeams, computeMemberTeamSignature, updateMemberPlayerHistorySignature } = require('../lib/rondo-club-db');
+const { openDb, getPlayerHistoryMembers, getAllTeams, computeMemberTeamSignature, updateMemberPlayerHistorySignature } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { fetchMemberTeamMemberships } = require('./download-functions-from-sportlink');
@@ -340,7 +340,7 @@ async function runSync(options = {}) {
   let session;
 
   try {
-    let members = getAllTrackedMembers(db);
+    let members = getPlayerHistoryMembers(db);
     if (Array.isArray(knvbIds) && knvbIds.length > 0) {
       const requested = new Set(knvbIds.map(String));
       members = members.filter(member => requested.has(String(member.knvb_id)));
