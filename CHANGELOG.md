@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.13.1] - 2026-10-04
+
+### Fixed
+
+- Anchor browser date selectors to January before changing years, preventing Twelve from moving the opposite boundary during a year transition.
+
 ## [0.13.0] - 2026-10-04
 
 ### Added

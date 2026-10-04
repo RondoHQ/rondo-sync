@@ -277,7 +277,11 @@ test('backdating filters survives Twelve adjusting start when an intermediate en
     locator(selector) { return {
       async selectOption(value) {
         values[selector] = value;
-        if (date('end') < date('begin')) for (const part of ['y', 'm', 'd']) values[`#report_date_begin_${part}`] = values[`#report_date_end_${part}`];
+        if (date('end') < date('begin')) {
+          const changed = selector.includes('_begin_') ? 'begin' : 'end';
+          const other = changed === 'begin' ? 'end' : 'begin';
+          for (const part of ['y', 'm', 'd']) values[`#report_date_${other}_${part}`] = values[`#report_date_${changed}_${part}`];
+        }
       },
       async inputValue() { return values[selector]; },
       async innerText() { return 'There are 12 records'; }
@@ -288,4 +292,11 @@ test('backdating filters survives Twelve adjusting start when an intermediate en
   assert.equal(await session.setPeriod('2026-08-22', '2026-08-23'), 12);
   assert.equal(date('begin'), '2026-08-22');
   assert.equal(date('end'), '2026-08-23');
+  await session.setPeriod('2025-12-08', '2026-01-08');
+  await session.setPeriod('2026-01-08', '2026-02-08');
+  assert.equal(date('begin'), '2026-01-08');
+  assert.equal(date('end'), '2026-02-08');
+  await session.setPeriod('2026-10-04', '2026-10-05', '2026-10-04 12:15');
+  assert.equal(values['select[name="report_time_end_h"]'], '12');
+  assert.equal(values['select[name="report_time_end_n"]'], '15');
 });
