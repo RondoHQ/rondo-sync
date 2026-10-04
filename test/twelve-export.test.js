@@ -263,3 +263,29 @@ test('missing product lines and unsupported deposit refunds cannot become clean 
   input.transactions[0]['Deposit intake'] = '0.15';
   assert.ok(analyse(input).days[0].issues.some(i => i.includes('Deposit intake')));
 });
+
+test('backdating filters survives Twelve adjusting start when an intermediate end is earlier', async () => {
+  const values = {};
+  for (const [side, date] of [['begin', [2026, 9, 29]], ['end', [2026, 10, 4]]]) {
+    for (const [index, part] of ['y', 'm', 'd'].entries()) values[`#report_date_${side}_${part}`] = String(date[index]);
+    for (const [part, value] of [['h', '6'], ['n', '0'], ['s', '0']]) values[`select[name="report_time_${side}_${part}"]`] = value;
+  }
+  const date = side => ['y', 'm', 'd'].map(part => values[`#report_date_${side}_${part}`].padStart(part === 'y' ? 4 : 2, '0')).join('-');
+  const session = new TwelveBrowser({ username: 'test', password: 'test', clientId: '123' });
+  session.reportPage = async () => {};
+  session.page = {
+    locator(selector) { return {
+      async selectOption(value) {
+        values[selector] = value;
+        if (date('end') < date('begin')) for (const part of ['y', 'm', 'd']) values[`#report_date_begin_${part}`] = values[`#report_date_end_${part}`];
+      },
+      async inputValue() { return values[selector]; },
+      async innerText() { return 'There are 12 records'; }
+    }; },
+    async waitForEvent() {},
+    getByRole() { return { last() { return { async click() {} }; } }; }
+  };
+  assert.equal(await session.setPeriod('2026-08-22', '2026-08-23'), 12);
+  assert.equal(date('begin'), '2026-08-22');
+  assert.equal(date('end'), '2026-08-23');
+});

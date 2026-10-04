@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.2] - 2026-10-04
+
+### Fixed
+
+- Set the Twelve end-date filter before the start date so its automatic range adjustment does not broaden historical download periods.
+
 ## [0.12.1] - 2026-10-04
 
 ### Fixed
