@@ -10,8 +10,11 @@ const { runDownload } = require('../steps/download-twelve');
 const { loadSnapshot, runComparison } = require('../tools/compare-twelve');
 
 function tx(id, type, amount, overrides = {}) {
-  return { 'Transaction Id': id, 'Main transaction id': '', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Amount: amount, Paid: amount, 'No Sale': '', Discount: '', 'Deposit paid': '', 'Deposit intake': '', 'No sale type': '0', 'Revenue type': '1', 'Summation sign': '1', ...overrides };
+  const row = { 'Transaction Id': id, 'Main transaction id': '', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Amount: amount, Paid: amount, 'No Sale': '', Discount: '', 'Deposit paid': '', 'Deposit intake': '', 'No sale type': '0', 'Revenue type': '1', 'Summation sign': '1', ...overrides };
+  if (id && !row['Main transaction id'] && row['No sale type'] === '1' && row['No Sale'] === '') row['No Sale'] = (Number(row.Amount) + Number(row['Deposit paid'] || 0)).toFixed(2);
+  return row;
 }
+
 function product(id, type, total, overrides = {}) {
   return { 'Transaction Id': id, 'Product Id': '20', 'Date created': '01-10-2026 21:00', 'Transaction type': type, Product: 'Drink', Count: '1', Total: total, ...overrides };
 }
@@ -307,4 +310,15 @@ test('coins allocate paid value over products when terminal Amount includes depo
   assert.equal(day.cashRevenueCandidateCents, 383);
   assert.equal(day.paymentCents['Omzet munten'], 383);
   assert.deepEqual(day.issues, []);
+});
+
+test('full no-sale preserves basket prices and separately allocates deposit-inclusive value', () => {
+  const input = sample([tx('1', 'Businessclub', '1.00', { Paid: '', 'No Sale': '1.00', 'No sale type': '1', 'Deposit paid': '0.10' })], [product('1', 'Businessclub', '0.90')], [rawProduct(product('1', 'Businessclub', '0.90'), true)]);
+  const result = analyse(input);
+  assert.equal(result.days[0].noSale.Businessclub.grossCents, 81);
+  assert.equal(result.days[0].businessclubCents, 81);
+  assert.equal(result.noSaleTransactions[0].grossCents, 90);
+  assert.equal(result.noSaleTransactions[0].accountedCents, 81);
+  assert.equal(result.noSaleTransactions[0].products[0].grossCents, 90);
+  assert.deepEqual(result.days[0].issues, []);
 });

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.3] - 2026-10-04
+
+### Fixed
+- Reconcile no-sale totals when terminal amounts include deposit, retaining original basket prices alongside the accounted consumption amount.
+
 ## [0.14.2] - 2026-10-04
 
 ### Fixed
