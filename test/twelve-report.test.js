@@ -22,6 +22,7 @@ test('handles optional zero-VAT column and excludes card-network subtotals witho
   for (const table of data.revenue) for (const [i, row] of table.entries()) row.splice(5, 0, i === 0 ? 'Geen BTW' : '0.00');
   data.revenue[1].splice(2, 0, ['Visa', '10.90', '', '', '', '', '2', '']);
   data.revenue[1].splice(2, 0, ['REPRINT', '0.00', '', '', '', '', '1', '']);
+  data.revenue[1].splice(2, 0, ['??', '0.00', '', '', '', '', '', '']);
   const rows = financialRows(data.revenue, 'revenue');
   assert.equal(rows.filter(r => r.section === 'betaalmethode').length, 1);
   assert.equal(rows.find(r => r.section === 'totaal').transacties, 2);

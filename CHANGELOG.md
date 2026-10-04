@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.4] - 2026-10-04
+
+### Fixed
+- Ignore Twelve's unknown-card-network placeholder in the secondary terminal breakdown, while retaining the reconciled payment totals.
+
 ## [0.14.3] - 2026-10-04
 
 ### Fixed
