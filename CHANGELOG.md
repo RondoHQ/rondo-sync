@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0] - 2026-10-04
+
+### Added
+- Club-specific Twelve sync windows from Rondo, including midnight closure and daylight-saving-safe scheduling.
+
+### Changed
+- Check the club schedule hourly without logging into Twelve outside its windows; dashboard next-run times and missed-run alerts use the same schedule.
+
 ## [0.13.4] - 2026-10-04
 
 ### Fixed

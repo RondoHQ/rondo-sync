@@ -88,7 +88,10 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
 
 ## Twelve browser import
 
-`scripts/sync.sh twelve` runs every two hours as `rondo` on the sync server.
+`scripts/sync.sh twelve --scheduled` checks club settings hourly as `rondo` on the sync server.
+It opens Twelve every two hours within the configured weekday windows, plus their closing hour.
+The Rondo administrator edits these under Kassaomzet → Synchronisatie.
+Use `scripts/sync.sh twelve` for an explicitly requested manual run outside the windows.
 It requires `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID`.
 The default range overlaps seven business days and includes today's unfinished day
 through a fixed Amsterdam minute cutoff. A successful-run checkpoint catches up

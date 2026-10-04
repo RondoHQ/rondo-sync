@@ -30,7 +30,7 @@ may start at `2025-01-01`; requests are split into at most 31-day chunks. Every 
 creates a new private directory with three exports per chunk, SHA-256 checksums,
 row counts checked against the screen, and a completion manifest. Failed runs
 remain explicitly incomplete and cannot be compared. Authentication is not cached;
-additional login challenges stop the run. Cron uses `scripts/sync.sh twelve`,
+additional login challenges stop the run. Cron uses `scripts/sync.sh twelve --scheduled`,
 which also imports the daily financial tables.
 
 The comparison reads the latest 365 PDF report summaries via an authenticated
@@ -206,7 +206,12 @@ Node.js 18+ · Playwright · better-sqlite3 · otplib · Lettermint · dotenv
 
 ### Twelve kassareports
 
-The production sync server runs `scripts/sync.sh twelve` every two hours. It logs
+The production sync server checks `scripts/sync.sh twelve --scheduled` hourly.
+The club configures its active weekdays and hour windows in Rondo under
+Kassaomzet → Synchronisatie. Within those windows, it imports every two hours
+from the opening hour and once at closing (24 means midnight the following day).
+Outside the windows it only checks Rondo settings, without opening Twelve.
+An explicit `scripts/sync.sh twelve` remains available for manual imports. It logs
 into the normal Twelve UI, validates transaction/product/raw CSV exports against
 each other and the daily revenue/no-sale VAT tables, then upserts Rondo reports.
 Use `--dry-run` for validation, `--from 2025-01-01 --to 2026-10-04` for an explicit

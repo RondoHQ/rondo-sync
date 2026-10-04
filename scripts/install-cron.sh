@@ -124,8 +124,8 @@ CRON_ENTRIES="
 # Team sync: weekly on Sunday at 6:00 AM
 0 6 * * 0 $PROJECT_DIR/scripts/sync.sh teams
 
-# Twelve browser import: every two hours
-15 */2 * * * $PROJECT_DIR/scripts/sync.sh twelve
+# Twelve: hourly schedule check; source login only within club opening windows
+0 * * * * $PROJECT_DIR/scripts/sync.sh twelve --scheduled
 
 # Sponsit sync: weekly on Sunday at 10:00 AM
 0 10 * * 0 $PROJECT_DIR/scripts/sync.sh sponsit

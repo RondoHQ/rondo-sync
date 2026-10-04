@@ -14,13 +14,24 @@ const { RunTracker } = require('../lib/run-tracker');
 const { orderedReads } = require('../lib/twelve-read-queue');
 const { runPipelineCli } = require('../lib/pipeline-cli');
 
-async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console.log } = {}) {
+async function runTwelveSync({ from, to, snapshot, dryRun = false, scheduled = false, log = console.log } = {}) {
+  // An hourly lightweight Rondo check only opens Twelve within this club's windows.
+  let scheduleError;
+  if (scheduled) {
+    try {
+      if (snapshot || from || to || dryRun) throw new Error('Scheduled sync cannot override its date range');
+      const { refreshSchedule, isDue } = require('../lib/twelve-schedule');
+      const schedule = await refreshSchedule(rondoClubRequestWithRetry);
+      if (!isDue(schedule)) { log('Twelve: outside club opening windows; no source login'); return { success: true, skipped: true }; }
+    } catch (error) { scheduleError = error; }
+  }
   const tracker = new RunTracker('twelve');
   tracker.startRun();
   const step = tracker.startStep('twelve-reports');
   const stats = { created: 0, updated: 0, skipped: 0, failed: 0 };
   let browser;
   try {
+    if (scheduleError) throw scheduleError;
     if (!!from !== !!to || (snapshot && (from || to))) throw new Error('Use --snapshot, --from with --to, or the default recent range');
     const range = from ? { from, to } : currentRange();
     const checkpoint = path.join('data', 'twelve-last-success.json');
@@ -92,6 +103,6 @@ async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console
 }
 module.exports = { runTwelveSync };
 if (require.main === module) {
-  const { values } = parseArgs({ options: { from: { type: 'string' }, to: { type: 'string' }, snapshot: { type: 'string' }, 'dry-run': { type: 'boolean' }, verbose: { type: 'boolean' } } });
+  const { values } = parseArgs({ options: { from: { type: 'string' }, to: { type: 'string' }, snapshot: { type: 'string' }, 'dry-run': { type: 'boolean' }, scheduled: { type: 'boolean' }, verbose: { type: 'boolean' } } });
   runPipelineCli(runTwelveSync({ ...values, dryRun: values['dry-run'] }));
 }
