@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.1] - 2026-10-04
+
+### Fixed
+- Resolve the previous Twelve opening-window run separately from the next run for dashboard overdue checks.
+
 ## [0.14.0] - 2026-10-04
 
 ### Added

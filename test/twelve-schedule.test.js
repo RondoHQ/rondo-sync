@@ -22,3 +22,10 @@ test('calendar windows follow Amsterdam daylight saving transitions',()=>{
 test('rejects corrupt schedules rather than running around the clock',()=>{
   for (const days of [[{day:0,start:24,end:24}],[{day:0,start:20,end:1}],[{day:7,start:1,end:3}],[{day:1,start:1,end:3},{day:1,start:5,end:7}]]) assert.throws(()=>validate({...defaults,days}));
 });
+
+test('dashboard previous and next run bracket the reference time',()=>{
+  const {getNextRun,getPreviousScheduledRun}=require('../lib/schedule');
+  const now=new Date('2026-10-06T17:00:00Z');
+  assert.equal(getNextRun('twelve',now).time.toISOString(),'2026-10-06T18:00:00.000Z');
+  assert.equal(getPreviousScheduledRun('twelve',now).time.toISOString(),'2026-10-04T22:00:00.000Z');
+});
