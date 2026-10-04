@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.2] - 2026-10-04
+
+### Fixed
+- Allocate coin tender over exported product value when a terminal includes deposit in its transaction amount, matching Twelve's financial overview.
+
 ## [0.14.1] - 2026-10-04
 
 ### Fixed

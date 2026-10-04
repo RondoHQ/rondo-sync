@@ -300,3 +300,11 @@ test('backdating filters survives Twelve adjusting start when an intermediate en
   assert.equal(values['select[name="report_time_end_h"]'], '12');
   assert.equal(values['select[name="report_time_end_n"]'], '15');
 });
+
+test('coins allocate paid value over products when terminal Amount includes deposit', () => {
+  const input = sample([tx('1', 'Revenue tokens', '3.45', { Paid: '4.00', 'Deposit paid': '0.15' })], [product('1', 'Revenue tokens', '3.30')]);
+  const day = analyse(input).days[0];
+  assert.equal(day.cashRevenueCandidateCents, 383);
+  assert.equal(day.paymentCents['Omzet munten'], 383);
+  assert.deepEqual(day.issues, []);
+});
