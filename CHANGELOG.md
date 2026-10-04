@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0] - 2026-10-04
+
+### Added
+
+- Read-only Twelve browser downloader with bounded date ranges, private snapshots, checksums, screen/export row-count verification, and explicit incomplete-run detection.
+- Offline comparison with existing PDF report totals and detailed no-sale transactions/products; preserves source discrepancies and leaves Rondo data, PDF imports, and schedules unchanged.
+
 ## [0.11.9] - 2026-10-04
 
 ### Fixed

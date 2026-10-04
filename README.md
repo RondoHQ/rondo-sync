@@ -12,6 +12,50 @@ Laposta receives three current-season volunteer counters from Rondo: `vrijwillig
 
 Player-history checks exclude obsolete and retired Sportlink identities while retaining their recovery mappings. A member who returns in a fresh source import becomes eligible again. Team-name whitespace is normalized to prevent duplicate history on repeated imports. Unmatched current team roles still require review; missing source history never clears them automatically.
 
+## Twelve export comparison (read-only)
+
+The Twelve proof stage uses the normal back-office login and CSV export buttons.
+It does not write to Rondo, replace PDF imports, or install a recurring job.
+Set `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID` in the sync
+server's `.env`. Chromium and Python 3 (standard-library ZIP reader) are required.
+Run the downloader on the server as `rondo`:
+
+```bash
+sudo -u rondo node steps/download-twelve.js --from 2026-09-29 --to 2026-10-04
+sudo -u rondo node tools/compare-twelve.js --snapshot data/twelve/snapshot-XXXXXX --fetch-rondo
+```
+
+Dates represent 06:00 Europe/Amsterdam; `--to` is exclusive. Historical downloads
+may start at `2025-01-01`; requests are split into at most 31-day chunks. Every run
+creates a new private directory with three exports per chunk, SHA-256 checksums,
+row counts checked against the screen, and a completion manifest. Failed runs
+remain explicitly incomplete and cannot be compared. Authentication is not cached;
+additional login challenges stop the run. Do not put this command in cron yet.
+
+The comparison reads the latest 365 PDF report summaries via an authenticated
+GET, or accepts a saved `{ "reports": [...] }` reference with `--reports file.json`.
+It produces private JSON analysis, no-sale details by transaction/product/category,
+and a text comparison. It checks product gross, quantity, Businessclub, candidate
+cash revenue, and the other-consumption residual. Coins use tendered value;
+card revenue deducts separate virtual discounts. This is not a full accounting
+import: VAT totals, cashflow, account mutations, and invoice eligibility are not
+reconciled. Unknown transaction types, missing joins and differences between the
+two product exports are retained as issues. Missing PDF days are unverified, never
+zero. A matching five-field comparison does not claim full PDF parity.
+
+For previously downloaded files, an offline comparison is safe locally:
+
+```bash
+node tools/compare-twelve.js --transactions /private/path/transactions.csv \
+  --products /private/path/products.csv --raw /private/path/raw.zip \
+  --from 2025-01-01 --to 2026-10-04 --reports /private/path/reports.json
+```
+
+Keep actual exports and references out of Git. Output directories are `0700` and
+files `0600`. Comparison exits `0` when all available reference days match with no
+source issues, `2` for discrepancies/unverified source rows/no overlapping reference,
+and `1` for invalid input or failed reads. Offline tests: `node --test test/twelve-export.test.js`.
+
 ## System Architecture
 
 ```mermaid

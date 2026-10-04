@@ -1,6 +1,6 @@
 {
   "name": "rondo-sync",
-  "version": "0.11.9",
+  "version": "0.12.0",
   "private": true,
   "description": "Sync data between Sportlink, Rondo Club, Sponsit, and connected services",
   "main": "steps/download-data-from-sportlink.js",
@@ -73,7 +73,9 @@
     "verify-rondo-club-verbose": "node tools/verify-rondo-club-data.js --verbose",
     "verify-rondo-club-fix": "node tools/verify-rondo-club-data.js --fix --verbose",
     "install-cron": "bash scripts/install-cron.sh",
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "download-twelve": "node steps/download-twelve.js",
+    "compare-twelve": "node tools/compare-twelve.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

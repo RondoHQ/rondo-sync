@@ -86,6 +86,22 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
                              # Applies to every call through lib/http-client.js (Rondo Club + FreeScout).
 ```
 
+## Twelve read-only proof stage
+
+`steps/download-twelve.js` logs in through Twelve's ordinary UI and saves private,
+immutable, date-bounded transaction/product/raw exports. Run only on the sync server
+as `rondo`, with `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID`.
+`tools/compare-twelve.js` analyses these offline and optionally reads existing PDF
+summaries using GET only. There are no Rondo writes, cron entries, or sync.sh pipeline.
+Do not enable recurring imports or remove PDF ingestion as part of this proof stage.
+Use 06:00 Amsterdam business-day boundaries and an exclusive end date. Keep failed
+snapshots incomplete; never manufacture zero turnover for a missing day. Preserve
+source files and issues: the raw product export can omit rows present in the product
+export, and exceptional tab transactions are not yet mapped. Five-field PDF matching
+does not prove VAT/cashflow/account mutation parity. Actual exports and login values
+must never become fixtures or enter Git. Offline synthetic tests are in
+`test/twelve-export.test.js`; Python 3's standard ZIP reader avoids unsafe extraction.
+
 ## Sponsit sync
 
 Name handling is shared in `lib/person-name.js`: compare first name plus the
