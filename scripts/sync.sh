@@ -10,6 +10,7 @@
 #   sync.sh functions  # Daily: functions download + commissies + work history
 #   sync.sh invoice  # Monthly: functions + invoice data from /financial tab
 #   sync.sh nikki    # Daily: nikki contributions download + Rondo Club sync
+#   sync.sh twelve   # Every two hours: Twelve browser exports -> Rondo
 #   sync.sh sponsit  # Weekly: Sponsit contacts to Rondo Club + Laposta
 #   sync.sh freescout # Daily: FreeScout customer sync
 #   sync.sh conversations # Daily: FreeScout conversations as activities
@@ -104,7 +105,7 @@ EXTRA_FLAGS="$*"
 
 # Validate sync type
 case "$SYNC_TYPE" in
-    people|photos|teams|player-history|functions|invoice|nikki|sponsit|freescout|reverse|discipline|former-members|conversations|all)
+    people|photos|teams|player-history|functions|invoice|nikki|sponsit|twelve|freescout|reverse|discipline|former-members|conversations|all)
         ;;
     *)
         echo "Unknown sync type: $SYNC_TYPE" >&2
@@ -207,6 +208,9 @@ case "$SYNC_TYPE" in
         ;;
     nikki)
         SYNC_SCRIPT="sync-nikki.js"
+        ;;
+    twelve)
+        SYNC_SCRIPT="sync-twelve.js"
         ;;
     sponsit)
         SYNC_SCRIPT="sync-sponsit.js"

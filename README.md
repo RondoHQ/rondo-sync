@@ -14,8 +14,8 @@ Player-history checks exclude obsolete and retired Sportlink identities while re
 
 ## Twelve export comparison (read-only)
 
-The Twelve proof stage uses the normal back-office login and CSV export buttons.
-It does not write to Rondo, replace PDF imports, or install a recurring job.
+The standalone comparison tools use the normal back-office login and CSV export
+buttons without writing to Rondo. The scheduled importer is described below.
 Set `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID` in the sync
 server's `.env`. Chromium and Python 3 (standard-library ZIP reader) are required.
 Run the downloader on the server as `rondo`:
@@ -30,7 +30,8 @@ may start at `2025-01-01`; requests are split into at most 31-day chunks. Every 
 creates a new private directory with three exports per chunk, SHA-256 checksums,
 row counts checked against the screen, and a completion manifest. Failed runs
 remain explicitly incomplete and cannot be compared. Authentication is not cached;
-additional login challenges stop the run. Do not put this command in cron yet.
+additional login challenges stop the run. Cron uses `scripts/sync.sh twelve`,
+which also imports the daily financial tables.
 
 The comparison reads the latest 365 PDF report summaries via an authenticated
 GET, or accepts a saved `{ "reports": [...] }` reference with `--reports file.json`.
@@ -202,3 +203,14 @@ Node.js 18+ · Playwright · better-sqlite3 · otplib · Lettermint · dotenv
 ## License
 
 [GPL v2 or later](LICENSE)
+
+### Twelve kassareports
+
+The production sync server runs `scripts/sync.sh twelve` every two hours. It logs
+into the normal Twelve UI, validates transaction/product/raw CSV exports against
+each other and the daily revenue/no-sale VAT tables, then upserts Rondo reports.
+Use `--dry-run` for validation, `--from 2025-01-01 --to 2026-10-04` for an explicit
+06:00 Amsterdam range (exclusive end), or `--snapshot data/twelve/snapshot-...` to
+resume/replay. The default includes seven completed days plus the current day;
+the latter stays provisional. Credentials live only in the server `.env`.
+Snapshots are private and retained for audit. See CLAUDE.md for invariants.

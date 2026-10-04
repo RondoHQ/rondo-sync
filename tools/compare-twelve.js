@@ -27,10 +27,10 @@ function loadSnapshot(directory) {
       rows[kind].push(...chunkRows[kind]);
     }
     if (chunkRows.raw.length !== chunk.expectedRows) throw new Error('Snapshot raw count differs from screen count');
-    analyse({ ...chunkRows, from: chunk.from, to: chunk.to });
+    analyse({ ...chunkRows, from: chunk.from, to: chunk.to, cutoff: chunk.to === range.to ? manifest.range.cutoff : undefined });
   }
   if (cursor !== range.to) throw new Error('Snapshot does not cover the complete date range');
-  return { ...rows, from: range.from, to: range.to };
+  return { ...rows, from: range.from, to: range.to, cutoff: manifest.range.cutoff };
 }
 
 function renderComparison(analysis, comparison) {

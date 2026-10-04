@@ -86,25 +86,32 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
                              # Applies to every call through lib/http-client.js (Rondo Club + FreeScout).
 ```
 
-## Twelve read-only proof stage
+## Twelve browser import
 
-`steps/download-twelve.js` logs in through Twelve's ordinary UI and saves private,
-immutable, date-bounded transaction/product/raw exports. Run only on the sync server
-as `rondo`, with `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID`.
-`tools/compare-twelve.js` analyses these offline and optionally reads existing PDF
-summaries using GET only. There are no Rondo writes, cron entries, or sync.sh pipeline.
-Do not enable recurring imports or remove PDF ingestion as part of this proof stage.
-Use 06:00 Amsterdam business-day boundaries and an exclusive end date. Keep failed
-snapshots incomplete; never manufacture zero turnover for a missing day. Preserve
-source files and issues. Tab settlement products repeat an earlier sale; exclude
-them from turnover while retaining their audit totals. Normalize cancellation
-signs once. Shared payments use paid children; discounts already included in Paid
-must not be subtracted again. Deposit-inclusive terminal amounts require allocation
-over product value; keep rational cents until daily rounding. Partial no-sales
-expose their amount and category, not invented per-product consumption. Five-field PDF matching
-does not prove VAT/cashflow/account mutation parity. Actual exports and login values
-must never become fixtures or enter Git. Offline synthetic tests are in
-`test/twelve-export.test.js`; Python 3's standard ZIP reader avoids unsafe extraction.
+`scripts/sync.sh twelve` runs every two hours as `rondo` on the sync server.
+It requires `TWELVE_USERNAME`, `TWELVE_PASSWORD`, and `TWELVE_CLIENT_ID`.
+The default range overlaps seven business days and includes today's unfinished day
+through a fixed Amsterdam minute cutoff. A successful-run checkpoint catches up
+outages. Never run the pipeline locally. Use `--from YYYY-MM-DD --to YYYY-MM-DD`
+for a historical range (06:00 boundaries, exclusive end), `--snapshot <directory>`
+to resume/replay an immutable snapshot, or `--dry-run` to validate without writes.
+
+Three CSV exports must agree on identities, products, and screen row counts.
+The daily Revenue and No Sale browser tables supply the original VAT amounts;
+revenue and no-sale amounts/counts must reconcile before each Rondo import.
+Failures retain their private 0700/0600 snapshots and stop without advancing the
+checkpoint. Snapshots are retained for audit; monitor `data/twelve` disk usage.
+The existing Rondo report ID is updated, preserving original PDF archives and
+invoice claims. Closed historical days before Rondo's original reporting start
+are not automatically billable. Open days remain provisional until after 06:00.
+
+Tab settlement products repeat an earlier sale; exclude them from turnover while
+retaining audit totals. Normalize cancellation signs once. Shared payments use
+paid children; discounts already in Paid must not be subtracted twice. Keep
+rational cents until daily rounding. Partial no-sales expose the amount and
+category, not invented product allocations. No custom Twelve API access is used.
+Never commit source exports, browser session URLs or credentials. Tests use
+synthetic fixtures. The former WordPress PDF/email importer is retired.
 
 ## Sponsit sync
 

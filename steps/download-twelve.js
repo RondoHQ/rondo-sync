@@ -7,13 +7,13 @@ const { parseArgs } = require('node:util');
 const { TwelveBrowser, EXPORTS, chunks } = require('../lib/twelve-browser');
 const { readExport, analyse, period } = require('../lib/twelve-export');
 
-async function runDownload({ from, to, output = 'data/twelve', chunkDays = 31, session, log = console.log } = {}) {
+async function runDownload({ from, to, output = 'data/twelve', chunkDays = 31, cutoff, session, log = console.log } = {}) {
   const ranges = chunks(from, to, chunkDays);
   const browser = session || new TwelveBrowser({ username: process.env.TWELVE_USERNAME, password: process.env.TWELVE_PASSWORD, clientId: process.env.TWELVE_CLIENT_ID });
   await fs.mkdir(output, { recursive: true, mode: 0o700 });
   const root = await fs.mkdtemp(path.join(output, 'snapshot-'));
   await fs.chmod(root, 0o700);
-  const manifest = { version: 1, status: 'incomplete', clientId: process.env.TWELVE_CLIENT_ID, range: period(from, to), startedAt: new Date().toISOString(), chunks: [] };
+  const manifest = { version: 1, status: 'incomplete', clientId: process.env.TWELVE_CLIENT_ID, range: { ...period(from, to), ...(cutoff ? { cutoff } : {}) }, startedAt: new Date().toISOString(), chunks: [] };
   const saveManifest = async () => {
     await fs.writeFile(path.join(root, 'manifest.tmp'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
     await fs.rename(path.join(root, 'manifest.tmp'), path.join(root, 'manifest.json'));
@@ -24,7 +24,7 @@ async function runDownload({ from, to, output = 'data/twelve', chunkDays = 31, s
     for (const range of ranges) {
       const dir = path.join(root, `${range.from}_${range.to}`);
       await fs.mkdir(dir, { mode: 0o700 });
-      const expectedRows = await browser.setPeriod(range.from, range.to);
+      const expectedRows = await browser.setPeriod(range.from, range.to, range.to === to ? cutoff : undefined);
       const files = {};
       const rows = {};
       for (const item of EXPORTS) {
@@ -35,7 +35,7 @@ async function runDownload({ from, to, output = 'data/twelve', chunkDays = 31, s
         files[item.kind] = { path: path.relative(root, filename), sha256: crypto.createHash('sha256').update(await fs.readFile(filename)).digest('hex'), rows: rows[item.kind].length };
       }
       if (rows.raw.length !== expectedRows) throw new Error('Raw export row count differs from the Twelve screen');
-      const analysis = analyse({ ...rows, ...range });
+      const analysis = analyse({ ...rows, ...range, cutoff: range.to === to ? cutoff : undefined });
       manifest.chunks.push({ ...range, expectedRows, files, daysWithIssues: analysis.days.filter(d => d.issues.length).length });
       await saveManifest();
       log(`Twelve ${range.from}–${range.to}: ${rows.transactions.length} transaction rows, ${rows.raw.length} raw product rows`);

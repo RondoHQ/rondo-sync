@@ -44,6 +44,7 @@ ALL_PIPELINES=(
   freescout-conversations
   teams
   sponsit
+  twelve
   player-history
   discipline
   reverse
@@ -62,6 +63,7 @@ rerun_args_for() {
     freescout-conversations) echo "conversations" ;;
     teams)                   echo "teams" ;;
     sponsit)                 echo "sponsit" ;;
+    twelve)                  echo "twelve" ;;
     player-history)          echo "player-history" ;;
     discipline)              echo "discipline" ;;
     reverse)                 echo "reverse" ;;
@@ -92,6 +94,7 @@ stale_after_hours_for() {
     freescout)               echo 30 ;;   # daily 08:00
     freescout-conversations) echo 30 ;;   # daily 09:00
     teams)                   echo 180 ;;  # weekly Sun 06:00
+    twelve)                  echo 6 ;;    # every two hours
     sponsit)                 echo 180 ;;  # weekly Sun 10:00
     player-history)          echo 800 ;;  # monthly 1st 03:00 (~33d)
     discipline)              echo 180 ;;  # weekly Mon 23:30

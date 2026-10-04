@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0] - 2026-10-04
+
+### Added
+
+- Two-hour Twelve browser import with immutable CSV snapshots and daily financial tables, matching revenue and no-sale totals before idempotent Rondo writes.
+- Current-day cutoff, provisional reports, historical replay, run tracking and watchdog coverage.
+
 ## [0.12.2] - 2026-10-04
 
 ### Fixed
