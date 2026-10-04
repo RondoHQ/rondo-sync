@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2] - 2026-10-04
+
+### Fixed
+
+- Preserve product classifications by trimming export names like the former report parser.
+- Avoid unnecessary date-filter changes and leave days without source rows absent instead of creating zero reports.
+
 ## [0.13.1] - 2026-10-04
 
 ### Fixed

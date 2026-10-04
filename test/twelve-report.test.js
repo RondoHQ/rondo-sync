@@ -7,7 +7,7 @@ const financial = () => ({
   nosale: [[[...head], ['Businessclub', '1.09', '1.00', '0.00', '0.09', '1', ''], ['Subtotal', '1.09', '1.00', '0.00', '0.09', '', '']]]
 });
 const input = () => ({ day: { day: '2026-09-29', issues: [], cashRevenueCandidateCents: 1090, productGrossCents: 1199, productCount: 3, noSale: { Businessclub: { grossCents: 109, transactionIds: ['x'] } } },
-  raw: [{ Date: '29-09-2026 12:00', 'Payment type': 'Revenue pin', 'BTW Value': '9.0000', Product: 'Coffee', Total: '10.90', Count: '2' }, { Date: '29-09-2026 13:00', 'Payment type': 'Businessclub', 'BTW Value': '9.0000', Product: 'Coffee', Total: '1.09', Count: '1' }], noSaleTransactions: [{ transactionId: 'x', day: '2026-09-29', category: 'Businessclub', grossCents: 109 }], financial: financial(), observedAt: '2026-10-01T07:00:00.000Z', clientId: '123', audit: {} });
+  raw: [{ Date: '29-09-2026 12:00', 'Payment type': 'Revenue pin', 'BTW Value': '9.0000', Product: 'Coffee', Total: '10.90', Count: '2' }, { Date: '29-09-2026 13:00', 'Payment type': 'Businessclub', 'BTW Value': '9.0000', Product: 'Coffee ', Total: '1.09', Count: '1' }], noSaleTransactions: [{ transactionId: 'x', day: '2026-09-29', category: 'Businessclub', grossCents: 109 }], financial: financial(), observedAt: '2026-10-01T07:00:00.000Z', clientId: '123', audit: {} });
 test('preserves source VAT and requires daily revenue and no-sale amounts/counts to reconcile', () => {
   const p = input(), r = reportForDay(p);
   assert.equal(r.omzet.find(r => r.section === 'categorie').netto, 1);

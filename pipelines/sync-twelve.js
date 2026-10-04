@@ -42,7 +42,9 @@ async function runTwelveSync({ from, to, snapshot, dryRun = false, log = console
     for (const row of input.raw) { const day = timestamp(row.Date).day; if (!rawByDay.has(day)) rawByDay.set(day, []); rawByDay.get(day).push(row); }
     for (let date = input.from; date < input.to; date = nextDate(date)) {
       if (input.cutoff && `${date} 06:00` >= input.cutoff) continue;
-      const day = days.get(date) || { day: date, issues: [], cashRevenueCandidateCents: 0, productGrossCents: 0, productCount: 0, noSale: {} };
+      const day = days.get(date);
+      // No rows is absence of activity, not an invented financial zero report.
+      if (!day) continue;
       const chunk = manifest.chunks.find(c => c.from <= date && c.to > date);
       const financePath = path.join(directory, `finance-${date}.json`);
       let financial;
