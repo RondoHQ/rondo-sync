@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.1] - 2026-10-05
+
+### Fixed
+- Allow a newly linked parent to replace the second Sportlink parent slot when both slots contain the same email address, preserving the first slot and existing identity matches.
+
 ## [0.15.0] - 2026-10-04
 
 ### Added

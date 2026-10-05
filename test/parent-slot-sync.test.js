@@ -82,6 +82,46 @@ test('slot selection never overwrites a partially occupied slot', () => {
   assert.equal(selectParentSlot(slots, { email: 'nieuw@example.org' }), null);
 });
 
+test('a new parent replaces the second duplicate email and retries match the saved slot', () => {
+  const slots = extractParentSlots({
+    NameParent1: 'Eerste ouder',
+    EmailAddressParent1: ' GEZIN@example.org ',
+    TelephoneParent1: '0611111111',
+    NameParent2: 'Dubbele ouder',
+    EmailAddressParent2: 'gezin@example.org',
+    TelephoneParent2: '0622222222'
+  });
+  const before = structuredClone(slots);
+  const desired = { name: 'Nieuwe ouder', email: 'nieuw@example.org', phone: '0633333333' };
+  assert.deepEqual(selectParentSlot(slots, desired), { slot: 2, existing: false });
+  assert.deepEqual(slots, before);
+
+  const saved = [slots[0], { slot: 2, ...desired }];
+  assert.deepEqual(selectParentSlot(saved, desired), { slot: 2, existing: true });
+  assert.equal(parentValuesMatch(saved[1], desired), true);
+  assert.deepEqual(saved[0], before[0]);
+});
+
+test('duplicate email fallback does not replace distinct or invalid addresses', () => {
+  const desired = { name: 'Nieuwe ouder', email: 'nieuw@example.org', phone: '' };
+  for (const [firstEmail, secondEmail] of [
+    ['een@example.org', 'twee@example.org'],
+    ['', ''],
+    ['ongeldig', 'ongeldig']
+  ]) {
+    const slots = [
+      { slot: 1, name: 'Eerste ouder', email: firstEmail, phone: '' },
+      { slot: 2, name: 'Tweede ouder', email: secondEmail, phone: '' }
+    ];
+    assert.equal(selectParentSlot(slots, desired), null);
+  }
+});
+
+test('duplicate email fallback does not guess between parents already using the desired inbox', () => {
+  const slots = [1, 2].map(slot => ({ slot, name: '', email: 'gezin@example.org', phone: '' }));
+  assert.equal(selectParentSlot(slots, { name: 'Nieuwe ouder', email: 'gezin@example.org', phone: '' }), null);
+});
+
 test('slot selection completes one compatible partially occupied slot', () => {
   const slots = extractParentSlots({
     NameParent1: 'Dennis Van Maasakker',
