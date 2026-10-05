@@ -218,4 +218,7 @@ Use `--dry-run` for validation, `--from 2025-01-01 --to 2026-10-04` for an expli
 06:00 Amsterdam range (exclusive end), or `--snapshot data/twelve/snapshot-...` to
 resume/replay. The default includes seven completed days plus the current day;
 the latter stays provisional. Credentials live only in the server `.env`.
+Reports include hourly basket details for Rondo’s Drukte & bezetting view. Food/drink
+classification stays in Rondo; split payments count once and product revenue
+reconciles to daily totals. Old snapshots can be replayed to add the new details.
 Snapshots are private and retained for audit. See CLAUDE.md for invariants.

@@ -350,3 +350,28 @@ test('product allocation rounding conserves daily cents and is stable after row 
   input.raw.reverse(); input.products.reverse();
   assert.deepEqual(analyse(input).days[0].productRevenue, day.productRevenue);
 });
+
+test('activity counts shared baskets once and preserves exact product cents after two-stage rounding', () => {
+  const shared = analyse(sharedSample('Businessclub')).days[0];
+  assert.equal(shared.activity.transactions.length, 1);
+  assert.equal(shared.activity.transactions[0].kind, 'sale');
+  assert.equal(shared.activity.transactions[0].products.reduce((n, p) => n + p.cashCents + p.businessclubCents, 0), 970);
+  const products = ['1', '2', '3'].flatMap(id => ['A', 'B', 'C'].map((name, i) => product(id, 'Revenue pin', '1.00', { Product: name, 'Product Id': String(i) })));
+  const input = sample(['1', '2', '3'].map(id => tx(id, 'Revenue pin', '3.00', { Paid: '1.00' })), products);
+  const first = analyse(input).days[0];
+  assert.deepEqual(first.issues, []);
+  for (const product of first.productRevenue) {
+    assert.equal(first.activity.transactions.flatMap(t => t.products).filter(p => p.name === product.product).reduce((n, p) => n + p.cashCents, 0), product.cashCents);
+  }
+  input.transactions.reverse(); input.products.reverse(); input.raw.reverse();
+  assert.deepEqual(analyse(input).days[0].activity, first.activity);
+});
+
+test('hourly activity excludes top-ups, other no-sales and tab settlements; keeps zero sales', () => {
+  const day = analyse(fixture()).days[0];
+  assert.deepEqual(day.activity.transactions.map(t => t.id), ['1', '2', '3', '5']);
+  assert.equal(day.activity.transactions[0].localTime, '2026-10-01 21:00');
+  const zero = analyse(sample([tx('0', 'Revenue pin', '0.00')], [product('0', 'Revenue pin', '0.00')])).days[0];
+  assert.deepEqual(zero.issues, []);
+  assert.equal(zero.activity.transactions.length, 1);
+});

@@ -113,6 +113,11 @@ retaining audit totals. Normalize cancellation signs once. Shared payments use
 paid children; discounts already in Paid must not be subtracted twice. Keep
 rational cents until daily rounding. Partial no-sales expose the amount and
 category, not invented product allocations. No custom Twelve API access is used.
+The optional `activity` v1 contract contains original basket IDs, local minute timestamps,
+correction flags and allocated product revenue cents only. Shared children merge into
+one basket; tab settlements, top-ups and other no-sales do not become purchases.
+Allocate rounding cents back to baskets deterministically so each product matches
+its existing daily cash/Businessclub total exactly. Never add customer/operator data.
 Never commit source exports, browser session URLs or credentials. Tests use
 synthetic fixtures. The former WordPress PDF/email importer is retired.
 
