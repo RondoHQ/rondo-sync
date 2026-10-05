@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.2] - 2026-10-05
+
+### Fixed
+- Complete a missing required name in the retained Sportlink parent slot from one linked Rondo parent with the same email when replacing a duplicated email. Keep its email and phone unchanged, and reject ambiguous matches.
+
 ## [0.15.1] - 2026-10-05
 
 ### Fixed

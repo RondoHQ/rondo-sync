@@ -17,6 +17,7 @@ const {
   reconcileParentEmailChanges,
   extractParentSlots,
   selectParentSlot,
+  resolveRetainedParentSlot,
   selectEmailReplacementSlot,
   parentValuesMatch,
   emailReplacementMatches,
@@ -120,6 +121,41 @@ test('duplicate email fallback does not replace distinct or invalid addresses', 
 test('duplicate email fallback does not guess between parents already using the desired inbox', () => {
   const slots = [1, 2].map(slot => ({ slot, name: '', email: 'gezin@example.org', phone: '' }));
   assert.equal(selectParentSlot(slots, { name: 'Nieuwe ouder', email: 'gezin@example.org', phone: '' }), null);
+});
+
+test('duplicate replacement fills the retained required name from one linked parent with matching email', async () => {
+  const slots = [1, 2].map(slot => ({ slot, name: '', email: 'gezin@example.org', phone: '' }));
+  const job = { child_rondo_id: 42, child_knvb_id: 'CHILD01', parent_rondo_id: 88 };
+  const fetchPerson = async id => id === 42
+    ? { status: 'publish', fields: { knvb_id: 'CHILD01', relationships: [
+      { related_person_id: 99, relationship_slug: 'parent' },
+      { related_person_id: 88, relationship_slug: 'parent' },
+      { related_person_id: 77, relationship_slug: 'sibling' }
+    ] } }
+    : { status: 'publish', fields: { first_name: 'Eerste', infix: 'van', last_name: 'Ouder', email_2: 'GEZIN@example.org' } };
+  assert.deepEqual(await resolveRetainedParentSlot(slots, { slot: 2, existing: false }, job, { fetchPerson }), {
+    ...slots[0], name: 'Eerste van Ouder'
+  });
+  assert.equal(slots[0].name, '');
+});
+
+test('retained parent name cannot be guessed from a mismatching or ambiguous identity', async () => {
+  const slots = [1, 2].map(slot => ({ slot, name: '', email: 'gezin@example.org', phone: '' }));
+  const job = { child_rondo_id: 42, child_knvb_id: 'CHILD01', parent_rondo_id: 88 };
+  for (const [ids, email] of [[[99], 'anders@example.org'], [[99, 100], 'gezin@example.org']]) {
+    const fetchPerson = async id => id === 42
+      ? { status: 'publish', fields: { knvb_id: 'CHILD01', relationships: ids.map(id => ({ related_person_id: id, relationship_slug: 'parent' })) } }
+      : { status: 'publish', fields: { first_name: 'Ouder', email_1: email } };
+    await assert.rejects(resolveRetainedParentSlot(slots, { slot: 2, existing: false }, job, { fetchPerson }), { code: 'parent_contact_conflict' });
+  }
+});
+
+test('retained name completion never changes a named parent or a normal email match', async () => {
+  const fetchPerson = async () => assert.fail('No lookup needed');
+  const slots = [1, 2].map(slot => ({ slot, name: 'Bestaande ouder', email: 'gezin@example.org', phone: '' }));
+  assert.equal(await resolveRetainedParentSlot(slots, { slot: 2, existing: false }, {}, { fetchPerson }), null);
+  slots[0].name = '';
+  assert.equal(await resolveRetainedParentSlot(slots, { slot: 2, existing: true }, {}, { fetchPerson }), null);
 });
 
 test('slot selection completes one compatible partially occupied slot', () => {
