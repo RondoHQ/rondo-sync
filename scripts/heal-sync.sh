@@ -76,31 +76,9 @@ usage() {
   echo "pipelines: ${ALL_PIPELINES[*]}" >&2
 }
 
-# How long a pipeline may go without STARTING a run before we call it stale, in
-# hours. Derived from crontab: take the longest expected gap and roughly double
-# it, so one missed slot is tolerated but a dead pipeline surfaces within a day.
-# 0 = no cadence configured, skip the check.
-#
-# This exists because outcome-checking alone cannot see a pipeline that stopped
-# running altogether: no run means no row, and "no row" looks exactly like a
-# healthy idle pipeline. `nikki` sat dead from 2026-05-29 to 2026-07-23 behind a
-# root-owned lockfile — sync.sh died before RunTracker opened, so there was
-# nothing to fail and nothing to alert on.
+# Read the same editable cadence used by the dispatcher and dashboard.
 stale_after_hours_for() {
-  case "$1" in
-    people)                  echo 30 ;;   # 4x daily 08,11,14,17 — longest gap 15h
-    functions)               echo 30 ;;   # 4x daily 07:30,10:30,13:30,16:30
-    functions-full)          echo 180 ;;  # weekly Sun 01:00
-    freescout)               echo 30 ;;   # daily 08:00
-    freescout-conversations) echo 30 ;;   # daily 09:00
-    teams)                   echo 180 ;;  # weekly Sun 06:00
-    twelve)                  node "$PROJECT_DIR/lib/twelve-schedule.js" ;;
-    sponsit)                 echo 180 ;;  # weekly Sun 10:00
-    player-history)          echo 800 ;;  # monthly 1st 03:00 (~33d)
-    discipline)              echo 180 ;;  # weekly Mon 23:30
-    reverse)                 echo 1 ;;    # every 5 min — 1h is 12 missed slots
-    *)                       echo 0 ;;
-  esac
+  node "$PROJECT_DIR/lib/schedule.js" stale "$1"
 }
 
 # Seconds -> compact human string, for log lines only.
@@ -131,7 +109,10 @@ latest_run_for() {
       if (!row) {
         process.stdout.write("none");
       } else {
-        const age = Math.max(0, Math.round((Date.now() - new Date(row.started_at).getTime()) / 1000));
+        const { loadConfig } = require("./lib/schedule-config");
+        const changedAt = loadConfig().schedules[process.env.PIPELINE]?.changedAt;
+        const reference = Math.max(new Date(row.started_at).getTime(), changedAt ? Date.parse(changedAt) : 0);
+        const age = Math.max(0, Math.round((Date.now() - reference) / 1000));
         process.stdout.write(`${row.outcome}|${row.started_at}|${age}`);
       }
     } catch (e) {
@@ -177,6 +158,13 @@ heal_one() {
   # Word-split is intentional and safe: every mapped value is fixed, space-separated flags.
   local RERUN=()
   read -r -a RERUN <<< "$RERUN_STR"
+
+  local SCHEDULE_ENABLED
+  SCHEDULE_ENABLED=$(node "$PROJECT_DIR/lib/schedule.js" enabled "$PIPELINE") || return 1
+  if [ "$SCHEDULE_ENABLED" != "true" ]; then
+    echo "heal[$PIPELINE]: schedule disabled — skipping alerts and automatic retries"
+    return 0
+  fi
 
   local MARKER="$PROJECT_DIR/data/.heal-spent-$PIPELINE"   # exists = current failure episode already healed
   local TS

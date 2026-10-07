@@ -116,6 +116,12 @@ retained with `retired_into_knvb_id`. Reimports cannot reactivate that source,
 even after the old WordPress post is permanently removed. Former-member cleanup
 also leaves the surviving membership intact.
 
+Edit automatic timings at **Beheer → Sync schedules** in [the sync dashboard](https://sync.rondo.club/beheer/schedules). Choose daily times, a weekly weekday, a monthly date, or a minute interval for each pipeline. Disabling a schedule keeps manual runs available and disables watchdog retries for that pipeline. All times use Europe/Amsterdam. Settings are stored privately in `data/sync-schedules.json` and survive code deployments.
+
+`npm run install-cron` imports existing pipeline timings, backs up the crontab, and replaces only those pipeline entries with one minute dispatcher. Reinstalling preserves saved settings and unrelated cron jobs. The dispatcher uses `scripts/sync.sh` with its existing locks, tracking and email reports. Missed ticks are not replayed; fixed times in the missing spring hour are skipped, and repeated autumn times run once. Monthly dates absent from a month are skipped. Twelve continues its hourly check using opening windows edited in Rondo Club under Kassaomzet → Synchronisatie.
+
+The following are the initial schedules; saved dashboard settings take precedence:
+
 | Pipeline | Schedule | What it syncs |
 |----------|----------|---------------|
 | People | 4x daily | Members, parents, photos → Laposta + Rondo Club |

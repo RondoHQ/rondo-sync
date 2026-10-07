@@ -9,17 +9,9 @@ PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 echo "Rondo Sync - Cron Installation"
 echo "==============================="
 echo ""
-echo "This will set up ten sync schedules:"
-echo "  - People sync:            4x daily (members, parents, photos)"
-echo "  - FreeScout sync:         daily at 8:00 AM"
-echo "  - FreeScout conversations: daily at 9:00 AM"
-echo "  - Team sync:              weekly on Sunday at 6:00 AM"
-echo "  - Sponsit sync:           weekly on Sunday at 10:00 AM"
-echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
-echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
-echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
-echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
-echo "  - Reverse sync:           every 5 minutes (Rondo Club -> Sportlink)"
+echo "This installs a minute-by-minute schedule check and preserves existing sync timings."
+echo "Edit schedules in the web interface under Beheer -> Sync schedules."
+echo "Twelve keeps its club opening windows in Rondo Club."
 echo ""
 
 # Check if .env exists and has Lettermint config
@@ -108,95 +100,14 @@ fi
 
 echo ""
 
-# Build cron entries - sync.sh handles locking internally
-CRON_ENTRIES="
-# Rondo Sync automation (installed $(date +%Y-%m-%d))
-
-# People sync: 4x daily during work hours (members, parents, photos)
-0 8,11,14,17 * * * $PROJECT_DIR/scripts/sync.sh people
-
-# FreeScout sync: daily at 8:00 AM
-0 8 * * * $PROJECT_DIR/scripts/sync.sh freescout
-
-# FreeScout conversations sync: daily at 9:00 AM (after customer sync)
-0 9 * * * $PROJECT_DIR/scripts/sync.sh conversations
-
-# Team sync: weekly on Sunday at 6:00 AM
-0 6 * * 0 $PROJECT_DIR/scripts/sync.sh teams
-
-# Twelve: hourly schedule check; source login only within club opening windows
-0 * * * * $PROJECT_DIR/scripts/sync.sh twelve --scheduled
-
-# Sponsit sync: weekly on Sunday at 10:00 AM
-0 10 * * 0 $PROJECT_DIR/scripts/sync.sh sponsit
-
-# Player history sync: monthly on the 1st at 3:00 AM
-0 3 1 * * $PROJECT_DIR/scripts/sync.sh player-history
-
-# Functions sync (recent): 4x daily, 30 min before each people sync
-30 7,10,13,16 * * * $PROJECT_DIR/scripts/sync.sh functions
-
-# Functions sync (full + invoice): weekly on Sunday at 1:00 AM
-0 1 * * 0 $PROJECT_DIR/scripts/sync.sh functions --all --with-invoice
-
-# Discipline sync: weekly on Monday at 11:30 PM
-30 23 * * 1 $PROJECT_DIR/scripts/sync.sh discipline
-
-# Reverse sync: every 5 minutes (Rondo Club -> Sportlink)
-*/5 * * * * $PROJECT_DIR/scripts/sync.sh reverse
-"
-
-# Install crontab — under the rondo user, never under root.
-#
-# History: prior installs were run with `sudo bash install-cron.sh` and ended
-# up under root's crontab. The cron-spawned `node` processes then wrote every
-# log file as root:root, which blocked dashboard-triggered runs (which run as
-# rondo) from appending to the per-day log file with EACCES.
-#
-# Resolution: if this script is executed as root, install into `rondo`'s
-# crontab via `crontab -u rondo -`. Otherwise install into the current user's
-# crontab. Refuse to install into root's crontab even if explicitly requested.
+# Run the installer as the sync user so configuration, backups, and jobs remain
+# owned by rondo. The Node installer preserves unrelated crontab entries.
 if [ "$(id -u)" -eq 0 ]; then
-    CRONTAB_USER="rondo"
-    if ! id -u "$CRONTAB_USER" >/dev/null 2>&1; then
-        echo "ERROR: target user '$CRONTAB_USER' does not exist on this host." >&2
-        echo "Create it first, or run this script as the user that should own the sync jobs." >&2
+    if ! id -u rondo >/dev/null 2>&1; then
+        echo "ERROR: target user 'rondo' does not exist." >&2
         exit 1
     fi
-    echo "Detected root invocation — installing crontab under user '$CRONTAB_USER' (not root)."
-    (crontab -u "$CRONTAB_USER" -l 2>/dev/null | grep -v 'rondo\|sync\.sh\|cron-wrapper' || true; echo "$CRON_ENTRIES") | crontab -u "$CRONTAB_USER" -
+    runuser -u rondo -- node "$PROJECT_DIR/scripts/install-schedule-cron.js"
 else
-    CRONTAB_USER="$(id -un)"
-    (crontab -l 2>/dev/null | grep -v 'rondo\|sync\.sh\|cron-wrapper' || true; echo "$CRON_ENTRIES") | crontab -
+    node "$PROJECT_DIR/scripts/install-schedule-cron.js"
 fi
-
-echo "Cron jobs installed successfully for user '$CRONTAB_USER'."
-echo ""
-echo "Scheduled jobs:"
-echo "  - People sync:            4x daily at 8am, 11am, 2pm, 5pm (members, parents, photos)"
-echo "  - FreeScout sync:         daily at 8:00 AM (customer sync)"
-echo "  - FreeScout conversations: daily at 9:00 AM (after customer sync)"
-echo "  - Team sync:              weekly on Sunday at 6:00 AM"
-echo "  - Sponsit sync:           weekly on Sunday at 10:00 AM"
-echo "  - Player history sync:    monthly on the 1st at 3:00 AM"
-echo "  - Functions sync (recent):4x daily, 30 min before each people sync"
-echo "  - Functions sync (full):  weekly on Sunday at 1:00 AM (all members)"
-echo "  - Discipline sync:        weekly on Monday at 11:30 PM"
-echo "  - Reverse sync:           every 5 minutes (Rondo Club -> Sportlink)"
-echo ""
-echo "All times are Amsterdam timezone (Europe/Amsterdam)"
-echo ""
-if [ -n "$OPERATOR_EMAIL" ]; then
-    echo "Email reports will be sent to: $OPERATOR_EMAIL"
-    echo ""
-fi
-echo "Helpful commands:"
-if [ "$(id -u)" -eq 0 ]; then
-    echo "  View installed cron jobs:   crontab -u $CRONTAB_USER -l"
-else
-    echo "  View installed cron jobs:   crontab -l"
-fi
-echo "  View logs:                  ls -la $PROJECT_DIR/logs/cron/"
-echo "  Manual sync:                $PROJECT_DIR/scripts/sync.sh {people|teams|player-history|functions|sponsit|freescout|reverse|discipline|all}"
-echo "  Remove all cron jobs:       crontab -r"
-echo ""

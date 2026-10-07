@@ -1,0 +1,52 @@
+<%- include('partials/head', { title, page, user }) %>
+<nav class="settings-nav" aria-label="Beheer"><a href="/beheer/schedules" aria-current="page">Sync schedules</a><a href="/beheer/free-fields">Vrije velden</a></nav>
+<div class="settings-card">
+  <h2>Sync schedules</h2>
+  <p class="settings-help">All times use Europe/Amsterdam, including summer and winter time. Changes apply from the next minute. Turning off a schedule keeps manual runs available.</p>
+  <% if (saved) { %><div class="settings-success" role="status">Schedules saved.</div><% } %>
+  <% if (error) { %><div class="error" role="alert"><%= error %></div><% } %>
+  <form method="POST" action="/beheer/schedules" class="settings-form">
+    <input type="hidden" name="csrf_token" value="<%= csrfToken %>">
+    <input type="hidden" name="revision" value="<%= revision %>">
+    <% Object.entries(pipelines).forEach(([id, pipeline]) => { const schedule = schedules[id]; %>
+      <fieldset class="schedule-row">
+        <legend><%= pipeline.name %></legend>
+        <div class="schedule-controls">
+          <label class="schedule-enabled"><input type="checkbox" name="<%= id %>_enabled" <%= schedule.enabled ? 'checked' : '' %>> Enabled</label>
+          <label>Frequency<select name="<%= id %>_cadence" class="schedule-cadence">
+            <% ['daily', 'weekly', 'monthly', 'interval'].forEach(cadence => { %><option value="<%= cadence %>" <%= schedule.cadence === cadence ? 'selected' : '' %>><%= {daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', interval: 'Every few minutes'}[cadence] %></option><% }) %>
+          </select></label>
+          <label data-cadences="daily weekly monthly">Times <span class="field-help">HH:mm, separated by commas</span>
+            <input type="text" name="<%= id %>_times" value="<%= (schedule.times || ['08:00']).join(', ') %>" placeholder="08:00, 11:00" maxlength="166" required>
+          </label>
+          <label data-cadences="weekly">Weekday<select name="<%= id %>_weekday">
+            <% ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].forEach((day, index) => { %><option value="<%= index %>" <%= schedule.dayOfWeek === index ? 'selected' : '' %>><%= day %></option><% }) %>
+          </select></label>
+          <label data-cadences="monthly">Day of month<input type="number" min="1" max="31" name="<%= id %>_monthday" value="<%= schedule.dayOfMonth || 1 %>" required></label>
+          <label data-cadences="interval">Interval<select name="<%= id %>_interval">
+            <% [1,2,3,4,5,6,10,12,15,20,30,60].forEach(minutes => { %><option value="<%= minutes %>" <%= schedule.intervalMinutes === minutes ? 'selected' : '' %>><%= minutes %> minute<%= minutes === 1 ? '' : 's' %></option><% }) %>
+          </select></label>
+        </div>
+        <p class="schedule-next">Current next run: <%= nextRuns[id] ? formatNextRun(nextRuns[id]) : 'Disabled' %></p>
+      </fieldset>
+    <% }) %>
+    <p class="settings-help">Monthly dates that do not exist in a month are skipped. Fixed times in the missing spring hour are skipped; times in the repeated autumn hour run once.</p>
+    <div class="settings-actions"><button type="submit" class="btn-start">Save schedules</button></div>
+  </form>
+  <div class="schedule-twelve"><h3>Twelve</h3><p>Opening windows are managed in Rondo Club under Kassaomzet → Synchronisatie.</p><a href="<%= rondoUrl.replace(/\/$/, '') %>/financien/kassaomzet">Edit Twelve opening windows</a></div>
+</div>
+<script>
+  document.querySelectorAll('.schedule-row').forEach(row => {
+    const cadence = row.querySelector('.schedule-cadence');
+    function updateFields() {
+      row.querySelectorAll('[data-cadences]').forEach(label => {
+        const visible = label.dataset.cadences.split(' ').includes(cadence.value);
+        label.hidden = !visible;
+        label.querySelectorAll('input, select').forEach(control => { control.disabled = !visible; });
+      });
+    }
+    cadence.addEventListener('change', updateFields);
+    updateFields();
+  });
+</script>
+<%- include('partials/foot') %>

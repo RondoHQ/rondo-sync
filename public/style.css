@@ -808,6 +808,31 @@ body > form button:active {
 }
 
 /* Responsive layout */
+.settings-nav { margin-bottom: 1.5rem; gap: 1.5rem; }
+.settings-nav a[aria-current="page"] { color: #007bff; border-bottom-color: #007bff; }
+.schedule-row { border: 0; border-bottom: 1px solid #ddd; margin: 0 0 1.5rem; padding: 0 0 1rem; min-width: 0; }
+.schedule-row legend { font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem; padding: 0; }
+.schedule-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.schedule-controls label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.9rem; max-width: 100%; }
+.schedule-controls label[hidden] { display: none; }
+.schedule-controls .schedule-enabled { flex-direction: row; align-items: center; align-self: center; min-height: 44px; }
+.schedule-controls input:not([type="checkbox"]), .schedule-controls select { padding: 0.65rem; min-height: 44px; font: inherit; background: white; color: #333; border: 1px solid #bbb; border-radius: 4px; max-width: 100%; }
+.schedule-controls input[type="text"] { width: 275px; }
+.schedule-controls input[type="number"] { width: 120px; }
+.schedule-controls input[type="checkbox"] { width: 18px; height: 18px; accent-color: #007bff; }
+.schedule-controls :focus-visible, .settings-nav a:focus-visible { outline: 2px solid #007bff; outline-offset: 3px; }
+.field-help { color: #555; font-size: 0.8rem; }
+.schedule-next { color: #555; font-size: 0.85rem; margin-bottom: 0; }
+.schedule-twelve { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+.schedule-twelve h3 { font-size: 1rem; }
+@media (max-width: 600px) {
+  .dashboard main:has(.schedule-row) { padding: 1rem; }
+  .schedule-controls { align-items: stretch; }
+  .schedule-controls label { width: 100%; }
+  .schedule-controls input[type="text"] { width: 100%; }
+}
+
+/* Responsive layout */
 @media (max-width: 1024px) {
   .pipeline-grid {
     grid-template-columns: repeat(2, 1fr);

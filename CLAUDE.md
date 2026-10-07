@@ -198,6 +198,14 @@ non-definitive Sportlink registrations. They stay incomplete and automatic onboa
 blocked, but they count as skipped rather than failed because waiting is the expected outcome.
 Actual source fetch, validation, or write failures still make the People run partial.
 
+## Editable sync schedules
+
+Beheer → Sync schedules edits the ten automatic pipeline schedules in `data/sync-schedules.json` (private, atomic JSON writes). `lib/schedule-config.js` defines initial timings, validates saved settings and allowlists pipeline arguments. `lib/schedule.js` is shared by the minute dispatcher, dashboard and watchdog. Twelve opening windows remain in Rondo Club.
+
+`npm run install-cron` imports existing timings and replaces only this checkout's exact pipeline cron entries with `scripts/scheduler-tick.sh`. It runs as `rondo`, retains a private crontab backup and preserves unrelated jobs and UI edits. Unknown or duplicate legacy entries stop migration rather than silently changing timings. The tick's flock is closed before detached pipeline children are spawned; per-pipeline locks remain in `sync.sh`. Persistent dispatch state prevents a duplicate minute launch. Never run the dispatcher or installer locally.
+
+Schedules support daily/weekly/monthly HH:mm slots and intervals that divide an hour. Fixed autumn wall times run once, nonexistent spring times and nonexistent monthly dates are skipped. No catch-up occurs after downtime. Disabled schedules do not auto-heal. A changed cadence resets missed-run checks until its first eligible slot. Form saves require authentication, a session CSRF token and the current configuration revision. Settings pages do not auto-refresh.
+
 ## Run Tracking + Self-Heal Watchdog
 
 ### Adding a pipeline means touching three places, not one
@@ -232,7 +240,7 @@ Every lock must be `rondo:rondo`. One `sync.sh <pipeline>` run as root (instead 
 `sudo -u rondo`) permanently wedges that pipeline's cron.
 
 `heal-sync.sh` now compares each pipeline's newest `started_at` against a per-pipeline
-`stale_after_hours_for()` budget (longest crontab gap, roughly doubled) and prints a
+`stale_after_hours_for()` budget from the editable schedule and prints a
 `STALE` line plus a single summary line:
 
 ```
@@ -244,8 +252,7 @@ Staleness **never triggers a heal** — a pipeline that has not run has not fail
 re-running it could be wrong (deliberately disabled, host maintenance). It reports; a human
 decides. Exit codes are unchanged so the hourly routine's parsing keeps working.
 
-Keep `stale_after_hours_for()` in sync with crontab — a cadence change there without a
-change here yields either false alarms or a blind spot.
+`stale_after_hours_for()` reads the same configuration as the dispatcher. Do not add separate hardcoded timing budgets.
 
 ### Retention is tiered — a flat age cutoff cannot serve both ends of the cadence range
 

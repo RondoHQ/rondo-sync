@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.16.0] - 2026-10-07
+
+### Added
+- Editable sync schedules under Beheer: daily times, weekdays, monthly dates, minute intervals, and enabling/disabling each automated pipeline.
+- A minute dispatcher with persistent duplicate prevention and existing per-pipeline locking.
+
+### Changed
+- Use one persistent configuration for scheduled execution, dashboard predictions, and watchdog checks; disabled schedules skip automatic retries.
+- Migrate existing cron timings without changing unrelated jobs; Twelve opening windows remain managed in Rondo Club.
+- Prevent automatic page refresh while editing settings, and reject stale saves from another session.
+
 ## [0.15.2] - 2026-10-05
 
 ### Fixed
