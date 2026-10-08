@@ -1,10 +1,5 @@
 # Changelog
 
-## [0.16.3] - 2026-10-08
-
-### Fixed
-- Export `verjaardagsvoornaam` alongside each member birthdate for Laposta birthday campaigns, preserving the parent salutation used by ordinary newsletters. Standalone parent rows have no birthday name or birthdate.
-
 ## [0.16.2] - 2026-10-08
 
 ### Fixed
