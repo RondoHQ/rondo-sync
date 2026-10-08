@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.2] - 2026-10-08
+
+### Fixed
+- Match photo-sync profile responses to the requested member and a successful GET, so failed responses during redirects or session recovery cannot hide the loaded profile.
+- Retry a failed photo-profile read once before failing the job; uncertain uploads remain parked for review without automatic retries.
+
 ## [0.16.1] - 2026-10-08
 
 ### Fixed
