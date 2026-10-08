@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildAggregationMaps, processMembers } = require('../steps/prepare-laposta-members');
 
-const mapping = { voornaam: 'FirstName', tussenvoegsel: 'Infix', achternaam: 'LastName', team: 'UnionTeams' };
+const mapping = { voornaam: 'FirstName', tussenvoegsel: 'Infix', achternaam: 'LastName', team: 'UnionTeams', geboortedatum: 'DateOfBirth' };
 const child = (extra = {}) => ({
   PublicPersonId: 'CHILD1', FirstName: 'Sanne', Infix: 'de', LastName: 'Jong',
   Email: 'ouder@example.nl', EmailAddressParent1: 'ouder@example.nl', NameParent1: 'Petra',
@@ -16,7 +16,7 @@ test('primary address belonging to parent uses parent name and clears child surn
   const lists = prepare([child()]);
   assert.equal(lists.flat().length, 1);
   assert.deepEqual(lists[0][0].custom_fields, {
-    voornaam: 'Petra', tussenvoegsel: '', achternaam: '', team: 'JO12-1', huidigvrijwilliger: '0', oudervan: 'Sanne de Jong'
+    voornaam: 'Petra', tussenvoegsel: '', achternaam: '', team: 'JO12-1', huidigvrijwilliger: '0', oudervan: 'Sanne de Jong', verjaardagsvoornaam: ''
   });
 });
 
@@ -105,5 +105,46 @@ test('unavailable volunteer source omits every counter so Laposta retains last k
   const fields = prepare([child()]).flat()[0].custom_fields;
   for (const field of ['vrijwilligersplicht', 'vrijwilligersingepland', 'vrijwilligersafgerond']) {
     assert.equal(Object.hasOwn(fields, field), false);
+  }
+});
+
+test('shared parent mailbox keeps each birthday name paired with its own birthdate and identity', () => {
+  const family = [
+    child({ DateOfBirth: '2014-10-08' }),
+    child({ PublicPersonId: 'CHILD2', FirstName: 'Tim', DateOfBirth: '2016-02-03' }),
+    { PublicPersonId: 'PARENT', Email: 'ouder@example.nl', FirstName: 'Petra', LastName: 'Jong', DateOfBirth: '1980-04-05' }
+  ];
+  for (const members of [family, [...family].reverse()]) {
+    const lists = prepare(members);
+    assert.deepEqual(lists.map(list => list.length), [1, 1, 1, 0]);
+    for (const [index, member] of members.entries()) {
+      const entry = lists[index][0];
+      assert.equal(entry.email, 'ouder@example.nl');
+      assert.equal(entry.custom_fields.voornaam, 'Petra');
+      assert.equal(entry.custom_fields.verjaardagsvoornaam, member.FirstName);
+      assert.equal(entry.custom_fields.geboortedatum, member.DateOfBirth);
+    }
+  }
+});
+
+test('own and alternative parent addresses share the member birthday name, standalone parents have none', () => {
+  const entries = prepare([child({
+    Email: 'kind@example.nl', EmailAlternative: 'ouder@example.nl',
+    EmailAddressParent2: 'ander@example.nl', NameParent2: 'Pieter', DateOfBirth: '2014-10-08'
+  })]).flat();
+  for (const email of ['kind@example.nl', 'ouder@example.nl']) {
+    const fields = entries.find(entry => entry.email === email).custom_fields;
+    assert.equal(fields.verjaardagsvoornaam, 'Sanne');
+    assert.equal(fields.geboortedatum, '2014-10-08');
+  }
+  const parent = entries.find(entry => entry.email === 'ander@example.nl').custom_fields;
+  assert.equal(parent.voornaam, 'Pieter');
+  assert.equal(parent.geboortedatum, '');
+  assert.equal(parent.verjaardagsvoornaam, '');
+});
+
+test('missing first name or birthdate explicitly clears the birthday name', () => {
+  for (const member of [child(), child({ FirstName: '', DateOfBirth: '2014-10-08' })]) {
+    assert.equal(prepare([member]).flat()[0].custom_fields.verjaardagsvoornaam, '');
   }
 });

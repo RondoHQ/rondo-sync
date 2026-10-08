@@ -81,6 +81,12 @@ function buildBaseCustomFields(member, mapping) {
     customFields[lapostaField] = value;
   });
 
+  // Keep the birthday subject's name separate from the mailbox salutation.
+  // Explicitly clear missing names so a previous member's name cannot linger.
+  customFields.verjaardagsvoornaam = hasValue(customFields.geboortedatum)
+    ? buildMemberNameParts(member).voornaam
+    : '';
+
   return customFields;
 }
 
@@ -202,6 +208,7 @@ function clearStandaloneParentFields(customFields) {
     datumpasfoto: '',
     geslacht: '',
     geboortedatum: '',
+    verjaardagsvoornaam: '',
     lidsinds: '',
     mobielnummer: ''
   };
