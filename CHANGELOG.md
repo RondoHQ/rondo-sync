@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3] - 2026-10-08
+
+### Fixed
+- Keep member names and birthdays together in Laposta, with separate parent records across the existing four lists. Parent-only records do not inherit a child's birthdate or relation code.
+- Reuse parents who already have a member record, preserve occupied legacy contact slots, and retain existing parent placements on later syncs.
+- Respect existing opt-outs when adding parent records and stop preparation if the four lists cannot accommodate everyone.
+
 ## [0.16.2] - 2026-10-08
 
 ### Fixed

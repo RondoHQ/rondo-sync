@@ -14,6 +14,7 @@ const { normalizeEmail, isValidEmail, buildChildFullName, hasValue } = require('
 const { openDb: openRondoClubDb, getVolunteerStatusMap } = require('../lib/rondo-club-db');
 const { readEnv, parseCliArgs } = require('../lib/utils');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { fetchMembers } = require('../lib/laposta-client');
 const {
   fetchVolunteerObligationMaps,
   resolveLapostaObligationValue
@@ -202,6 +203,7 @@ function clearStandaloneParentFields(customFields) {
     datumpasfoto: '',
     geslacht: '',
     geboortedatum: '',
+    relatiecode: '',
     lidsinds: '',
     mobielnummer: ''
   };
@@ -319,7 +321,8 @@ function buildMemberEntry(params) {
     customFields.huidigvrijwilliger = '0';
   }
 
-  // Handle primary/alternative entries that share email with parent
+  // Member rows always describe the member, even when their mailbox belongs
+  // to a parent. A separate parent row supplies the parent's salutation.
   if (emailType === 'primary' || emailType === 'alternative') {
     const normalized = normalizeEmail(email);
     const parentEmail1 = normalizeEmail(member.EmailAddressParent1);
@@ -327,10 +330,6 @@ function buildMemberEntry(params) {
     const usesParentEmail = normalized && (normalized === parentEmail1 || normalized === parentEmail2);
 
     if (usesParentEmail) {
-      const parentNumber = normalized === parentEmail1 ? '1' : '2';
-      const parentName = memberNameMap.get(normalized)
-        || buildParentNameParts(member, `NameParent${parentNumber}`);
-      Object.assign(customFields, parentName);
       mergeOuderVan(customFields, parentNamesMap.get(normalized));
     } else {
       mergeOuderVan(customFields, parentNamesMap.get(normalized));
@@ -349,13 +348,14 @@ function buildMemberEntry(params) {
  * Build aggregation maps for parent data.
  * @param {Array} members - Sportlink members
  * @param {Object} mapping - Field mapping
- * @returns {{parentNamesMap: Map, parentTeamsMap: Map, parentAgeClassMap: Map, memberNameMap: Map}}
+ * @returns {{parentNamesMap: Map, parentTeamsMap: Map, parentAgeClassMap: Map, memberNameMap: Map, parentMemberEmails: Set}}
  */
 function buildAggregationMaps(members, mapping) {
   const teamFieldKey = mapping.team;
   const leeftijdFieldKey = mapping.leeftijdscategorie;
 
   const memberNameMap = new Map();
+  const parentMemberEmails = new Set();
   const parentNamesMap = new Map();
   const parentTeamsMap = new Map();
   const parentAgeClassMap = new Map();
@@ -383,19 +383,34 @@ function buildAggregationMaps(members, mapping) {
     const memberNames = new Map();
     for (const member of members) {
       if (recipient.children.has(member)) continue;
-      if (normalizeEmail(member.Email) !== email) continue;
+      if (normalizeEmail(member.Email) !== email && normalizeEmail(member.EmailAlternative) !== email) continue;
       const name = buildMemberNameParts(member);
       if (!name.voornaam && !name.achternaam) continue;
       memberNames.set(JSON.stringify(name).toLowerCase(), name);
     }
     if (memberNames.size === 1) {
       memberNameMap.set(email, memberNames.values().next().value);
+      parentMemberEmails.add(email);
     } else if (recipient.names.size === 1) {
       memberNameMap.set(email, recipient.names.values().next().value);
     } else if (recipient.names.size > 1 || memberNames.size > 1) {
       // Shared mailboxes with conflicting identities must not pick a person
       // based on Sportlink row order.
       memberNameMap.set(email, { voornaam: 'Ouder/verzorger', tussenvoegsel: '', achternaam: '' });
+    }
+
+    // A shared mailbox can contain multiple adult members. Reuse their rows
+    // only when every supplied parent name matches one distinct member name.
+    if (memberNames.size > 1 && recipient.names.size > 0) {
+      const normalizeName = value => String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+      const allParentsPresent = [...recipient.names.keys()].every(parentName => {
+        const matches = [...memberNames.values()].filter(name => [
+          name.voornaam,
+          [name.voornaam, name.tussenvoegsel, name.achternaam].filter(Boolean).join(' ')
+        ].some(value => normalizeName(value) === normalizeName(parentName)));
+        return matches.length === 1;
+      });
+      if (allParentsPresent) parentMemberEmails.add(email);
     }
   }
 
@@ -438,7 +453,20 @@ function buildAggregationMaps(members, mapping) {
       });
   });
 
-  return { parentNamesMap, parentTeamsMap, parentAgeClassMap, memberNameMap };
+  return { parentNamesMap, parentTeamsMap, parentAgeClassMap, memberNameMap, parentMemberEmails, parentRecipients };
+}
+
+/** Only reuse a live parent slot when its name and birthday provenance agree. */
+function isSameParentEntry(existing, desired, children) {
+  const name = fields => [fields.voornaam, fields.tussenvoegsel, fields.achternaam]
+    .filter(Boolean).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!name(desired) || name(existing) !== name(desired)) return false;
+  if (!hasValue(existing.geboortedatum)) return true;
+  const date = value => String(value || '').slice(0, 10).replace(/-/g, '');
+  // Some older parent rows inherited the child's birthdate and relation code.
+  // Clear those only when the birthday matches a linked child exactly.
+  return [...(children || [])].some(child => date(child.DateOfBirth) === date(existing.geboortedatum)
+    && (!existing.relatiecode || existing.relatiecode === child.PublicPersonId));
 }
 
 /**
@@ -448,108 +476,105 @@ function buildAggregationMaps(members, mapping) {
  * @param {Object} aggregationMaps - Maps from buildAggregationMaps
  * @returns {{listMembers: Array[], excludedCount: number}}
  */
-function processMembers(members, mapping, aggregationMaps, volunteerStatusMap, volunteerObligationMaps) {
-  const { parentNamesMap, parentTeamsMap, parentAgeClassMap, memberNameMap } = aggregationMaps;
-
-  // Build set of primary emails
-  const primaryEmails = new Set();
-  members.forEach(member => {
-    if (isValidEmail(member.Email)) {
-      primaryEmails.add(normalizeEmail(member.Email));
-    }
-  });
+function processMembers(members, mapping, aggregationMaps, volunteerStatusMap, volunteerObligationMaps, existingListMembers = []) {
+  const { parentNamesMap, parentTeamsMap, parentAgeClassMap, memberNameMap, parentMemberEmails, parentRecipients } = aggregationMaps;
 
   const listMembers = Array.from({ length: MAX_LISTS }, () => []);
   const emailAssignmentCount = new Map();
   const parentEmailAssigned = new Set();
+  const existingByEmail = Array.from({ length: MAX_LISTS }, (_, index) => new Map(
+    (existingListMembers[index] || []).map(entry => [normalizeEmail(entry.email), entry])
+  ));
+  const assignedEmails = Array.from({ length: MAX_LISTS }, () => new Set());
   let excludedCount = 0;
 
-  // Build map of email usage for deduplication
-  const emailUsageMap = new Map();
-  members.forEach((member, memberIndex) => {
-    EMAIL_FIELDS.forEach(({ key }) => {
-      const emailValue = member[key];
-      if (!isValidEmail(emailValue)) return;
-      const normalized = normalizeEmail(emailValue);
-      if (!emailUsageMap.has(normalized)) {
-        emailUsageMap.set(normalized, new Set());
-      }
-      emailUsageMap.get(normalized).add(memberIndex);
-    });
-  });
+  // Allocate every actual member first, then parents without their own member
+  // row. This prevents a synthetic parent from displacing a sibling's birthday.
+  for (const parentPass of [false, true]) {
+    members.forEach(member => {
+      const baseCustomFields = buildBaseCustomFields(member, mapping);
 
-  members.forEach(member => {
-    const baseCustomFields = buildBaseCustomFields(member, mapping);
-
-    // Add volunteer status from Rondo Club (not in field-mapping.json, comes from Rondo Club DB)
-    const knvbId = member.PublicPersonId;
-    if (knvbId && volunteerStatusMap.has(String(knvbId))) {
-      baseCustomFields.huidigvrijwilliger = String(volunteerStatusMap.get(String(knvbId)));
-    } else {
-      baseCustomFields.huidigvrijwilliger = '0';
-    }
-
-    const dedupeLocal = new Set();
-    const primaryEmail = member.Email;
-    const normalizedPrimary = isValidEmail(primaryEmail) ? normalizeEmail(primaryEmail) : '';
-
-    EMAIL_FIELDS.forEach(({ key, type }) => {
-      const emailValue = member[key];
-      if (!isValidEmail(emailValue)) return;
-
-      const normalized = normalizeEmail(emailValue);
-      if (dedupeLocal.has(normalized)) return;
-
-      // Skip parent1 if same as primary and only used once
-      if (type === 'parent1' && normalizedPrimary && normalized === normalizedPrimary) {
-        const usage = emailUsageMap.get(normalized);
-        if (usage && usage.size === 1) return;
+      // Add volunteer status from Rondo Club (not in field-mapping.json, comes from Rondo Club DB)
+      const knvbId = member.PublicPersonId;
+      if (knvbId && volunteerStatusMap.has(String(knvbId))) {
+        baseCustomFields.huidigvrijwilliger = String(volunteerStatusMap.get(String(knvbId)));
+      } else {
+        baseCustomFields.huidigvrijwilliger = '0';
       }
 
-      // Skip parent emails that are already primary emails
-      if ((type === 'parent1' || type === 'parent2') && primaryEmails.has(normalized)) return;
+      const dedupeLocal = new Set();
+      EMAIL_FIELDS.filter(({ type }) => type.startsWith('parent') === parentPass).forEach(({ key, type }) => {
+        const emailValue = member[key];
+        if (!isValidEmail(emailValue)) return;
 
-      // Skip parent emails already assigned
-      if ((type === 'parent1' || type === 'parent2') && parentEmailAssigned.has(normalized)) return;
+        const normalized = normalizeEmail(emailValue);
+        if (dedupeLocal.has(normalized)) return;
 
-      const isStandaloneParent = (type === 'parent1' || type === 'parent2') && !primaryEmails.has(normalized);
+        // The parent's own member row already has their identity and birthdate.
+        if (parentPass && parentMemberEmails.has(normalized)) return;
 
-      const newEntry = buildMemberEntry({
-        member,
-        email: emailValue.trim(),
-        emailType: type,
-        baseCustomFields,
-        parentNamesMap,
-        parentTeamsMap,
-        parentAgeClassMap,
-        memberNameMap,
-        isStandaloneParent
+        // Skip parent emails already assigned
+        if ((type === 'parent1' || type === 'parent2') && parentEmailAssigned.has(normalized)) return;
+
+        const isStandaloneParent = parentPass;
+
+        const newEntry = buildMemberEntry({
+          member,
+          email: emailValue.trim(),
+          emailType: type,
+          baseCustomFields,
+          parentNamesMap,
+          parentTeamsMap,
+          parentAgeClassMap,
+          memberNameMap,
+          isStandaloneParent
+        });
+
+        const obligationValue = resolveLapostaObligationValue(volunteerObligationMaps, {
+          knvbId,
+          email: emailValue,
+          emailType: type
+        });
+        if (obligationValue !== undefined) {
+          Object.assign(newEntry.custom_fields, obligationValue);
+        }
+
+        let usedCount = emailAssignmentCount.get(normalized) || 0;
+        if (parentPass) {
+          const available = listMembers.map((_, index) => index)
+            .filter(index => !assignedEmails[index].has(normalized));
+          const matching = available.find(index => {
+            const existing = existingByEmail[index].get(normalized);
+            return existing && isSameParentEntry(existing.custom_fields, newEntry.custom_fields, parentRecipients.get(normalized)?.children);
+          });
+          const unsubscribed = existingByEmail.some(list => {
+            const existing = list.get(normalized);
+            return existing && existing.state !== 'active';
+          });
+          // A new list entry must not work around an existing opt-out.
+          if (matching === undefined && unsubscribed) {
+            parentEmailAssigned.add(normalized);
+            return;
+          }
+          usedCount = matching ?? available.find(index => !existingByEmail[index].has(normalized)) ?? MAX_LISTS;
+        }
+        if (usedCount >= MAX_LISTS) {
+          excludedCount += 1;
+          if (parentPass) parentEmailAssigned.add(normalized);
+          return;
+        }
+
+        emailAssignmentCount.set(normalized, usedCount + 1);
+        listMembers[usedCount].push(newEntry);
+        assignedEmails[usedCount].add(normalized);
+        dedupeLocal.add(normalized);
+
+        if (type === 'parent1' || type === 'parent2') {
+          parentEmailAssigned.add(normalized);
+        }
       });
-
-      const obligationValue = resolveLapostaObligationValue(volunteerObligationMaps, {
-        knvbId,
-        email: emailValue,
-        emailType: type
-      });
-      if (obligationValue !== undefined) {
-        Object.assign(newEntry.custom_fields, obligationValue);
-      }
-
-      const usedCount = emailAssignmentCount.get(normalized) || 0;
-      if (usedCount >= MAX_LISTS) {
-        excludedCount += 1;
-        return;
-      }
-
-      emailAssignmentCount.set(normalized, usedCount + 1);
-      listMembers[usedCount].push(newEntry);
-      dedupeLocal.add(normalized);
-
-      if (type === 'parent1' || type === 'parent2') {
-        parentEmailAssigned.add(normalized);
-      }
     });
-  });
+  }
 
   return { listMembers, excludedCount };
 }
@@ -615,13 +640,26 @@ async function runPrepare(options = {}) {
       logVerbose(`Could not load volunteer obligations from Rondo Club: ${e.message}`);
     }
 
+    // Reserve live legacy contacts before allocating new parents; their identity
+    // must not be overwritten merely because a source row disappeared.
+    const existingListMembers = [];
+    for (const key of LIST_ENV_KEYS) {
+      const listId = readEnv(key);
+      existingListMembers.push(listId ? await fetchMembers(listId) : []);
+    }
+
     const { listMembers, excludedCount } = processMembers(
       members,
       mapping,
       aggregationMaps,
       volunteerStatusMap,
-      volunteerObligationMaps
+      volunteerObligationMaps,
+      existingListMembers
     );
+
+    if (excludedCount > 0) {
+      throw new Error(`Cannot fit ${excludedCount} member or parent entries in the four Laposta lists; existing prepared data was not changed.`);
+    }
 
     // Persist to database and calculate update counts
     const db = openDb();
