@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.16.1] - 2026-10-08
+
+### Fixed
+- Allow Twelve run history and manual starts in the dashboard by sharing the pipeline registry with the overview.
+
 ## [0.16.0] - 2026-10-07
 
 ### Added
