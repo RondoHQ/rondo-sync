@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0] - 2026-10-12
+
+### Added
+- GlitchTip reporting for pipeline failures, partial runs, crashes and dashboard server errors; outgoing events exclude member data, request data and raw messages.
+- Aggregate sync health endpoint using completed successful runs and editable schedules, including missed interval runs.
+- Resource-limited GlitchTip deployment with 30-day retention, Lettermint alerts and daily local backups.
+
 ## [0.16.3] - 2026-10-08
 
 ### Fixed

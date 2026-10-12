@@ -1,0 +1,9 @@
+[Unit]
+Description=Private local GlitchTip backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/opt/glitchtip/backup.sh

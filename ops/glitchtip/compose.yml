@@ -1,0 +1,33 @@
+name: rondo-glitchtip
+services:
+  postgres:
+    image: postgres:18
+    env_file: postgres.env
+    restart: unless-stopped
+    mem_limit: 512m
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U glitchtip']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: &logging
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+  web:
+    image: glitchtip/glitchtip:6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file: glitchtip.env
+    ports: ['127.0.0.1:8000:8000']
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 1.0
+    volumes:
+      - uploads:/code/uploads
+      - ./lettermint_backend.py:/code/lettermint_backend.py:ro
+    logging: *logging
+volumes:
+  pg-data:
+  uploads:
