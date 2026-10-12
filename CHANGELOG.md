@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.17.1] - 2026-10-12
+
+### Fixed
+- Treat a completed partial sync as running for uptime checks; its individual errors remain visible in GlitchTip without declaring a service outage.
+
 ## [0.17.0] - 2026-10-12
 
 ### Added

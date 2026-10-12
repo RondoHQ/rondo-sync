@@ -26,6 +26,8 @@ test('health detects a stopped interval pipeline despite recent schedule slots',
   pipeline.previousRun.started_at = '2026-10-12T11:55:00Z';
   assert.equal(isSyncHealthy([pipeline], schedules, now), true);
   pipeline.previousRun.outcome = 'partial';
+  assert.equal(isSyncHealthy([pipeline], schedules, now), true);
+  pipeline.previousRun.outcome = 'failure';
   assert.equal(isSyncHealthy([pipeline], schedules, now), false);
 });
 test('health allows disabled schedules and a changed schedule before its first due slot', () => {
