@@ -332,6 +332,10 @@ The Sportlink SPA's data endpoints require an in-page auth header that Playwrigh
 
 The working pattern (used by every Sportlink fetch in the repo): trigger the SPA to make the request itself — navigate to the matching member-details URL, optionally interact with UI to drive parameters (e.g. click the "Show inactive" toggle), and intercept the response with `page.waitForResponse(url => url.includes('/navajo/.../EndpointName'))`. See `fetchMemberTeamMemberships`, `fetchMemberFunctions` in `steps/download-functions-from-sportlink.js` for canonical examples. **Don't try to call the endpoints directly** — you'll just waste a TOTP code chasing a 401 that has no auth-side fix.
 
+### Team download authentication recovery
+
+`runTeamDownload()` captures exact GET responses for both team lists and all roster endpoints. An initial 401 may be followed by a successful SPA retry; if the response wait expires after a 401 or the page visibly reports an expired session, `readTeamPage()` calls `session.relogin()` once and re-reads every response for that page. Shared callers must pass `session` alongside `page` and retain ownership of closing it. A failed or malformed roster must abort before `clearTeamMembers()` so it cannot replace the cache with a partial snapshot.
+
 ### Player-history quarantine — manual skip list for Sportlink-broken members
 
 `fetchPlayerHistoryWithRetry()` retries a missing membership panel once after

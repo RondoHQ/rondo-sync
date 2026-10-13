@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.2] - 2026-10-13
+
+### Fixed
+- Recover team-list and roster downloads from temporary Sportlink 401 responses and visible session-expiry screens, with one session reauthentication if the page does not recover.
+- Preserve cached team members when any roster response fails or is incomplete.
+
 ## [0.17.1] - 2026-10-12
 
 ### Fixed

@@ -12,6 +12,8 @@ Laposta receives three current-season volunteer counters from Rondo: `vrijwillig
 
 Player-history checks exclude obsolete and retired Sportlink identities while retaining their recovery mappings. A member who returns in a fresh source import becomes eligible again. Team-name whitespace is normalized to prevent duplicate history on repeated imports. Unmatched current team roles still require review; missing source history never clears them automatically.
 
+Team downloads wait for Sportlink to recover temporary authentication failures and retry once after logging in again if needed. Failed or incomplete roster downloads preserve the existing team-member snapshot.
+
 ## Twelve export comparison (read-only)
 
 The standalone comparison tools use the normal back-office login and CSV export

@@ -9,6 +9,43 @@ const {
 const { SportlinkSession } = require('../lib/sportlink-session');
 const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../lib/log-adapters');
 
+/** Read all responses for one SPA page before accepting its snapshot. */
+async function readTeamPage(page, url, endpoints, session, logger, timeout = 60000) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // Sportlink can refresh its token and retry a 401 in the page itself.
+    // Observe that retry, but retain the 401 if no usable response follows.
+    const waits = endpoints.map(endpoint => {
+      let unauthorized = false;
+      return page.waitForResponse(response => {
+        if (!new URL(response.url()).pathname.endsWith('/' + endpoint) ||
+            response.request().method() !== 'GET') return false;
+        if (response.status() === 401) {
+          unauthorized = true;
+          return false;
+        }
+        return true;
+      }, { timeout }).then(response => ({ response }), error => ({ error, unauthorized }));
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const results = await Promise.all(waits);
+    const loggedOut = results.some(result => result.error) && await page
+      .getByText('Je bent uitgelogd omdat je een tijdje niet actief was.', { exact: true })
+      .isVisible().catch(() => false);
+    if ((results.some(result => result.unauthorized) || loggedOut) && session && attempt === 0) {
+      logger.verbose('Team request remained unauthorized; logging in again and retrying once');
+      await session.relogin();
+      continue;
+    }
+    return results.map((result, index) => {
+      if (result.unauthorized) throw new Error(`${endpoints[index]} request failed (401)`);
+      if (loggedOut) throw new Error('Sportlink session expired while loading teams');
+      if (result.error) throw result.error;
+      if (!result.response.ok()) throw new Error(`${endpoints[index]} request failed (${result.response.status()})`);
+      return result.response;
+    });
+  }
+}
+
 /**
  * Download team data from Sportlink including player/staff roles
  * @param {Object} options
@@ -16,6 +53,7 @@ const { createLoggerAdapter, createDebugLogger, isDebugEnabled } = require('../l
  * @param {boolean} [options.verbose=false] - Verbose mode
  * @param {boolean} [options.rosters=true] - Set false for a read-only team-list snapshot without roster downloads or database writes.
  * @param {Object} [options.page] - Shared Playwright page (already logged in). If provided, skips browser launch and login.
+ * @param {SportlinkSession} [options.session] - Session owner for recovery when sharing a page.
  * @returns {Promise<{success: boolean, teamCount: number, memberCount: number, error?: string}>}
  */
 async function runTeamDownload(options = {}) {
@@ -45,22 +83,9 @@ async function runTeamDownload(options = {}) {
       // Step 1: Navigate to union teams page and capture teams list
       logVerbose('Fetching union teams list...');
 
-      const teamsResponsePromise = page.waitForResponse(
-        resp => resp.url().includes('/navajo/entity/common/clubweb/team/UnionTeams') &&
-                !resp.url().includes('Players') &&
-                !resp.url().includes('NonPlayers') &&
-                resp.request().method() === 'GET',
-        { timeout: 60000 }
-      );
-
-      await page.goto('https://club.sportlink.com/teams/union-teams', { waitUntil: 'domcontentloaded' });
-
-      const teamsResponse = await teamsResponsePromise;
-      if (!teamsResponse.ok()) {
-        const errorMsg = `Teams request failed (${teamsResponse.status()})`;
-        logError(errorMsg);
-        return { success: false, teamCount: 0, memberCount: 0, error: errorMsg };
-      }
+      const [teamsResponse] = await readTeamPage(page,
+        'https://club.sportlink.com/teams/union-teams', ['UnionTeams'],
+        session || options.session, { verbose: logVerbose });
 
       const teamsData = await teamsResponse.json();
       if (!Array.isArray(teamsData.Team)) throw new Error('Incomplete UnionTeams response');
@@ -82,22 +107,9 @@ async function runTeamDownload(options = {}) {
       // Step 1b: Navigate to club teams page and capture club teams list
       logVerbose('Fetching club teams list...');
 
-      const clubTeamsResponsePromise = page.waitForResponse(
-        resp => resp.url().includes('/navajo/entity/common/clubweb/team/ClubTeams') &&
-                !resp.url().includes('Players') &&
-                !resp.url().includes('NonPlayers') &&
-                resp.request().method() === 'GET',
-        { timeout: 60000 }
-      );
-
-      await page.goto('https://club.sportlink.com/teams/club-teams', { waitUntil: 'domcontentloaded' });
-
-      const clubTeamsResponse = await clubTeamsResponsePromise;
-      if (!clubTeamsResponse.ok()) {
-        const errorMsg = `Club teams request failed (${clubTeamsResponse.status()})`;
-        logError(errorMsg);
-        return { success: false, teamCount: 0, memberCount: 0, error: errorMsg };
-      }
+      const [clubTeamsResponse] = await readTeamPage(page,
+        'https://club.sportlink.com/teams/club-teams', ['ClubTeams'],
+        session || options.session, { verbose: logVerbose });
 
       const clubTeamsData = await clubTeamsResponse.json();
       if (!Array.isArray(clubTeamsData.Team)) throw new Error('Incomplete ClubTeams response');
@@ -156,27 +168,16 @@ async function runTeamDownload(options = {}) {
         const playersPattern = isClubTeam ? '/ClubTeamPlayers' : '/UnionTeamPlayers';
         const nonPlayersPattern = isClubTeam ? '/ClubTeamNonPlayers' : '/UnionTeamNonPlayers';
 
-        // Set up listeners for both players and non-players responses
-        const playersResponsePromise = page.waitForResponse(
-          resp => resp.url().includes(playersPattern) &&
-                  resp.request().method() === 'GET',
-          { timeout: 10000 }
-        ).catch(() => null);
-
-        const nonPlayersResponsePromise = page.waitForResponse(
-          resp => resp.url().includes(nonPlayersPattern) &&
-                  resp.request().method() === 'GET',
-          { timeout: 10000 }
-        ).catch(() => null);
-
-        await page.goto(teamMembersUrl, { waitUntil: 'commit' });
+        const [playersResponse, nonPlayersResponse] = await readTeamPage(page,
+          teamMembersUrl, [playersPattern.slice(1), nonPlayersPattern.slice(1)],
+          session || options.session, { verbose: logVerbose });
 
         // Process players response
-        const playersResponse = await playersResponsePromise;
         if (playersResponse && playersResponse.ok()) {
           try {
             const playersData = await playersResponse.json();
-            const players = Array.isArray(playersData.Person) ? playersData.Person : [];
+            if (!Array.isArray(playersData.Person)) throw new Error('Incomplete team players response');
+            const players = playersData.Person;
             logDebug(`  Found ${players.length} players`);
 
             for (const player of players) {
@@ -197,16 +198,16 @@ async function runTeamDownload(options = {}) {
             team.player_count = players.length;
             totalMemberCount += players.length;
           } catch (err) {
-            logDebug(`  Error parsing players: ${err.message}`);
+            throw new Error(`Invalid team players response: ${err.message}`);
           }
         }
 
         // Process non-players (staff) response
-        const nonPlayersResponse = await nonPlayersResponsePromise;
         if (nonPlayersResponse && nonPlayersResponse.ok()) {
           try {
             const nonPlayersData = await nonPlayersResponse.json();
-            const staff = Array.isArray(nonPlayersData.Person) ? nonPlayersData.Person : [];
+            if (!Array.isArray(nonPlayersData.Person)) throw new Error('Incomplete team staff response');
+            const staff = nonPlayersData.Person;
             logDebug(`  Found ${staff.length} staff members`);
 
             for (const person of staff) {
@@ -227,7 +228,7 @@ async function runTeamDownload(options = {}) {
             team.staff_count = staff.length;
             totalMemberCount += staff.length;
           } catch (err) {
-            logDebug(`  Error parsing staff: ${err.message}`);
+            throw new Error(`Invalid team staff response: ${err.message}`);
           }
         }
 
