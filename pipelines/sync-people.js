@@ -463,7 +463,7 @@ async function runPeopleSync(options = {}) {
 
     const onboardingStep = tracker.startStep('onboarding-source-checks');
     try {
-      const checked = await runSourceChecks({ ...downloadResult, page: await sportlinkSession.getPage(), logger });
+      const checked = await runSourceChecks({ ...downloadResult, page: await sportlinkSession.getPage(), session: sportlinkSession, logger });
       stats.onboarding = checked;
       stats.errors.push(...checked.errors.map(error => ({ ...error, system: 'onboarding' })));
       tracker.endStep(onboardingStep, {

@@ -17,6 +17,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
+const { waitForSourceResponse } = require('../lib/sportlink-source-retry');
 const { loginToSportlink } = require('../lib/sportlink-login');
 const { createLoggerAdapter, createDebugLogger } = require('../lib/log-adapters');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
@@ -203,25 +204,36 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger, { strict = fal
   const otherUrl = `https://club.sportlink.com/member/member-details/${knvbId}/other`;
 
   // Set up promises BEFORE navigation (existing pattern)
-  const freeFieldsPromise = page.waitForResponse(
-    resp => resp.url().includes('/remarks/MemberFreeFields?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const freeFieldsPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/remarks/MemberFreeFields?')
+  );
 
-  // NEW: Add MemberHeader promise in parallel
-  const memberHeaderPromise = page.waitForResponse(
-    resp => resp.url().includes('/member/MemberHeader?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  // Read the header in parallel, including the SPA's token-refresh retry.
+  const memberHeaderPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/member/MemberHeader?')
+  );
 
   logger.verbose(`  Navigating to ${otherUrl}...`);
   await page.goto(otherUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   // Await both responses
-  const [freeFieldsResponse, memberHeaderResponse] = await Promise.all([
+  const responses = await Promise.all([
     freeFieldsPromise,
     memberHeaderPromise
   ]);
+  if (strict) {
+    const failed = responses.find(result => result.error?.code === 'ERR_SPORTLINK_SESSION_EXPIRED')
+      || responses.find(result => result.error);
+    if (failed) throw failed.error;
+    for (const { response } of responses) {
+      if (!response.ok()) {
+        const error = new Error(`Sportlink VOG source request failed (${response.status()})`);
+        if (response.status() >= 500) error.code = 'ERR_SPORTLINK_SOURCE_INCOMPLETE';
+        throw error;
+      }
+    }
+  }
+  const [freeFieldsResponse, memberHeaderResponse] = responses.map(result => result.response);
 
   // Parse FreeFields response
   let freeFieldsData = null;
@@ -244,7 +256,9 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger, { strict = fal
   }
 
   if (strict && (!freeFieldsData?.FreeFields || !Object.hasOwn(freeFieldsData.FreeFields.Remarks8 || {}, 'Value') || !memberHeaderData)) {
-    throw new Error('Incomplete MemberFreeFields/MemberHeader response; VOG coverage not confirmed');
+    throw Object.assign(new Error('Incomplete MemberFreeFields/MemberHeader response; VOG coverage not confirmed'), {
+      code: 'ERR_SPORTLINK_SOURCE_INCOMPLETE'
+    });
   }
 
   // Merge both data sources
@@ -601,14 +615,14 @@ async function fetchMemberFunctions(page, knvbId, logger, { strict = false } = {
  * @param {Object} logger - Logger instance
  * @returns {Promise<Array>} Array of Team entries
  */
-async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false } = {}) {
+async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false, retryPanel = true } = {}) {
   const membershipsUrl = `https://club.sportlink.com/member/member-details/${knvbId}/memberships`;
 
   // The showInactive toggle is rendered asynchronously by the SPA after the
   // load event fires. The panel occasionally misses its first render after a
   // sequence of member-detail navigations, so reload it once before failing.
   let panelLoaded = false;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= (retryPanel ? 2 : 1); attempt++) {
     logger.verbose(`  Navigating to ${membershipsUrl}...`);
     await page.goto(membershipsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     // Sportlink pages often keep background requests open; avoid strict networkidle waits.
@@ -623,7 +637,7 @@ async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false
         error.code = 'ERR_SPORTLINK_MEMBER_NOT_FOUND';
         throw error;
       }
-      if (attempt === 1) logger.verbose('  MemberTeams panel did not render; retrying once...');
+      if (retryPanel && attempt === 1) logger.verbose('  MemberTeams panel did not render; retrying once...');
     }
   }
 
@@ -642,12 +656,12 @@ async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false
   // miss the SPA's auth header. Instead, set up a response intercept and let
   // the SPA fire the request itself when we toggle showInactive — its native
   // call carries the right credentials.
-  const responsePromise = page.waitForResponse(
+  const responsePromise = waitForSourceResponse(page,
     resp =>
       resp.url().includes('/navajo/entity/common/clubweb/member/team/MemberTeams') &&
       resp.url().includes('ShowInactive=true') &&
       resp.request().method() === 'GET',
-    { timeout: 30000 }
+    30000
   );
 
   for (const toggle of inactiveToggles) {
@@ -660,12 +674,8 @@ async function fetchMemberTeamMemberships(page, knvbId, logger, { strict = false
     }
   }
 
-  let response;
-  try {
-    response = await responsePromise;
-  } catch (err) {
-    throw new Error(`MemberTeams request not captured: ${err.message}`);
-  }
+  const { response, error } = await responsePromise;
+  if (error) throw error;
 
   if (!response.ok()) {
     throw new Error(`MemberTeams request failed (${response.status()} ${response.statusText()})`);

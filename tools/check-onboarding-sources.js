@@ -17,7 +17,7 @@ async function main() {
   try {
     const source = await runDownload({ logger, session, page: await session.getPage() });
     if (!source.success || !source.sourceComplete) throw new Error('Incomplete Sportlink search: inventory unchanged');
-    const result = await runSourceChecks({ ...source, page: await session.getPage(), logger, checkIds, inventoryOnly: process.argv.includes('--inventory-only') });
+    const result = await runSourceChecks({ ...source, page: await session.getPage(), session, logger, checkIds, inventoryOnly: process.argv.includes('--inventory-only') });
     logger.log(JSON.stringify(result));
     process.exitCode = result.errors.length ? 2 : 0;
   } finally {

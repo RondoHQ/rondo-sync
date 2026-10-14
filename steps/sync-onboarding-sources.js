@@ -1,5 +1,6 @@
 const { rondoClubRequest } = require('../lib/rondo-club-client');
 const { sourceRecord, checkSource, assertTeamHistoryComplete } = require('../lib/onboarding-source');
+const { readSourceWithRecovery } = require('../lib/sportlink-source-retry');
 const { openDb, upsertMembers, getMemberInvoiceDataByKnvbId, getFreeFieldMappings, upsertMemberFreeFields, retireMemberIdentity, updateSyncState } = require('../lib/rondo-club-db');
 const { fetchPersonFollowingMerge, hasConflictingKnvbId } = require('../lib/rondo-person-merge');
 const { preparePerson } = require('./prepare-rondo-club-members');
@@ -61,7 +62,7 @@ async function verifyParentSources({ personId, general, saved, request }) {
 }
 
 /** The existing people pipeline owns the browser and serializes these targeted reads. */
-async function runSourceChecks({ members, observedAt, sourceComplete, page, logger, inventoryOnly = false, checkIds = [], request: requestOverride, openDatabase = openDb }) {
+async function runSourceChecks({ members, observedAt, sourceComplete, page, session, logger, inventoryOnly = false, checkIds = [], request: requestOverride, openDatabase = openDb }) {
   if (!sourceComplete) return {
     checked: 0,
     complete: 0,
@@ -96,10 +97,10 @@ async function runSourceChecks({ members, observedAt, sourceComplete, page, logg
         }
         const outcome = await checkSource({ candidate, member, request, steps: {
           personId: async () => lookup()?.rondo_club_id || null,
-          fetch: key => ({
+          fetch: key => readSourceWithRecovery({ page, session, logger }, currentPage => ({
             person: fetchMemberGeneralData, functions: fetchMemberFunctions,
             vog: fetchMemberDataFromOtherPage, teams: fetchMemberTeamMemberships
-          })[key](page, id, logger, { strict: true }),
+          })[key](currentPage, id, logger, { strict: true, retryPanel: false })),
           person: async (general, freeFields) => {
             if (!lookup()?.rondo_club_id) throw new Error('Regular member import must resolve the identity before source completion');
             // Enrollment proof comes from this run's complete SearchMembers response.

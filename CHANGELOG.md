@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.3] - 2026-10-14
+
+### Fixed
+- Wait for Sportlink token-refresh responses when reading VOG data and retry onboarding source reads once, renewing an expired shared session before retrying.
+- Preserve strict source validation and avoid nested retries for unavailable team panels; incomplete reads never become confirmed empty data.
+
 ## [0.17.2] - 2026-10-13
 
 ### Fixed
