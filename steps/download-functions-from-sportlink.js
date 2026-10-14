@@ -17,7 +17,7 @@ const {
 } = require('../lib/rondo-club-db');
 const { createSyncLogger } = require('../lib/logger');
 const { SportlinkSession } = require('../lib/sportlink-session');
-const { waitForSourceResponse } = require('../lib/sportlink-source-retry');
+const { waitForSourceResponse, sourceResponses } = require('../lib/sportlink-source-retry');
 const { loginToSportlink } = require('../lib/sportlink-login');
 const { createLoggerAdapter, createDebugLogger } = require('../lib/log-adapters');
 const { rondoClubRequest } = require('../lib/rondo-club-client');
@@ -221,19 +221,7 @@ async function fetchMemberDataFromOtherPage(page, knvbId, logger, { strict = fal
     freeFieldsPromise,
     memberHeaderPromise
   ]);
-  if (strict) {
-    const failed = responses.find(result => result.error?.code === 'ERR_SPORTLINK_SESSION_EXPIRED')
-      || responses.find(result => result.error);
-    if (failed) throw failed.error;
-    for (const { response } of responses) {
-      if (!response.ok()) {
-        const error = new Error(`Sportlink VOG source request failed (${response.status()})`);
-        if (response.status() >= 500) error.code = 'ERR_SPORTLINK_SOURCE_INCOMPLETE';
-        throw error;
-      }
-    }
-  }
-  const [freeFieldsResponse, memberHeaderResponse] = responses.map(result => result.response);
+  const [freeFieldsResponse, memberHeaderResponse] = sourceResponses(responses, strict);
 
   // Parse FreeFields response
   let freeFieldsData = null;
@@ -426,35 +414,31 @@ async function fetchMemberGeneralData(page, knvbId, logger, { strict = false } =
   const generalUrl = `https://club.sportlink.com/member/member-details/${knvbId}/general`;
 
   // Set up promises BEFORE navigation to capture API responses
-  const personDataPromise = page.waitForResponse(
-    resp => resp.url().includes('/member/persondata/MemberPersonData?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const personDataPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/member/persondata/MemberPersonData?')
+  );
 
-  const communicationPromise = page.waitForResponse(
-    resp => resp.url().includes('/member/persondata/MemberCommunication?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const communicationPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/member/persondata/MemberCommunication?')
+  );
 
-  const addressesPromise = page.waitForResponse(
-    resp => resp.url().includes('/member/persondata/MemberAddresses?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const addressesPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/member/persondata/MemberAddresses?')
+  );
 
-  const parentalInfoPromise = page.waitForResponse(
-    resp => resp.url().includes('/member/MemberParentalInfo?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const parentalInfoPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/member/MemberParentalInfo?')
+  );
 
   logger.verbose(`  Navigating to ${generalUrl}...`);
   await page.goto(generalUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
-  const [personDataResponse, communicationResponse, addressesResponse, parentalInfoResponse] = await Promise.all([
+  const [personDataResponse, communicationResponse, addressesResponse, parentalInfoResponse] = sourceResponses(await Promise.all([
     personDataPromise,
     communicationPromise,
     addressesPromise,
     parentalInfoPromise
-  ]);
+  ]), strict);
 
   // Parse responses
   let personData = null;
@@ -545,24 +529,22 @@ async function fetchMemberFunctions(page, knvbId, logger, { strict = false } = {
 
   // Set up promises to wait for both responses
   // Use precise URL matching to avoid capturing UnionMemberFunctions instead of MemberFunctions
-  const functionsPromise = page.waitForResponse(
-    resp => resp.url().includes('/function/MemberFunctions?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const functionsPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/function/MemberFunctions?')
+  );
 
-  const committeesPromise = page.waitForResponse(
-    resp => resp.url().includes('/function/MemberCommittees?'),
-    { timeout: 15000 }
-  ).catch(() => null);
+  const committeesPromise = waitForSourceResponse(page,
+    resp => resp.url().includes('/function/MemberCommittees?')
+  );
 
   logger.verbose(`  Navigating to ${functionsUrl}...`);
   await page.goto(functionsUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
   // Wait for both responses (or timeout)
-  const [functionsResponse, committeesResponse] = await Promise.all([
+  const [functionsResponse, committeesResponse] = sourceResponses(await Promise.all([
     functionsPromise,
     committeesPromise
-  ]);
+  ]), strict);
 
   // Parse the responses
   let functionsData = null;

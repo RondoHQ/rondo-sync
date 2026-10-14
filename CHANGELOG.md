@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.4] - 2026-10-14
+
+### Fixed
+- Trust complete validated Sportlink responses when a stale logout notice remains visible; only renew sessions after an actual source read failure.
+- Wait for the identity-provider redirect after OTP submission and observe token-refresh retries consistently across onboarding source endpoints.
+
 ## [0.17.3] - 2026-10-14
 
 ### Fixed

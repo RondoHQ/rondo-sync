@@ -32,7 +32,11 @@ test('session recovery reacquires the page and reads only twice', async () => {
   const pages = [pageState(true), pageState()];
   const visited = [];
   const session = { getPage: async () => pages[logins], relogin: async () => { logins++; } };
-  const result = await readSourceWithRecovery({ session }, async page => { visited.push(page); return []; });
+  const result = await readSourceWithRecovery({ session }, async page => {
+    visited.push(page);
+    if (page === pages[0]) throw failure('ERR_SPORTLINK_SOURCE_INCOMPLETE');
+    return [];
+  });
   assert.deepEqual(result, []);
   assert.equal(logins, 1);
   assert.deepEqual(visited, pages);
@@ -41,10 +45,15 @@ test('session recovery reacquires the page and reads only twice', async () => {
 test('persistent expiry is not accepted after reauthentication', async () => {
   let reads = 0, logins = 0;
   const session = { getPage: async () => pageState(true), relogin: async () => { logins++; } };
-  await assert.rejects(readSourceWithRecovery({ session }, async () => { reads++; return {}; }),
+  await assert.rejects(readSourceWithRecovery({ session }, async () => { reads++; throw failure('ERR_SPORTLINK_SESSION_EXPIRED'); }),
     { code: 'ERR_SPORTLINK_SESSION_EXPIRED' });
   assert.equal(reads, 2);
   assert.equal(logins, 1);
+});
+
+test('a stale logout toast cannot invalidate complete source data or trigger another login', async () => {
+  const session = { getPage: async () => pageState(true), relogin: async () => assert.fail('unnecessary login') };
+  assert.deepEqual(await readSourceWithRecovery({ session }, async () => []), []);
 });
 
 test('missing panel and incomplete data get only one retry without needless login', async () => {
