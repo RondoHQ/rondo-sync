@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18.0] - 2026-10-15
+
+### Added
+
+- Privacy-filtered GlitchTip performance measurements with bounded data volume and an independent performance disable switch.
+
 ## [0.17.5] - 2026-10-15
 
 ### Fixed

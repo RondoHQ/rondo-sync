@@ -230,3 +230,10 @@ Reports include hourly basket details for Rondo’s Drukte & bezetting view. Foo
 classification stays in Rondo; split payments count once and product revenue
 reconciles to daily totals. Old snapshots can be replayed to add the new details.
 Snapshots are private and retained for audit. See CLAUDE.md for invariants.
+
+## Performance monitoring
+
+RunTracker reports privacy-filtered timings per run and step to GlitchTip, with
+aggregate counts only. Set `GLITCHTIP_PERFORMANCE=false` to disable these timings
+without changing error reporting. See `ops/glitchtip/README.md` for retention,
+sampling, and verification across Club, Sync and the website.

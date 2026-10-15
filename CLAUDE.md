@@ -436,3 +436,10 @@ get zero progress. Missing or invalid source counts omit all three fields from
 Laposta updates, preserving the last known values. All four configured lists must
 have these numeric fields; keep them off public subscription forms. Preserve
 subscription state and notification suppression during updates.
+
+## Performance monitoring
+
+RunTracker reports privacy-filtered timings per run and step to GlitchTip, with
+aggregate counts only. Set `GLITCHTIP_PERFORMANCE=false` to disable these timings
+without changing error reporting. See `ops/glitchtip/README.md` for retention,
+sampling, and verification across Club, Sync and the website.

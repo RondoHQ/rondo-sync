@@ -48,3 +48,28 @@ original GlitchTip secret key when restoring the environment.
 The initial database backup was restored into a temporary database and its three
 projects were verified. TLS, SDK ingestion, privacy filtering and frontend source
 resolution are checked separately from deployment success.
+
+## Performance monitoring
+
+Club React and website page views sample 10%; PHP REST requests inherit a parent
+sampling decision or sample 10%. Sync sends one transaction per completed run and
+step, including long steps, using the existing RunTracker timestamps. It sends
+aggregate created/updated/skipped/failed counts, never a member-level span.
+All SDKs use the static transaction envelope supported by the deployed server.
+Performance payloads have separate allowlist filters; error-event filters do not
+protect transactions. No request bodies, query strings, user fields or raw SQL
+are collected. Route parameters become placeholders.
+
+Disable independently with WordPress constants `RONDO_GLITCHTIP_REACT_PERFORMANCE`
+and `RONDO_GLITCHTIP_PHP_PERFORMANCE` (false), Sync `GLITCHTIP_PERFORMANCE=false`,
+website build variable `PUBLIC_GLITCHTIP_PERFORMANCE=false`, and Pages runtime
+`GLITCHTIP_PERFORMANCE=false`. Error reporting remains enabled. The website
+contact handler samples all POST requests subject to a soft 1,000/day KV budget;
+KV's eventual consistency means concurrent requests can exceed that budget.
+If its dedicated PERFORMANCE_BUDGET binding is absent/unavailable, contact traces are dropped.
+
+Set `GLITCHTIP_TRANSACTION_RETENTION_DAYS=14` and
+`GLITCHTIP_SPAN_RAW_RETENTION_DAYS=14` in the private GlitchTip environment;
+keep error retention at 30 days. Back up before recreating the web container.
+After rollout verify TransactionGroup counts, recent span names, and storage
+usage on the server. Incoming HTTP success alone does not prove ingestion.
