@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.17.5] - 2026-10-15
+
+### Fixed
+- Separate GlitchTip sync errors by pipeline, step, and an allowlisted error code so unrelated failures no longer share one issue; keep raw messages and member data in private local logs.
+
 ## [0.17.4] - 2026-10-14
 
 ### Fixed
