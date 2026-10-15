@@ -35,7 +35,7 @@ separately. Failed or missing runs return 503. The route exposes aggregate statu
 
 `rondo-glitchtip-backup.timer` runs daily around 04:20 server time. The private
 archives in `/opt/glitchtip/backups` contain a PostgreSQL custom-format dump,
-uploads, Compose configuration and secret environment files. Retention is 14 days.
+uploads, performance cold storage, Compose configuration and secret environment files. Retention is 14 days.
 These are **local backups**; a lost VPS also loses these archives. Existing external
 Rondo Sync heartbeat monitoring remains in place to detect a lost VPS.
 
@@ -73,3 +73,11 @@ Set `GLITCHTIP_TRANSACTION_RETENTION_DAYS=14` and
 keep error retention at 30 days. Back up before recreating the web container.
 After rollout verify TransactionGroup counts, recent span names, and storage
 usage on the server. Incoming HTTP success alone does not prove ingestion.
+
+Detailed spans require `GLITCHTIP_ENABLE_DUCKDB=true` and
+`GLITCHTIP_COLD_STORAGE_DIR=/code/cold-storage`. The dedicated `cold-storage`
+Docker volume must be owned by the image app user (5000:5000); it is not served
+by the public web server. The existing daily backup includes `cold-storage.tar`;
+restore it into that volume alongside the database and uploads. DuckDB also
+handles event archival using the existing 30-day error retention. The same
+1.5 GiB container memory limit remains in force.

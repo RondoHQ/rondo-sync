@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18.1] - 2026-10-15
+
+### Fixed
+
+- Persist GlitchTip performance spans in a dedicated cold-storage volume and include it in daily backups.
+
 ## [0.18.0] - 2026-10-15
 
 ### Added

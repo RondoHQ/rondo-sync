@@ -26,8 +26,10 @@ services:
     cpus: 1.0
     volumes:
       - uploads:/code/uploads
+      - cold-storage:/code/cold-storage
       - ./lettermint_backend.py:/code/lettermint_backend.py:ro
     logging: *logging
 volumes:
   pg-data:
   uploads:
+  cold-storage:

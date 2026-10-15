@@ -10,6 +10,7 @@ staging=$(mktemp -d backups/.staging-XXXXXX)
 trap 'rm -rf "$staging"' EXIT
 docker compose exec -T postgres pg_dump -U glitchtip -Fc glitchtip > "$staging/database.dump"
 docker compose exec -T web tar -cf - -C /code uploads > "$staging/uploads.tar"
+docker compose exec -T web tar -cf - -C /code cold-storage > "$staging/cold-storage.tar"
 cp compose.yml postgres.env glitchtip.env lettermint_backend.py "$staging/"
 tar -czf "backups/$stamp.tar.gz" -C "$staging" .
 # Only complete GlitchTip archives older than fourteen days are pruned.
