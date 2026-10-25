@@ -14,6 +14,21 @@ Player-history checks exclude obsolete and retired Sportlink identities while re
 
 Team downloads wait for Sportlink to recover temporary authentication failures and retry once after logging in again if needed. Failed or incomplete roster downloads preserve the existing team-member snapshot.
 
+## Laposta request recovery
+
+All Laposta calls in a sync process share a queue with at least 2.5 seconds
+between request starts, including list changes and cleanup reads. HTTP 429
+responses are retried up to three times, respecting Laposta's `Retry-After`
+header (see [Laposta's API documentation](https://api.laposta.nl/doc/index.nl.php)).
+Missing or invalid headers use increasing delays. A cooldown over 60 seconds
+is reported as a failure without retrying early; each HTTP attempt has a
+45-second deadline. Network failures and other HTTP errors are not replayed,
+so an uncertain write cannot be duplicated. Existing subscription and email
+notification protections remain in place. Failed items stay eligible for the
+next normal sync; a partial result remains visible if recovery is exhausted.
+The queue is per process; overlapping pipelines can still receive a 429 and
+use the same bounded retry behavior.
+
 ## Twelve export comparison (read-only)
 
 The standalone comparison tools use the normal back-office login and CSV export

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18.2] - 2026-10-25
+
+### Fixed
+
+- Pace all Laposta requests across lists and steps, retry explicit HTTP 429 responses up to three times after the provider cooldown, and preserve errors when recovery fails. Ambiguous network failures and other HTTP errors are not replayed.
+
 ## [0.18.1] - 2026-10-15
 
 ### Fixed
