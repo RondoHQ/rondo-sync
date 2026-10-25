@@ -410,6 +410,18 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo`.
 
+## Laposta request pacing and retries
+
+Use `lib/laposta-client.js` for every Laposta call. Its shared per-process
+queue in `lib/laposta-rate-limit.js` spaces request starts by 2.5 seconds and
+retries only explicit HTTP 429 responses (maximum three retries). Honor
+`Retry-After`, including on exhaustion for queued calls; never clamp a long
+provider cooldown into an early retry. Cooldowns over 60 seconds fail without
+sending another request, and each HTTP attempt has a 45-second deadline.
+Do not retry uncertain network/server failures for writes. Keep original
+errors/details for existing sync reporting and preserve upsert opt-out and
+notification suppression. Caller waits remain compatible with client pacing.
+
 ## Documentation Maintenance
 
 After functional changes, update:
