@@ -252,3 +252,11 @@ RunTracker reports privacy-filtered timings per run and step to GlitchTip, with
 aggregate counts only. Set `GLITCHTIP_PERFORMANCE=false` to disable these timings
 without changing error reporting. See `ops/glitchtip/README.md` for retention,
 sampling, and verification across Club, Sync and the website.
+
+
+Sportlink login verifies the authenticated dashboard before persisting a session.
+A redirect to Club alone is insufficient: its `ClubAuthorizations` API can reject
+a newly issued session after successful two-factor authentication. Persistent
+HTTP 401 responses are reported explicitly; an initial 401 followed by a successful
+SPA token refresh remains recoverable. Do not log tokens or authentication URLs
+with query parameters while diagnosing this failure.
