@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18.3] - 2026-10-29
+
+### Fixed
+
+- Continue sync logging to disk after stdout or stderr disconnects with EPIPE, without suppressing other terminal errors or accumulating stream listeners.
+
 ## [0.18.2] - 2026-10-25
 
 ### Fixed
