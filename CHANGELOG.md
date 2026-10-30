@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0] - 2026-10-30
+
+### Added
+
+- Authenticated read-only club-directory API for Rondo Club, backed by Sportlink ClubSearchList and ClubOfficials JSON. Supports nationwide club-name and city searches, verifies exact club identities, preserves function-specific contact rows, and reports incomplete source responses as errors.
+- Reuse the existing Sportlink session to acquire request headers in memory, with one authentication retry, bounded concurrency, fixed upstream endpoints, and idle browser cleanup. No HTML data scraping or member imports.
+
 ## [0.18.3] - 2026-10-29
 
 ### Fixed
