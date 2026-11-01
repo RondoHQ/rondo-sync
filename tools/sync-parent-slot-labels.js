@@ -3,7 +3,7 @@
 require('dotenv/config');
 
 const { openDb: openSourceDb, getLatestSportlinkSnapshot } = require('../lib/laposta-db');
-const { openDb, getAllTrackedMembers } = require('../lib/rondo-club-db');
+const { openDb, getParentSyncMembers } = require('../lib/rondo-club-db');
 const { prepareParentSlotObservations, submitParentSlotObservations } = require('../lib/parent-slot-observations');
 
 /** Backfill labels from the stored source snapshot, without running a people sync. */
@@ -17,7 +17,7 @@ async function run(options = {}) {
     if (!Array.isArray(members)) throw new Error('Invalid Sportlink snapshot');
     let observations = prepareParentSlotObservations(members, snapshot.created_at);
     if (options.knvbId) observations = observations.filter(item => item.knvb_id === options.knvbId);
-    const memberIds = new Map(getAllTrackedMembers(db).map(member => [member.knvb_id, member.rondo_club_id]));
+    const memberIds = new Map(getParentSyncMembers(db).map(member => [member.knvb_id, member.rondo_club_id]));
     const preview = { observedAt: snapshot.created_at, completeSources: observations.length, mappedSources: observations.filter(item => memberIds.has(item.knvb_id)).length };
     if (!options.apply) return { ...preview, dryRun: true };
     return { ...preview, ...await submitParentSlotObservations(observations, memberIds, options) };

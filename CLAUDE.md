@@ -408,6 +408,11 @@ If eligible-pending is **0** after the run, the detector converged — the large
 
 ## Parent slot labels
 
+Build parent-sync and label-backfill mappings with `getParentSyncMembers()`, not
+`getAllTrackedMembers()`. Retired identities may still appear in a current source
+snapshot and point to deleted or merged people. Exclude them from relationships
+and observations while retaining their tracking tombstones for recovery.
+
 The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo`.
 
 ## Laposta request pacing and retries

@@ -1,10 +1,42 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const Database = require('better-sqlite3');
+const { getParentSyncMembers, getAllTrackedMembers } = require('../lib/rondo-club-db');
 const { prepareParentSlotObservations, submitParentSlotObservations } = require('../lib/parent-slot-observations');
 
 const source = (id = 'CHILD1') => ({ PublicPersonId: id, NameParent1: 'Noor van Dijk', EmailAddressParent1: 'noor@example.org', NameParent2: null, EmailAddressParent2: '' });
 const observedAt = '2026-09-13T09:46:00.783Z';
+
+test('reimported retired identities cannot send slots to deleted or surviving people', async () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(`CREATE TABLE rondo_club_members (
+      knvb_id TEXT, rondo_club_id INTEGER, retired_into_knvb_id TEXT,
+      last_player_history_team_signature TEXT, player_history_skip_reason TEXT
+    )`);
+    const insert = db.prepare('INSERT INTO rondo_club_members (knvb_id, rondo_club_id, retired_into_knvb_id) VALUES (?, ?, ?)');
+    insert.run('CURRENT', 20, null);
+    insert.run('RETIRED_DELETED', 10, 'CURRENT');
+    insert.run('RETIRED_SHARED', 20, 'CURRENT');
+    insert.run('UNLINKED', null, null);
+    const observations = prepareParentSlotObservations([
+      source('RETIRED_DELETED'), source('RETIRED_SHARED'), source('CURRENT'), source('UNLINKED')
+    ], observedAt);
+    const ids = new Map(getParentSyncMembers(db).map(member => [member.knvb_id, member.rondo_club_id]));
+    const sent = [];
+    const result = await submitParentSlotObservations(observations, ids, {
+      rondoClubRequest: async (path, method, payload) => {
+        sent.push(...payload.observations);
+        return { body: { results: payload.observations.map(item => ({ person_id: item.person_id, observed: true, matched: 1 })) } };
+      }
+    });
+    assert.deepEqual(sent.map(item => [item.knvb_id, item.person_id]), [['CURRENT', 20]]);
+    assert.deepEqual(result, { observed: 1, matched: 1, skipped: 3, errors: [] });
+    assert.equal(getAllTrackedMembers(db).length, 3, 'retired recovery mappings remain available');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM rondo_club_members WHERE retired_into_knvb_id IS NOT NULL').get().count, 2);
+  } finally { db.close(); }
+});
 
 test('preserves source slot order, explicit emptiness, and the actual snapshot date', () => {
   const [item] = prepareParentSlotObservations([source()], observedAt);

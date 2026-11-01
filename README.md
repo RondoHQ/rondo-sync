@@ -8,6 +8,10 @@
 
 The people import also refreshes Sportlink parent field labels for existing relationships. To backfill labels without changing contact data, run `node tools/sync-parent-slot-labels.js --apply` on the sync server; omit `--apply` to preview source coverage.
 
+Parent relationships and slot-label imports exclude retired KNVB identities even
+when Sportlink still returns them. Their recovery mappings remain intact; current
+surviving identities continue to sync normally.
+
 Laposta receives three current-season volunteer counters from Rondo: `vrijwilligersplicht` (total required duties, `-1` for exempt/not applicable), `vrijwilligersingepland` (planned), and `vrijwilligersafgerond` (completed/credited). Progress follows Rondo's shared-family attribution. Planning or completing a shift never lowers the total requirement.
 
 Player-history checks exclude obsolete and retired Sportlink identities while retaining their recovery mappings. A member who returns in a fresh source import becomes eligible again. Team-name whitespace is normalized to prevent duplicate history on repeated imports. Unmatched current team roles still require review; missing source history never clears them automatically.

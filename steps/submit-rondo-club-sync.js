@@ -13,7 +13,7 @@ const {
   deleteMember,
   retireMemberIdentity,
   getMembersNotInList,
-  getAllTrackedMembers,
+  getParentSyncMembers,
   getMemberOwnedPersonIds,
   upsertParents,
   getParentsNeedingSync,
@@ -1178,9 +1178,9 @@ async function runSync(options = {}) {
 
       // Parents sync
       if (includeParents) {
-        // Build KNVB ID to Rondo Club ID mapping from ALL tracked members
+        // Retired source IDs must never supply links or observations for a survivor.
         const knvbIdToRondoClubId = new Map();
-        const allMembers = getAllTrackedMembers(db);
+        const allMembers = getParentSyncMembers(db);
         allMembers.forEach(m => {
           if (m.knvb_id && m.rondo_club_id) {
             knvbIdToRondoClubId.set(m.knvb_id, m.rondo_club_id);
