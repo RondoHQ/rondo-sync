@@ -367,7 +367,21 @@ async function runPeopleSync(options = {}) {
     const formerStepId = tracker.startStep('former-members-laposta');
     if (submitResult.success) {
       stats.formerMembers = await syncFormerMembersToLaposta(downloadResult, inactiveResult, {
-        apply: true, logger
+        apply: true,
+        logger,
+        refreshSources: async () => {
+          const activeResult = await runDownload({
+            logger, verbose, page: await sportlinkSession.getPage(), session: sportlinkSession
+          });
+          if (!activeResult.success || activeResult.sourceComplete !== true) {
+            throw new Error('Active Sportlink refresh incomplete; former-member cleanup skipped');
+          }
+          // The active download can reauthenticate and replace the session page.
+          const inactiveResult = await runDownloadInactive({
+            logger, verbose, page: await sportlinkSession.getPage()
+          });
+          return { activeResult, inactiveResult };
+        }
       });
     } else {
       stats.formerMembers.errors.push({

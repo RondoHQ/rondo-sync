@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.19.2] - 2026-11-09
+
+### Fixed
+
+- Refresh expired Sportlink snapshots before former-member Laposta cleanup after a long submission, while retaining completeness, shared-address, and freshness checks before unsubscribing.
+
 ## [0.19.1] - 2026-11-09
 
 ### Changed

@@ -438,6 +438,12 @@ notification suppression. Caller waits remain compatible with client pacing.
 
 ## Documentation Maintenance
 
+Former-member Laposta cleanup refreshes expired active and inactive Sportlink
+snapshots once after a successful long submission, using the shared session.
+Keep the one-hour age/completeness checks before planning, after remote reads,
+and before every unsubscribe. Failed refreshes must block cleanup, and the new
+active snapshot must protect addresses of members who became active meanwhile.
+
 After functional changes, update:
 - `README.md` - User-facing docs
 - `CLAUDE.md` - This file (AI assistant context)
