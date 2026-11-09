@@ -20,6 +20,11 @@ Team downloads wait for Sportlink to recover temporary authentication failures a
 
 ## Laposta request recovery
 
+Former-member cleanup requires a complete Sportlink snapshot no more than one
+hour old. When a long Laposta submission outlasts that limit, the People pipeline
+downloads fresh active and inactive snapshots before cleanup. Failed refreshes
+block cleanup; shared addresses remain protected and unsubscribes are verified.
+
 All Laposta calls in a sync process share a queue with at least 2.5 seconds
 between request starts, including list changes and cleanup reads. HTTP 429
 responses are retried up to three times, respecting Laposta's `Retry-After`

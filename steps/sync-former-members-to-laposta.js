@@ -81,11 +81,19 @@ async function fetchFormerPeople(request = rondoClubRequest) {
 
 /** Shared dry-run/apply path for the scheduled pipeline and one-time cleanup. */
 async function syncFormerMembersToLaposta(activeResult, inactiveResult, options = {}) {
-  const { apply = false, logger, dependencies = {} } = options;
+  const { apply = false, logger, refreshSources, dependencies = {} } = options;
   const api = { ...client, ...dependencies };
   const stats = { candidates: 0, uniqueEmails: 0, unsubscribed: 0, keptShared: 0, results: [], errors: [] };
   let db;
   try {
+    // A successful Laposta submission can take longer than the source lifetime.
+    // Refresh once before planning; all later freshness checks still fail closed.
+    if (Date.now() - Date.parse(activeResult?.observedAt) > MAX_SOURCE_AGE_MS && refreshSources) {
+      logger?.log?.('Refreshing expired Sportlink snapshots before former-member cleanup...');
+      const refreshed = await refreshSources();
+      activeResult = refreshed?.activeResult;
+      inactiveResult = refreshed?.inactiveResult;
+    }
     validateSources(activeResult, inactiveResult);
     const people = await (dependencies.fetchFormerPeople || fetchFormerPeople)();
     const lists = [];

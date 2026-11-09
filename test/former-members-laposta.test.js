@@ -82,6 +82,101 @@ test('apply journals before writing, verifies separately and leaves shared addre
   assert.equal(again.errors.length, 0);
 });
 
+test('cleanup refreshes snapshots after a long submission and verifies the unsubscribe', async () => {
+  const deps = dependencies();
+  const stale = { ...activeResult(), observedAt: '2020-01-01T00:00:00Z' };
+  let refreshes = 0;
+  const result = await syncFormerMembersToLaposta(stale, inactiveResult(), {
+    apply: true,
+    dependencies: deps,
+    refreshSources: async () => {
+      refreshes++;
+      assert.deepEqual(deps.calls, []);
+      return { activeResult: activeResult(), inactiveResult: inactiveResult() };
+    }
+  });
+  assert.equal(refreshes, 1);
+  assert.equal(result.unsubscribed, 1);
+  assert.equal(result.keptShared, 1);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(deps.calls, [['read', 'active'], ['journal'], ['write'], ['read', 'unsubscribed']]);
+});
+
+test('refreshed active and inactive identities replace the old cleanup inputs', async () => {
+  for (const refreshed of [
+    { activeResult: { ...activeResult(), members: [...activeResult().members, { PublicPersonId: 'RETURNED', Email: 'former@example.test' }] }, inactiveResult: inactiveResult() },
+    { activeResult: activeResult(), inactiveResult: { success: true, members: [] } }
+  ]) {
+    const deps = dependencies();
+    const result = await syncFormerMembersToLaposta({ ...activeResult(), observedAt: '2020-01-01T00:00:00Z' }, inactiveResult(), {
+      apply: true, dependencies: deps, refreshSources: async () => refreshed
+    });
+    assert.equal(result.candidates, 0);
+    assert.equal(result.unsubscribed, 0);
+    assert.deepEqual(result.errors, []);
+    assert.equal(deps.remote[0].state, 'active');
+    assert.deepEqual(deps.calls, [['read', 'active']]);
+    deps.db.close();
+  }
+});
+
+test('failed or invalid refreshes never read Laposta or unsubscribe anyone', async () => {
+  const valid = { activeResult: activeResult(), inactiveResult: inactiveResult() };
+  for (const refreshSources of [
+    async () => { throw new Error('Sportlink unavailable'); },
+    async () => undefined,
+    async () => ({ ...valid, activeResult: { ...activeResult(), sourceComplete: false } }),
+    async () => ({ ...valid, activeResult: { ...activeResult(), observedAt: '2020-01-01T00:00:00Z' } }),
+    async () => ({ ...valid, inactiveResult: { success: false } })
+  ]) {
+    const deps = dependencies();
+    const result = await syncFormerMembersToLaposta({ ...activeResult(), observedAt: '2020-01-01T00:00:00Z' }, inactiveResult(), {
+      apply: true, dependencies: deps, refreshSources
+    });
+    assert.equal(result.errors.length, 1);
+    assert.equal(result.unsubscribed, 0);
+    assert.deepEqual(deps.calls, []);
+    deps.db.close();
+  }
+});
+
+test('fresh snapshots avoid a refresh and preview remains read-only', async () => {
+  const deps = dependencies();
+  let refreshes = 0;
+  const result = await syncFormerMembersToLaposta(activeResult(), inactiveResult(), {
+    dependencies: deps, refreshSources: async () => { refreshes++; }
+  });
+  assert.equal(refreshes, 0);
+  assert.equal(result.candidates, 1);
+  assert.equal(result.unsubscribed, 0);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(deps.calls, [['read', 'active']]);
+  deps.db.close();
+});
+
+test('a refreshed snapshot expiring during planning still blocks all writes', async () => {
+  const deps = dependencies();
+  const refreshed = activeResult();
+  deps.fetchFormerPeople = async () => {
+    refreshed.observedAt = '2020-01-01T00:00:00Z';
+    return [];
+  };
+  let refreshes = 0;
+  const result = await syncFormerMembersToLaposta({ ...activeResult(), observedAt: '2020-01-01T00:00:00Z' }, inactiveResult(), {
+    apply: true,
+    dependencies: deps,
+    refreshSources: async () => {
+      refreshes++;
+      return { activeResult: refreshed, inactiveResult: inactiveResult() };
+    }
+  });
+  assert.equal(refreshes, 1);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.unsubscribed, 0);
+  assert.deepEqual(deps.calls, [['read', 'active']]);
+  deps.db.close();
+});
+
 test('successful API response without persisted unsubscribe fails verification', async () => {
   const deps = dependencies();
   deps.updateMember = async () => {};
