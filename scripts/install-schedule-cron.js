@@ -68,7 +68,7 @@ function migrateCrontab(text, project = PROJECT) {
 
 function install() {
   require('../lib/server-check').requireProductionServer({ scriptName: 'Schedule cron installer' });
-  if (process.getuid() === 0) throw new Error('Run this installer as rondo, never as root.');
+  if (process.getuid() === 0) throw new Error('Run this installer as rondo-sync, never as root.');
   let previous = '';
   try { previous = execFileSync('crontab', ['-l'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }); }
   catch (error) { if (!String(error.stderr).includes('no crontab')) throw error; }

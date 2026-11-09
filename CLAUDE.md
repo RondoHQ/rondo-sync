@@ -37,20 +37,29 @@ membership history in Rondo and retire the source before lifting the merge guard
 **Sync scripts must only run on the production server.** Running locally causes duplicate entries because each machine has its own SQLite database with different `rondo_club_id` mappings.
 
 ```bash
-ssh root@46.202.155.16
-cd /home/rondo
+ssh srv1.rondo
+sudo -u rondo-sync -H bash
+cd /srv/rondo-sync
 scripts/sync.sh people    # or any other pipeline
 ```
 
-Deploy code: `git push` then `ssh root@46.202.155.16 "cd /home/rondo && git pull"`
+Deploy code: `git push` then `ssh srv1.rondo "sudo -u rondo-sync -H git -C /srv/rondo-sync pull --ff-only"`
 
 ## Claude specific instructions
 Prefer Read over `cat`, Grep over `grep/rg` in Bash, and Glob over `find` in Bash. Use Bash only for: running tests, executing build commands, git operations, and multi-step shell scripts. 
 
 ## Remote Server
 
-IP: `46.202.155.16`, path: `/home/rondo/`
-Login with the user's SSH key.
+IP: `81.24.6.19`, path: `/srv/rondo-sync/`
+Connect with `ssh srv1.rondo`, then run sync commands as `rondo-sync` using sudo. The old VPS still hosts GlitchTip and Viscerno; do not shut it down.
+
+The runtime uses Node 22.23.4 from `/usr/local/bin/node`. On Ubuntu 26.04, the
+locked Playwright 1.58.2 needs `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`
+in the private `.env`. Install its browser as `rondo-sync` with
+`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium`.
+This retains the existing browser version while using its compatible Linux build.
+Run tests with `DOTENV_CONFIG_PATH=/dev/null GLITCHTIP_DSN= npm test` so they do not
+load production integration credentials or send synthetic monitoring events.
 
 ## Environment Variables
 
@@ -88,7 +97,7 @@ RONDO_SYNC_HTTP_DEADLINE_MS= # Optional: hard total-time deadline per HTTP reque
 
 ## Twelve browser import
 
-`scripts/sync.sh twelve --scheduled` checks club settings hourly as `rondo` on the sync server.
+`scripts/sync.sh twelve --scheduled` checks club settings hourly as `rondo-sync` on the sync server.
 It opens Twelve every two hours within the configured weekday windows, plus their closing hour.
 The Rondo administrator edits these under Kassaomzet → Synchronisatie.
 Use `scripts/sync.sh twelve` for an explicitly requested manual run outside the windows.
@@ -202,7 +211,7 @@ Actual source fetch, validation, or write failures still make the People run par
 
 Beheer → Sync schedules edits the ten automatic pipeline schedules in `data/sync-schedules.json` (private, atomic JSON writes). `lib/schedule-config.js` defines initial timings, validates saved settings and allowlists pipeline arguments. `lib/schedule.js` is shared by the minute dispatcher, dashboard and watchdog. Twelve opening windows remain in Rondo Club.
 
-`npm run install-cron` imports existing timings and replaces only this checkout's exact pipeline cron entries with `scripts/scheduler-tick.sh`. It runs as `rondo`, retains a private crontab backup and preserves unrelated jobs and UI edits. Unknown or duplicate legacy entries stop migration rather than silently changing timings. The tick's flock is closed before detached pipeline children are spawned; per-pipeline locks remain in `sync.sh`. Persistent dispatch state prevents a duplicate minute launch. Never run the dispatcher or installer locally.
+`npm run install-cron` imports existing timings and replaces only this checkout's exact pipeline cron entries with `scripts/scheduler-tick.sh`. It runs as `rondo-sync`, retains a private crontab backup and preserves unrelated jobs and UI edits. Unknown or duplicate legacy entries stop migration rather than silently changing timings. The tick's flock is closed before detached pipeline children are spawned; per-pipeline locks remain in `sync.sh`. Persistent dispatch state prevents a duplicate minute launch. Never run the dispatcher or installer locally.
 
 Schedules support daily/weekly/monthly HH:mm slots and intervals that divide an hour. Fixed autumn wall times run once, nonexistent spring times and nonexistent monthly dates are skipped. No catch-up occurs after downtime. Disabled schedules do not auto-heal. A changed cadence resets missed-run checks until its first eligible slot. Form saves require authentication, a session CSRF token and the current configuration revision. Settings pages do not auto-refresh.
 
@@ -235,9 +244,9 @@ sat dead for eight weeks (2026-05-29 → 2026-07-23) with a live crontab entry a
 alerts: a **root-owned `.sync-nikki.lock`** made `sync.sh` die at `exec 200>"$LOCKFILE"`
 with "Permission denied" *before* `RunTracker` opened, so there was never anything to fail.
 
-**If a pipeline goes silent, check lockfile ownership first:** `ls -la /home/rondo/.sync-*.lock`.
-Every lock must be `rondo:rondo`. One `sync.sh <pipeline>` run as root (instead of
-`sudo -u rondo`) permanently wedges that pipeline's cron.
+**If a pipeline goes silent, check lockfile ownership first:** `ls -la /srv/rondo-sync/.sync-*.lock`.
+Every lock must be `rondo-sync:rondo-sync`. One `sync.sh <pipeline>` run as root (instead of
+`sudo -u rondo-sync -H`) permanently wedges that pipeline's cron.
 
 `heal-sync.sh` now compares each pipeline's newest `started_at` against a per-pipeline
 `stale_after_hours_for()` budget from the editable schedule and prints a
@@ -353,17 +362,17 @@ Sportlink's `/member/member-details/{knvb_id}/memberships` SPA hangs forever for
 Currently quarantined on prod:
 - **PKWR41Q** (Nic Stenssen, rondo_club_id=437) — Sportlink endpoint hangs; reported upstream 2026-05-29.
 
-Manage via `tools/player-history-quarantine.js`. **Always run as the `rondo` user on prod** so the SQLite write is owned correctly:
+Manage via `tools/player-history-quarantine.js`. **Always run as the `rondo-sync` user on prod** so the SQLite write is owned correctly:
 
 ```bash
 # List currently quarantined
-ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js list'
+ssh srv1.rondo 'cd /srv/rondo-sync && sudo -u rondo-sync -H node tools/player-history-quarantine.js list'
 
 # Add a quarantine (reason is required and stored verbatim — be specific)
-ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js add <KNVB_ID> "<reason>"'
+ssh srv1.rondo 'cd /srv/rondo-sync && sudo -u rondo-sync -H node tools/player-history-quarantine.js add <KNVB_ID> "<reason>"'
 
 # Lift the quarantine — do this once Sportlink confirms the fix
-ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node tools/player-history-quarantine.js remove PKWR41Q'
+ssh srv1.rondo 'cd /srv/rondo-sync && sudo -u rondo-sync -H node tools/player-history-quarantine.js remove PKWR41Q'
 ```
 
 The data lives in the `player_history_skip_reason` column on `rondo_club_members`. `--force` on the pipeline does NOT lift quarantine — that's an explicit human action only.
@@ -387,7 +396,7 @@ upsertMembers(db, [{
 **Diagnosing "the sync re-syncs hundreds of members and runs for an hour" — rollover vs. a real churn loop.** Before assuming a hash bug, check the *eligible-pending* count right after a run completes: rows where the hash mismatches AND the row is actually syncable (`data_json != '{}'` — the vast majority of `rondo_club_members` rows are `'{}'` former-member sentinels that never sync, so an unfiltered mismatch count is meaningless and will look huge).
 
 ```bash
-ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo node -e "
+ssh srv1.rondo 'cd /srv/rondo-sync && sudo -u rondo-sync -H node -e "
   const { openDb } = require(\"./lib/rondo-club-db\");
   const db = openDb();
   const c = db.prepare(\"SELECT COUNT(*) c FROM rondo_club_members WHERE (last_synced_hash IS NULL OR last_synced_hash != source_hash) AND data_json != char(123)||char(125)\").get().c;
@@ -413,7 +422,7 @@ Build parent-sync and label-backfill mappings with `getParentSyncMembers()`, not
 snapshot and point to deleted or merged people. Exclude them from relationships
 and observations while retaining their tracking tombstones for recovery.
 
-The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo`.
+The people import publishes complete parent-slot observations from the same dated source snapshot, even for unchanged parents. The admin-only Rondo observation endpoint resolves existing parent links; it never completes pending/error callbacks or writes contact data. Always use the snapshot timestamp, and skip partial or duplicate source records. `tools/sync-parent-slot-labels.js` previews coverage by default; `--apply` backfills labels only, and `--knvb-id` limits it to one child. Run it only on production as `rondo-sync`.
 
 ## Laposta request pacing and retries
 

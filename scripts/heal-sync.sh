@@ -19,7 +19,7 @@
 # however long that is — no repeated hammering of Sportlink/TOTP during an outage.
 #
 # Run as the `rondo` user so the marker + any SQLite writes are owned correctly:
-#   ssh root@46.202.155.16 'cd /home/rondo && sudo -u rondo scripts/heal-sync.sh --all'
+#   ssh srv1.rondo 'cd /srv/rondo-sync && sudo -u rondo-sync -H scripts/heal-sync.sh --all'
 #
 # Exit codes: 0 = checked (healed or nothing to do), 1 = bad usage / could not read DB.
 # With --all the exit code is the worst seen across pipelines.
