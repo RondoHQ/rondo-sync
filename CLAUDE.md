@@ -53,6 +53,14 @@ Prefer Read over `cat`, Grep over `grep/rg` in Bash, and Glob over `find` in Bas
 IP: `81.24.6.19`, path: `/srv/rondo-sync/`
 Connect with `ssh srv1.rondo`, then run sync commands as `rondo-sync` using sudo. The old VPS still hosts GlitchTip and Viscerno; do not shut it down.
 
+The runtime uses Node 22.23.4 from `/usr/local/bin/node`. On Ubuntu 26.04, the
+locked Playwright 1.58.2 needs `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`
+in the private `.env`. Install its browser as `rondo-sync` with
+`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium`.
+This retains the existing browser version while using its compatible Linux build.
+Run tests with `DOTENV_CONFIG_PATH=/dev/null GLITCHTIP_DSN= npm test` so they do not
+load production integration credentials or send synthetic monitoring events.
+
 ## Environment Variables
 
 Required in `.env`:
