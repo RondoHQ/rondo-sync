@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.19.1] - 2026-11-09
+
+### Changed
+
+- Move the production hostname safeguard, dashboard service, and cron installer to the dedicated `rondo-sync` account at `/srv/rondo-sync` on srv1.
+
 ## [0.19.0] - 2026-10-30
 
 ### Added

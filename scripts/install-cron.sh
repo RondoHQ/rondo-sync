@@ -101,13 +101,13 @@ fi
 echo ""
 
 # Run the installer as the sync user so configuration, backups, and jobs remain
-# owned by rondo. The Node installer preserves unrelated crontab entries.
+# owned by rondo-sync. The Node installer preserves unrelated crontab entries.
 if [ "$(id -u)" -eq 0 ]; then
-    if ! id -u rondo >/dev/null 2>&1; then
-        echo "ERROR: target user 'rondo' does not exist." >&2
+    if ! id -u rondo-sync >/dev/null 2>&1; then
+        echo "ERROR: target user 'rondo-sync' does not exist." >&2
         exit 1
     fi
-    runuser -u rondo -- node "$PROJECT_DIR/scripts/install-schedule-cron.js"
+    runuser -u rondo-sync -- node "$PROJECT_DIR/scripts/install-schedule-cron.js"
 else
     node "$PROJECT_DIR/scripts/install-schedule-cron.js"
 fi

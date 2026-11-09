@@ -1,17 +1,17 @@
 [Unit]
 Description=Rondo Sync Dashboard Web Server
 After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 Type=simple
-User=rondo
-Group=rondo
-WorkingDirectory=/home/rondo
-ExecStart=/usr/bin/node /home/rondo/lib/web-server.js
+User=rondo-sync
+Group=rondo-sync
+WorkingDirectory=/srv/rondo-sync
+ExecStart=/usr/local/bin/node /srv/rondo-sync/lib/web-server.js
 Restart=on-failure
 RestartSec=10
-StartLimitBurst=5
-StartLimitIntervalSec=300
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=rondo-sync-web
@@ -24,9 +24,11 @@ KillMode=process
 # Security hardening (INFRA-04: non-root, minimal permissions)
 NoNewPrivileges=true
 PrivateTmp=true
+UMask=0077
 
 # Environment
 Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
