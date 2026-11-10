@@ -1,7 +1,7 @@
 name: rondo-glitchtip
 services:
   postgres:
-    image: postgres:18
+    image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
     env_file: postgres.env
     restart: unless-stopped
     mem_limit: 512m
@@ -27,7 +27,7 @@ services:
     volumes:
       - uploads:/code/uploads
       - cold-storage:/code/cold-storage
-      - ./lettermint_backend.py:/code/lettermint_backend.py:ro
+      - ./lettermint_backend.py:/code/lettermint_backend.py:ro,Z
     logging: *logging
 volumes:
   pg-data:
