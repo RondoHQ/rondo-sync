@@ -35,3 +35,8 @@ jobs:
       # binaries are deliberately not installed here.
       - name: Run the test suite
         run: npm test
+
+      - name: Check backup tools
+        run: |
+          python3 -m unittest discover -s ops/backups/tests
+          sh -n ops/backups/access.sh

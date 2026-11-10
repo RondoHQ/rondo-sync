@@ -438,6 +438,11 @@ notification suppression. Caller waits remain compatible with client pacing.
 
 ## Documentation Maintenance
 
+srv1 backup tooling lives in `ops/backups/`. The mini owns the encrypted restic
+repository and pulls exports through a forced, read-only SSH command. Never copy
+live SQLite files without their online backup API or treat an untested SQL export
+as a verified restore. Follow the recovery runbook before restoring any live data.
+
 Former-member Laposta cleanup refreshes expired active and inactive Sportlink
 snapshots once after a successful long submission, using the shared session.
 Keep the one-hour age/completeness checks before planning, after remote reads,
