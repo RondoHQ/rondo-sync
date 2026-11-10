@@ -20,6 +20,9 @@ Team downloads wait for Sportlink to recover temporary authentication failures a
 
 ## Laposta request recovery
 
+Encrypted backups of srv1's production, demo, and sync installations are pulled
+by the mini every six hours. See [backup operations and recovery](ops/backups/README.md).
+
 Former-member cleanup requires a complete Sportlink snapshot no more than one
 hour old. When a long Laposta submission outlasts that limit, the People pipeline
 downloads fresh active and inactive snapshots before cleanup. Failed refreshes

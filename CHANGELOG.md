@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.0] - 2026-11-10
+
+### Added
+
+- Encrypted srv1 backups pulled by the mini, with consistent MySQL/SQLite exports, retention, integrity checks, restricted SSH access, and a recovery runbook.
+
 ## [0.19.2] - 2026-11-09
 
 ### Fixed
