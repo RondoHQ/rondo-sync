@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up the Rondo production database every hour
+
+[Timer]
+OnCalendar=*-*-* *:10:00 Europe/Amsterdam
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
