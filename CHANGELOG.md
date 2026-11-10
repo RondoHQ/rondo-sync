@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1] - 2026-11-10
+
+### Fixed
+
+- Reuse an existing active committee/function stint when sync tracking is missing or a successful WordPress write lost its response, preventing duplicate roles on retry.
+- Resolve forced function updates by committee and role instead of trusting saved row positions; preserve row metadata and repair tracking after rows move or disappear.
+
 ## [0.21.0] - 2026-11-10
 
 ### Added

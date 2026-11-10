@@ -69,11 +69,12 @@ function makeCommissieKey(commissieName, roleName) {
  * Find the current Rondo work-history row belonging to a tracked commissie role.
  * The stored index is only a hint because manual repeater edits can move rows.
  */
-function findCommissieWorkHistoryIndex(rows, preferredIndex, commissieRondoClubId, roleName) {
+function findCommissieWorkHistoryIndex(rows, preferredIndex, commissieRondoClubId, roleName, startDate) {
   const matches = (row) => (
     row &&
     String(row.team_id || '') === String(commissieRondoClubId || '') &&
-    (row.job_title || '') === (roleName || '')
+    (row.job_title || '') === (roleName || '') &&
+    (startDate === undefined || (row.start_date || '') === (startDate || ''))
   );
 
   if (preferredIndex >= 0 && preferredIndex < rows.length && matches(rows[preferredIndex]) && rows[preferredIndex].is_current) {
@@ -259,8 +260,17 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
       commissie.relation_start,
       commissie.relation_end
     );
-    const newIndex = newWorkHistory.length;
-    newWorkHistory.push(entry);
+    // A previous PUT may have succeeded before tracking was saved (or its
+    // response arrived). Reuse that exact active stint instead of appending it.
+    const existingIndex = findCommissieWorkHistoryIndex(
+      newWorkHistory, undefined, commissieRondoClubId, commissie.role_name, entry.start_date
+    );
+    const newIndex = existingIndex >= 0 ? existingIndex : newWorkHistory.length;
+    if (existingIndex < 0) {
+      newWorkHistory.push(entry);
+      addedCount++;
+      modified = true;
+    }
 
     const sourceHash = computeCommissieWorkHistoryHash(
       knvb_id,
@@ -270,9 +280,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
     );
     trackingUpdates.push({ commissie, sourceHash, newIndex });
 
-    addedCount++;
-    modified = true;
-    logVerbose(`Added work_history for commissie ${commissie.commissie_name} (index ${newIndex})`);
+    logVerbose(`${existingIndex >= 0 ? 'Reused' : 'Added'} work_history for commissie ${commissie.commissie_name} (index ${newIndex})`);
   }
 
   // Handle unchanged commissies when force=true (update with current data including start_date)
@@ -287,8 +295,7 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
         h.commissie_name === commissie.commissie_name &&
         (h.role_name || null) === (commissie.role_name || null)
       );
-      if (tracked && tracked.rondo_club_work_history_id !== null && tracked.rondo_club_work_history_id < newWorkHistory.length) {
-        const index = tracked.rondo_club_work_history_id;
+      if (tracked && tracked.rondo_club_work_history_id !== null) {
         if (!commissie.role_name) {
           logVerbose(`Warning: Commissie "${commissie.commissie_name}" has no role_name for ${knvb_id}, skipping`);
           continue;
@@ -300,7 +307,17 @@ async function syncCommissieWorkHistoryForMember(member, currentCommissies, db, 
           commissie.relation_start,
           commissie.relation_end
         );
-        newWorkHistory[index] = entry;
+        const existingIndex = findCommissieWorkHistoryIndex(
+          newWorkHistory, tracked.rondo_club_work_history_id, commissieRondoClubId, commissie.role_name
+        );
+        const index = existingIndex >= 0 ? existingIndex : newWorkHistory.length;
+        newWorkHistory[index] = { ...newWorkHistory[index], ...entry };
+        if (existingIndex < 0) addedCount++;
+        trackingUpdates.push({
+          commissie,
+          sourceHash: computeCommissieWorkHistoryHash(knvb_id, commissie.commissie_name, commissie.role_name, commissie.is_active),
+          newIndex: index
+        });
         modified = true;
         logVerbose(`Force-updated work_history for commissie ${commissie.commissie_name} role ${commissie.role_name} (index ${index})`);
       }

@@ -9,7 +9,9 @@ const {
   upsertMemberFunctions,
   getMemberFunctions,
   upsertMemberCommittees,
-  getMemberCommittees
+  getMemberCommittees,
+  upsertCommissieWorkHistory,
+  getMemberCommissieWorkHistory
 } = require('../lib/rondo-club-db');
 const { storeMemberFunctionSnapshots } = require('../steps/download-functions-from-sportlink');
 const {
@@ -45,6 +47,93 @@ function committeeRow(knvbId, name, role) {
     is_active: true
   };
 }
+
+function makeHistorySync(t, history = []) {
+  const db = makeSnapshotDb();
+  t.after(() => db.close());
+  const source = {
+    commissie_name: 'Verenigingsbreed', role_name: 'Secretaris',
+    relation_start: '2025-07-01', relation_end: null, is_active: true
+  };
+  upsertCommissieWorkHistory(db, [{ ...source, knvb_id: 'MEMBER-A' }]);
+  const state = { history: structuredClone(history), puts: 0, failAfterSave: false };
+  const request = async (endpoint, method, payload) => {
+    if (method === 'GET') {
+      return { body: { fields: { first_name: 'Test', last_name: 'Persoon', work_history: state.history } } };
+    }
+    state.puts++;
+    state.history = structuredClone(payload.fields.work_history);
+    if (state.failAfterSave) throw new Error('response lost after save');
+    return { body: { id: 241 } };
+  };
+  return {
+    db, source, state,
+    sync: (rows = [source], force = false) => syncCommissieWorkHistoryForMember(
+      { knvb_id: 'MEMBER-A', rondo_club_id: 241 }, rows, db,
+      new Map([['Verenigingsbreed', 2662]]), { request }, force
+    )
+  };
+}
+
+test('missing tracking reuses the exact active stint without rewriting its metadata', async t => {
+  const history = [{ team_id: 2662, job_title: 'Secretaris', is_current: true,
+    start_date: '2025-07-01', end_date: null, description: 'Handmatige toelichting' }];
+  const { sync, state, db } = makeHistorySync(t, history);
+  await sync();
+  assert.deepEqual(state.history, history);
+  assert.equal(state.puts, 0);
+  assert.equal(getMemberCommissieWorkHistory(db, 'MEMBER-A')[0].rondo_club_work_history_id, 0);
+  await sync();
+  assert.equal(state.puts, 0, 'repeated synchronization remains a no-op');
+});
+
+test('retry after a saved PUT with a lost response does not add a duplicate', async t => {
+  const { sync, state, db } = makeHistorySync(t);
+  state.failAfterSave = true;
+  await assert.rejects(sync(), /response lost/);
+  assert.equal(state.history.length, 1);
+  assert.equal(getMemberCommissieWorkHistory(db, 'MEMBER-A')[0].rondo_club_work_history_id, null);
+  state.failAfterSave = false;
+  await sync();
+  assert.equal(state.history.length, 1);
+  assert.equal(state.puts, 1, 'retry repairs tracking without another PUT');
+  assert.equal(getMemberCommissieWorkHistory(db, 'MEMBER-A')[0].rondo_club_work_history_id, 0);
+});
+
+test('repeated source rows create one role and preserve distinct historical stints', async t => {
+  const history = [
+    { team_id: 2662, job_title: 'Secretaris', is_current: false, start_date: '2025-07-01', end_date: '2025-08-01' },
+    { team_id: 2662, job_title: 'Secretaris', is_current: true, start_date: '2024-07-01', end_date: null }
+  ];
+  const { sync, state, source } = makeHistorySync(t, history);
+  const result = await sync([source, source]);
+  assert.equal(result.added, 1);
+  assert.equal(state.history.length, 3);
+  assert.deepEqual(state.history.slice(0, 2), history);
+});
+
+test('forced sync resolves a moved role and repairs tracking without overwriting another role', async t => {
+  const role = { team_id: 2662, job_title: 'Secretaris', is_current: true,
+    start_date: '2025-07-01', end_date: null, description: 'Behoud deze notitie' };
+  const { sync, state, db } = makeHistorySync(t, [role]);
+  await sync();
+  const manual = { team_id: 999, job_title: 'Handmatig', is_current: true };
+  state.history.unshift(manual);
+  await sync(undefined, true);
+  assert.deepEqual(state.history, [manual, role]);
+  assert.equal(getMemberCommissieWorkHistory(db, 'MEMBER-A')[0].rondo_club_work_history_id, 1);
+});
+
+test('forced sync recovers a removed tracked row instead of overwriting an unrelated row', async t => {
+  const { sync, state, db } = makeHistorySync(t);
+  await sync();
+  const manual = { team_id: 999, job_title: 'Handmatig', is_current: true };
+  state.history = [manual];
+  await sync(undefined, true);
+  assert.deepEqual(state.history[0], manual);
+  assert.equal(state.history.length, 2);
+  assert.equal(getMemberCommissieWorkHistory(db, 'MEMBER-A')[0].rondo_club_work_history_id, 1);
+});
 
 test('recent function responses replace only successful member snapshots', () => {
   const db = makeSnapshotDb();
