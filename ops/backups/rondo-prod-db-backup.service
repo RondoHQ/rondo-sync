@@ -1,0 +1,20 @@
+[Unit]
+Description=Hourly local backup of the Rondo production database
+After=mysql.service
+Wants=mysql.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 /usr/local/libexec/rondo-backup/hourly_mysql.py
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/rondo-backup
+RestrictAddressFamilies=AF_UNIX

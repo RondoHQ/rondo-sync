@@ -442,6 +442,9 @@ srv1 backup tooling lives in `ops/backups/`. The mini owns the encrypted restic
 repository and pulls exports through a forced, read-only SSH command. Never copy
 live SQLite files without their online backup API or treat an untested SQL export
 as a verified restore. Follow the recovery runbook before restoring any live data.
+`rondo-prod-db-backup.timer` adds hourly local production database snapshots with
+seven-day retention. Keep its MySQL exporter shared with the off-server export;
+verify and publish a new snapshot before pruning any older backups.
 
 Former-member Laposta cleanup refreshes expired active and inactive Sportlink
 snapshots once after a successful long submission, using the shared session.

@@ -22,6 +22,7 @@ Team downloads wait for Sportlink to recover temporary authentication failures a
 
 Encrypted backups of srv1's production, demo, and sync installations are pulled
 by the mini every six hours. See [backup operations and recovery](ops/backups/README.md).
+The production WordPress database also has hourly local backups on srv1, retained for seven days.
 
 Former-member cleanup requires a complete Sportlink snapshot no more than one
 hour old. When a long Laposta submission outlasts that limit, the People pipeline

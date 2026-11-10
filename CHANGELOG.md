@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.0] - 2026-11-10
+
+### Added
+
+- Hourly local backups of the production WordPress database on srv1, with seven-day retention, atomic publication, and full compressed-dump verification.
+
 ## [0.20.0] - 2026-11-10
 
 ### Added

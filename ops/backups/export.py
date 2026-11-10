@@ -66,6 +66,31 @@ def copy_sqlite(source, target):
     return {'empty': False, 'tables': tables, 'sha256': digest(target)}
 
 
+def dump_mysql(database, dump):
+    """Export an allowed WordPress database in one consistent transaction."""
+    if database not in ('rondo_prod', 'rondo_demo'):
+        raise ValueError('Database is not an allowed backup target')
+    # WordPress uses InnoDB base tables; never silently export an
+    # unsupported storage engine or omit an added trigger/routine.
+    query = (
+        "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='" + database
+        + "' AND (ENGINE <> 'InnoDB' OR TABLE_TYPE <> 'BASE TABLE');"
+        "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='" + database + "';"
+        "SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='" + database + "';"
+        "SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA='" + database + "';"
+    )
+    checks = run(['mysql', '-N', '-B', '-e', query], capture_output=True, text=True).stdout.split()
+    if checks != ['0', '0', '0', '0']:
+        raise RuntimeError('Unexpected MySQL objects; review backup strategy')
+    run(['mysqldump', '--single-transaction', '--quick', '--no-tablespaces',
+         '--set-gtid-purged=OFF', '--hex-blob', '--skip-comments', '--skip-triggers',
+         '--result-file=' + str(dump), database])
+    count = run(['mysql', '-N', '-B', '-e',
+                 "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='" + database + "'"],
+                capture_output=True, text=True).stdout.strip()
+    return {'tables': int(count), 'sha256': digest(dump)}
+
+
 def export():
     if os.geteuid() != 0 or socket.gethostname() != 'srv1-rondo-club':
         raise RuntimeError('Run as root on srv1-rondo-club only')
@@ -103,26 +128,8 @@ def export():
             mysql_dir = payload / 'databases/mysql'
             mysql_dir.mkdir(parents=True)
             for database in ('rondo_prod', 'rondo_demo'):
-                # WordPress uses InnoDB base tables; never silently export an
-                # unsupported storage engine or omit an added trigger/routine.
-                query = (
-                    "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='" + database
-                    + "' AND (ENGINE <> 'InnoDB' OR TABLE_TYPE <> 'BASE TABLE');"
-                    "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='" + database + "';"
-                    "SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='" + database + "';"
-                    "SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA='" + database + "';"
-                )
-                checks = run(['mysql', '-N', '-B', '-e', query], capture_output=True, text=True).stdout.split()
-                if checks != ['0', '0', '0', '0']:
-                    raise RuntimeError('Unexpected MySQL objects; review backup strategy')
                 dump = mysql_dir / (database + '.sql')
-                run(['mysqldump', '--single-transaction', '--quick', '--no-tablespaces',
-                     '--set-gtid-purged=OFF', '--hex-blob', '--skip-comments', '--skip-triggers',
-                     '--result-file=' + str(dump), database])
-                count = run(['mysql', '-N', '-B', '-e',
-                             "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='" + database + "'"],
-                            capture_output=True, text=True).stdout.strip()
-                manifest['mysql'][database] = {'tables': int(count), 'sha256': digest(dump)}
+                manifest['mysql'][database] = dump_mysql(database, dump)
 
             # Snapshot every SQLite database in the application's root/data
             # directories, including legacy placeholders, without copying WALs.

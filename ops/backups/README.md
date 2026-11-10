@@ -19,6 +19,25 @@ the manifest. The mini checks the export SHA-256 before encrypting it and delete
 its plaintext incoming copy afterwards. Only the newest three completed exports
 are retained locally on srv1.
 
+## Hourly local production database backups
+
+`rondo-prod-db-backup.timer` also backs up **only `rondo.svawc.nl`'s database**
+on srv1 at ten minutes past every hour (Europe/Amsterdam), independently of the
+mini. `Persistent=true` catches up after server downtime. It retains seven days
+under `/var/lib/rondo-backup/hourly-mysql/rondo_prod/` with root-only permissions.
+
+Each timestamped directory contains `database.sql.gz` and a checksum/table-count
+manifest. The job uses the same transaction-consistent MySQL exporter as the
+off-server backups, verifies the complete gzip stream, publishes the directory
+atomically, then removes only its own expired snapshots. A failed dump or failed
+verification never prunes older backups. These local copies are not encrypted;
+the encrypted backups on the mini still provide the separate off-server copy.
+
+Check `systemctl status rondo-prod-db-backup.timer` and
+`journalctl -u rondo-prod-db-backup.service`. To run a backup immediately, use
+`sudo systemctl start rondo-prod-db-backup.service`. Restore testing must import
+the decompressed SQL into a disposable database, never the live database.
+
 ## Locations and access
 
 - srv1 scripts: `/usr/local/libexec/rondo-backup/`
