@@ -20,6 +20,17 @@ Team downloads wait for Sportlink to recover temporary authentication failures a
 
 ## Laposta request recovery
 
+After a successful submission of all lists, Laposta sync unsubscribes obsolete
+child identities from a parent's mailbox only when the child's current address
+and the mailbox owner's correct identity both have active subscriptions. Unknown
+identities, current shared addresses and existing opt-outs are preserved. This
+requires a complete Sportlink snapshot less than one hour old and verifies each
+unsubscribe. On the sync server, preview one mailbox with
+`node tools/cleanup-laposta-stale-identities.js --email parent@example.com`;
+add `--apply` to perform the verified cleanup without sending mail.
+Scheduled reconciliation defers expired snapshots to the next fresh run; the
+maintenance command reports an error until the Sportlink download is refreshed.
+
 Encrypted backups of srv1's production, demo, and sync installations are pulled
 by the mini every six hours. See [backup operations and recovery](ops/backups/README.md).
 The production WordPress database also has hourly local backups on srv1, retained for seven days.
