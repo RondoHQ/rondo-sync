@@ -426,6 +426,16 @@ The people import publishes complete parent-slot observations from the same date
 
 ## Laposta request pacing and retries
 
+After successful all-list submission, `sync-stale-laposta-identities.js` reconciles
+old child identities left behind at parent addresses. A unique, complete source
+snapshot less than one hour old, an active correct child destination, and an
+active correct mailbox-owner identity are mandatory. Re-read source and remote
+identities before each unsubscribe, journal intentional removals, and verify even
+uncertain writes without replaying them. Preserve unknown/manual entries, current
+shared primary/alternate addresses, and opt-outs. The maintenance CLI previews by
+default and accepts `--email` for a single-mailbox repair; only `--apply` writes.
+This cleanup unsubscribes rather than deleting delivery history.
+
 Use `lib/laposta-client.js` for every Laposta call. Its shared per-process
 queue in `lib/laposta-rate-limit.js` spaces request starts by 2.5 seconds and
 retries only explicit HTTP 429 responses (maximum three retries). Honor

@@ -14,6 +14,7 @@ const {
 } = require('../lib/laposta-client');
 const { parseCliArgs } = require('../lib/utils');
 const { createLoggerAdapter } = require('../lib/log-adapters');
+const { syncStaleLapostaIdentities } = require('./sync-stale-laposta-identities');
 
 /**
  * Parse CLI arguments for list submission.
@@ -130,7 +131,7 @@ async function syncList(listIndex, options = {}) {
  * @returns {Promise<{success: boolean, lists: Array, error?: string}>}
  */
 async function runSubmit(options = {}) {
-  const { logger, verbose = false, force = false, listIndex = null } = options;
+  const { logger, verbose = false, force = false, listIndex = null, dependencies = {} } = options;
   const logError = logger ? logger.error.bind(logger) : console.error;
 
   try {
@@ -139,10 +140,16 @@ async function runSubmit(options = {}) {
 
     const lists = [];
     for (const index of listIndexes) {
-      const result = await syncList(index, { logger, verbose, force });
+      const result = await (dependencies.syncList || syncList)(index, { logger, verbose, force });
       lists.push(result);
     }
 
+    // Only reconcile after every configured list has been submitted successfully.
+    // A single-list run cannot establish that all replacement identities are ready.
+    if (!listIndex && lists.every(list => list.errors.length === 0)) {
+      const cleanup = await (dependencies.syncStaleLapostaIdentities || syncStaleLapostaIdentities)({ apply: true, deferStaleSource: true, logger });
+      lists[0].errors.push(...cleanup.errors);
+    }
     const totalErrors = lists.reduce((sum, list) => sum + list.errors.length, 0);
 
     return {
