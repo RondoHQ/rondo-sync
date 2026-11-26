@@ -34,6 +34,34 @@ test('rejects missing tables, malformed amounts, unexpected categories and sourc
   const q = input(); q.day.issues.push('Missing row'); assert.throws(() => reportForDay(q), /Source issues/);
   const r = input(); r.financial.nosale[0][1][0] = 'Unknown'; assert.throws(() => reportForDay(r));
 });
+test('manual payment details with blank VAT do not duplicate revenue or change source totals', () => {
+  for (const zeroVatColumn of [false, true]) {
+    const p = input();
+    if (zeroVatColumn) {
+      for (const table of p.financial.revenue) for (const [i, row] of table.entries()) row.splice(5, 0, i === 0 ? 'Geen BTW' : '0.00');
+    }
+    const expected = reportForDay(p).omzet;
+    const detail = ['MANUAL', '10.90', '', '', '', '2', ''];
+    if (zeroVatColumn) detail.splice(5, 0, '');
+    p.financial.revenue[1].splice(2, 0, detail);
+    assert.deepEqual(reportForDay(p).omzet, expected);
+    p.day.cashRevenueCandidateCents++;
+    assert.throws(() => reportForDay(p), /Revenue overview disagrees/);
+  }
+});
+test('manual rows retain strict validation outside fully blank payment VAT details', () => {
+  const complete = financial();
+  complete.revenue[1][1][0] = 'MANUAL';
+  assert.equal(financialRows(complete.revenue, 'revenue').find(r => r.label === 'MANUAL').bedrag, 10.9);
+  for (const [kind, index, label] of [['revenue', 0, 'MANUAL'], ['nosale', 0, 'MANUAL'], ['revenue', 1, 'Revenue pin'], ['revenue', 1, 'Unknown']]) {
+    const data = financial();
+    data[kind][index].push([label, '10.90', '', '', '', '2', '']);
+    assert.throws(() => financialRows(data[kind], kind), /Invalid Twelve numeric field/);
+  }
+  const partial = financial();
+  partial.revenue[1].push(['MANUAL', '10.90', '10.00', '', '', '2', '']);
+  assert.throws(() => financialRows(partial.revenue, 'revenue'), /Invalid Twelve numeric field/);
+});
 test('current day is provisional and Amsterdam cutoff follows DST and 06:00 boundary', () => {
   assert.deepEqual(currentRange(new Date('2026-10-25T04:15:00Z')), { from: '2026-10-17', to: '2026-10-25', cutoff: '2026-10-25 05:15' });
   const p = input(); p.cutoff = '2026-09-29 14:15'; const r = reportForDay(p); assert.equal(r.source.complete, false); assert.equal(r.source.coverage_end, p.cutoff);

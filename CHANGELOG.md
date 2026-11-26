@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.2] - 2026-11-26
+
+### Fixed
+
+- Skip Twelve MANUAL payment-detail rows with blank VAT fields, preserving validated revenue totals and allowing interrupted daily imports to catch up.
+
 ## [0.21.1] - 2026-11-10
 
 ### Fixed
